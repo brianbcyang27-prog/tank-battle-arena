@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tank Battle Arena</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0d0d1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            font-family: 'Orbitron', monospace;
+            overflow: hidden;
+        }
+
+        #gameContainer {
+            position: relative;
+            border: 3px solid #e94560;
+            box-shadow: 0 0 30px rgba(233, 69, 96, 0.4), inset 0 0 60px rgba(0, 0, 0, 0.5);
+            border-radius: 4px;
+        }
+
+        #gameCanvas {
+            display: block;
+            background: #1a1a2e;
+        }
+
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(13, 13, 26, 0.92);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .overlay h1 {
+            font-size: 48px;
+            color: #e94560;
+            text-shadow: 0 0 20px #e94560, 0 0 40px #e94560;
+            margin-bottom: 20px;
+            letter-spacing: 4px;
+        }
+
+        .overlay h2 {
+            font-size: 28px;
+            color: #f39c12;
+            text-shadow: 0 0 15px #f39c12;
+            margin-bottom: 30px;
+        }
+
+        .overlay p {
+            font-size: 14px;
+            color: #eaeaea;
+            margin: 8px 0;
+            letter-spacing: 2px;
+        }
+
+        .overlay .score-display {
+            font-size: 24px;
+            color: #27ae60;
+            text-shadow: 0 0 10px #27ae60;
+            margin: 15px 0;
+        }
+
+        .overlay .prompt {
+            margin-top: 30px;
+            font-size: 16px;
+            color: #e94560;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.5; }
+            50% { opacity: 1; }
+        }
+
+        .controls-hint {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #666;
+            font-size: 11px;
+            letter-spacing: 1px;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+
+        <div id="menuOverlay" class="overlay active">
+            <h1>TANK BATTLE</h1>
+            <h2>ARENA</h2>
+            <p>WASD - MOVE</p>
+            <p>MOUSE - AIM</p>
+            <p>CLICK - FIRE</p>
+            <p class="prompt">PRESS SPACE TO START</p>
+        </div>
+
+        <div id="levelCompleteOverlay" class="overlay">
+            <h2>LEVEL COMPLETE</h2>
+            <p id="levelCompleteScore" class="score-display"></p>
+            <p id="levelCompleteTime"></p>
+            <p class="prompt">PRESS SPACE FOR NEXT LEVEL</p>
+        </div>
+
+        <div id="gameOverOverlay" class="overlay">
+            <h2>GAME OVER</h2>
+            <p id="finalScore" class="score-display"></p>
+            <p id="finalLevel"></p>
+            <p class="prompt">PRESS R TO RESTART</p>
+        </div>
+    </div>
+
+    <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const CANVAS_WIDTH = 1200;
+    const CANVAS_HEIGHT = 800;
+    const CELL_SIZE = 40;
+
+    canvas.width = CANVAS_WIDTH;
+    canvas.height = CANVAS_HEIGHT;
+
+    const COLORS = {
+        background: '#1a1a2e',
+        wall: '#16213e',
+        wallBorder: '#0f3460',
+        player: '#e94560',
+        playerTurret: '#ff6b6b',
+        enemies: ['#f39c12', '#27ae60', '#9b59b6', '#e74c3c'],
+        bullet: '#ffffff',
+        bulletGlow: 'rgba(255, 255, 255, 0.5)',
+        health: '#e94560',
+        healthBg: '#333',
+        text: '#eaeaea',
+        textShadow: '#e94560'
+    };
+
+    const GameState = {
+        MENU: 'menu',
+        PLAYING: 'playing',
+        LEVEL_COMPLETE: 'levelComplete',
+        GAME_OVER: 'gameOver'
+    };
+
+    let gameState = GameState.MENU;
+    let level = 1;
+    let score = 0;
+    let levelStartTime = 0;
+    let levelTime = 0;
+
+    let keys = {};
+    let mouseX = 0, mouseY = 0;
+    let mouseDown = false;
+
+    let player = null;
+    let enemies = [];
+    let bullets = [];
+    let walls = [];
+    let particles = [];
+
+    class Vector2 {
+        constructor(x = 0, y = 0) {
+            this.x = x;
+            this.y = y;
+        }
+
+        add(v) {
+            if (isNaN(this.x) || isNaN(this.y) || isNaN(v.x) || isNaN(v.y)) return new Vector2(0, 0);
+            return new Vector2(this.x + v.x, this.y + v.y);
+        }
+        sub(v) { return new Vector2(this.x - v.x, this.y - v.y); }
+        mul(s) {
+            if (isNaN(this.x) || isNaN(this.y) || isNaN(s)) return new Vector2(0, 0);
+            return new Vector2(this.x * s, this.y * s);
+        }
+        dot(v) { return this.x * v.x + this.y * v.y; }
+        length() { return Math.sqrt(this.x * this.x + this.y * this.y); }
+        normalize() {
+            const len = this.length();
+            if (len < 0.0001) return new Vector2(0, 0);
+            return new Vector2(this.x / len, this.y / len);
+        }
+        angle() { return Math.atan2(this.y, this.x); }
+        distanceTo(v) { return this.sub(v).length(); }
+        clone() { return new Vector2(this.x, this.y); }
+    }
+
+    class Tank {
+        constructor(x, y, color) {
+            this.pos = new Vector2(x, y);
+            this.vel = new Vector2();
+            this.width = 36;
+            this.height = 36;
+            this.turretAngle = 0;
+            this.color = color;
+            this.health = 3;
+            this.maxHealth = 3;
+            this.speed = 200;
+            this.fireRate = 3;
+            this.lastFire = 0;
+            this.alive = true;
+        }
+
+        update(dt) {
+            this.pos = this.pos.add(this.vel.mul(dt));
+            this.constrainToBounds();
+        }
+
+        constrainToBounds() {
+            const halfW = this.width / 2;
+            const halfH = this.height / 2;
+            this.pos.x = Math.max(halfW, Math.min(CANVAS_WIDTH - halfW, this.pos.x));
+            this.pos.y = Math.max(halfH, Math.min(CANVAS_HEIGHT - halfH, this.pos.y));
+        }
+
+        collidesWithWall(wall) {
+            return this.pos.x - this.width/2 < wall.x + wall.w &&
+                   this.pos.x + this.width/2 > wall.x &&
+                   this.pos.y - this.height/2 < wall.y + wall.h &&
+                   this.pos.y + this.height/2 > wall.y;
+        }
+
+        resolveWallCollisions() {
+            for (let wall of walls) {
+                if (this.collidesWithWall(wall)) {
+                    const overlapLeft = (this.pos.x + this.width/2) - wall.x;
+                    const overlapRight = (wall.x + wall.w) - (this.pos.x - this.width/2);
+                    const overlapTop = (this.pos.y + this.height/2) - wall.y;
+                    const overlapBottom = (wall.y + wall.h) - (this.pos.y - this.height/2);
+
+                    const minOverlapX = Math.min(overlapLeft, overlapRight);
+                    const minOverlapY = Math.min(overlapTop, overlapBottom);
+
+                    if (minOverlapX < minOverlapY) {
+                        if (overlapLeft < overlapRight) this.pos.x = wall.x - this.width/2;
+                        else this.pos.x = wall.x + wall.w + this.width/2;
+                    } else {
+                        if (overlapTop < overlapBottom) this.pos.y = wall.y - this.height/2;
+                        else this.pos.y = wall.y + wall.h + this.height/2;
+                    }
+                }
+            }
+        }
+
+        canFire(now) {
+            return now - this.lastFire >= 1000 / this.fireRate;
+        }
+
+        fire(now, bulletSpeed = 500) {
+            if (!this.canFire(now)) return null;
+            this.lastFire = now;
+            const dir = new Vector2(Math.cos(this.turretAngle), Math.sin(this.turretAngle));
+            return new Bullet(
+                this.pos.x + dir.x * 25,
+                this.pos.y + dir.y * 25,
+                dir.mul(bulletSpeed),
+                this
+            );
+        }
+
+        takeDamage() {
+            this.health--;
+            if (this.health <= 0) {
+                this.alive = false;
+                this.explode();
+            }
+        }
+
+        explode() {
+            for (let i = 0; i < 20; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 50 + Math.random() * 150;
+                particles.push(new Particle(
+                    this.pos.x, this.pos.y,
+                    Math.cos(angle) * speed,
+                    Math.sin(angle) * speed,
+                    this.color,
+                    0.5 + Math.random() * 0.5
+                ));
+            }
+        }
+
+        draw() {
+            ctx.save();
+            ctx.translate(this.pos.x, this.pos.y);
+
+            ctx.fillStyle = this.color;
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+
+            ctx.beginPath();
+            ctx.roundRect(-this.width/2, -this.height/2, this.width, this.height, 6);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.rotate(this.turretAngle);
+            ctx.strokeStyle = this.color;
+            ctx.lineWidth = 6;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(22, 0);
+            ctx.stroke();
+
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(0, 0, 6, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+
+            if (this.health < this.maxHealth) {
+                const barWidth = 40;
+                const barHeight = 5;
+                const healthPercent = this.health / this.maxHealth;
+
+                ctx.fillStyle = COLORS.healthBg;
+                ctx.fillRect(this.pos.x - barWidth/2, this.pos.y - this.height/2 - 12, barWidth, barHeight);
+
+                ctx.fillStyle = COLORS.health;
+                ctx.fillRect(this.pos.x - barWidth/2, this.pos.y - this.height/2 - 12, barWidth * healthPercent, barHeight);
+            }
+        }
+    }
+
+    class Player extends Tank {
+        constructor(x, y) {
+            super(x, y, COLORS.player);
+            this.speed = 200;
+            this.fireRate = 3;
+        }
+
+        update(dt, now) {
+            let moveX = 0, moveY = 0;
+
+            if (keys['w'] || keys['W'] || keys['ArrowUp']) moveY -= 1;
+            if (keys['s'] || keys['S'] || keys['ArrowDown']) moveY += 1;
+            if (keys['a'] || keys['A'] || keys['ArrowLeft']) moveX -= 1;
+            if (keys['d'] || keys['D'] || keys['ArrowRight']) moveX += 1;
+
+            const moveDir = new Vector2(moveX, moveY).normalize();
+            this.vel = moveDir.mul(this.speed);
+
+            this.turretAngle = Math.atan2(mouseY - this.pos.y, mouseX - this.pos.x);
+
+            super.update(dt);
+
+            for (let wall of walls) {
+                if (this.collidesWithWall(wall)) {
+                    this.resolveWallCollisionsSingle(wall);
+                }
+            }
+
+            if (mouseDown) {
+                const bullet = this.fire(now);
+                if (bullet) bullets.push(bullet);
+            }
+        }
+
+        resolveWallCollisionsSingle(wall) {
+            const overlapLeft = (this.pos.x + this.width/2) - wall.x;
+            const overlapRight = (wall.x + wall.w) - (this.pos.x - this.width/2);
+            const overlapTop = (this.pos.y + this.height/2) - wall.y;
+            const overlapBottom = (wall.y + wall.h) - (this.pos.y - this.height/2);
+
+            const minOverlapX = Math.min(overlapLeft, overlapRight);
+            const minOverlapY = Math.min(overlapTop, overlapBottom);
+
+            if (minOverlapX < minOverlapY) {
+                if (overlapLeft < overlapRight) this.pos.x = wall.x - this.width/2;
+                else this.pos.x = wall.x + wall.w + this.width/2;
+            } else {
+                if (overlapTop < overlapBottom) this.pos.y = wall.y - this.height/2;
+                else this.pos.y = wall.y + wall.h + this.height/2;
+            }
+        }
+
+        draw() {
+            super.draw();
+        }
+    }
+
+    class Enemy extends Tank {
+        constructor(x, y, tier) {
+            const color = COLORS.enemies[Math.min(tier - 1, COLORS.enemies.length - 1)];
+            super(x, y, color);
+            this.tier = tier;
+            this.speed = 80 + tier * 20;
+            this.fireRate = 1 + tier * 0.3;
+            this.accuracy = 0.4 + tier * 0.15;
+            this.health = 1 + Math.floor(tier / 2);
+            this.maxHealth = this.health;
+            this.aiTimer = 0;
+            this.aiState = 'wander';
+            this.targetPos = new Vector2(x, y);
+            this.stuckTimer = 0;
+            this.lastPos = this.pos.clone();
+        }
+
+        update(dt, now) {
+            if (!player || !player.alive) return;
+
+            this.aiTimer += dt;
+
+            if (this.aiTimer > 0.5) {
+                this.aiTimer = 0;
+                this.updateAI();
+            }
+
+            const toPlayer = player.pos.sub(this.pos);
+            const distToPlayer = toPlayer.length();
+
+            if (distToPlayer < 500 && this.hasLineOfSight(player)) {
+                this.turretAngle = Math.atan2(toPlayer.y, toPlayer.x);
+
+                if (this.canFire(now)) {
+                    const spread = (1 - this.accuracy) * 0.5;
+                    this.turretAngle += (Math.random() - 0.5) * spread;
+
+                    const bulletSpeed = 300 + this.tier * 50;
+                    const bullet = this.fire(now, bulletSpeed);
+                    if (bullet) bullets.push(bullet);
+                }
+            }
+
+            const moveDir = this.targetPos.sub(this.pos).normalize();
+            this.vel = moveDir.mul(this.speed);
+
+            super.update(dt);
+
+            for (let wall of walls) {
+                if (this.collidesWithWall(wall)) {
+                    this.resolveWallCollisionsSingle(wall);
+                }
+            }
+
+            if (this.pos.distanceTo(this.lastPos) < 2) {
+                this.stuckTimer += dt;
+                if (this.stuckTimer > 1) {
+                    this.stuckTimer = 0;
+                    this.targetPos = this.getRandomPosition();
+                }
+            } else {
+                this.stuckTimer = 0;
+            }
+            this.lastPos = this.pos.clone();
+        }
+
+        resolveWallCollisionsSingle(wall) {
+            const overlapLeft = (this.pos.x + this.width/2) - wall.x;
+            const overlapRight = (wall.x + wall.w) - (this.pos.x - this.width/2);
+            const overlapTop = (this.pos.y + this.height/2) - wall.y;
+            const overlapBottom = (wall.y + wall.h) - (this.pos.y - this.height/2);
+
+            const minOverlapX = Math.min(overlapLeft, overlapRight);
+            const minOverlapY = Math.min(overlapTop, overlapBottom);
+
+            if (minOverlapX < minOverlapY) {
+                if (overlapLeft < overlapRight) this.pos.x = wall.x - this.width/2;
+                else this.pos.x = wall.x + wall.w + this.width/2;
+            } else {
+                if (overlapTop < overlapBottom) this.pos.y = wall.y - this.height/2;
+                else this.pos.y = wall.y + wall.h + this.height/2;
+            }
+        }
+
+        updateAI() {
+            if (!player || !player.alive) return;
+
+            const distToPlayer = this.pos.distanceTo(player.pos);
+
+            if (distToPlayer < 300 && Math.random() < 0.7) {
+                this.aiState = 'retreat';
+            } else if (distToPlayer < 400) {
+                this.aiState = Math.random() < 0.6 ? 'strafe' : 'wander';
+            } else {
+                this.aiState = Math.random() < 0.5 ? 'approach' : 'wander';
+            }
+
+            switch (this.aiState) {
+                case 'approach':
+                    this.targetPos = player.pos.clone();
+                    break;
+                case 'retreat':
+                    const awayDir = this.pos.sub(player.pos).normalize();
+                    this.targetPos = this.pos.add(awayDir.mul(200));
+                    break;
+                case 'strafe':
+                    const perpDir = new Vector2(-(player.pos.y - this.pos.y), player.pos.x - this.pos.x).normalize();
+                    this.targetPos = this.pos.add(perpDir.mul(150 * (Math.random() < 0.5 ? 1 : -1)));
+                    break;
+                case 'wander':
+                default:
+                    if (Math.random() < 0.3 || !this.targetPos) {
+                        this.targetPos = this.getRandomPosition();
+                    }
+                    break;
+            }
+
+            this.targetPos.x = Math.max(50, Math.min(CANVAS_WIDTH - 50, this.targetPos.x));
+            this.targetPos.y = Math.max(50, Math.min(CANVAS_HEIGHT - 50, this.targetPos.y));
+        }
+
+        getRandomPosition() {
+            return new Vector2(
+                100 + Math.random() * (CANVAS_WIDTH - 200),
+                100 + Math.random() * (CANVAS_HEIGHT - 200)
+            );
+        }
+
+        hasLineOfSight(target) {
+            if (!target || !target.alive) return false;
+
+            const dir = target.pos.sub(this.pos).normalize();
+            const dist = this.pos.distanceTo(target.pos);
+            const steps = Math.floor(dist / 20);
+
+            for (let i = 1; i < steps; i++) {
+                const checkPos = this.pos.add(dir.mul(i * 20));
+                for (let wall of walls) {
+                    if (checkPos.x > wall.x && checkPos.x < wall.x + wall.w &&
+                        checkPos.y > wall.y && checkPos.y < wall.y + wall.h) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+    }
+
+    class Bullet {
+        constructor(x, y, vel, owner) {
+            this.pos = new Vector2(x, y);
+            this.vel = vel;
+            this.owner = owner;
+            this.radius = 5;
+            this.alive = true;
+            this.trail = [];
+        }
+
+        update(dt) {
+            if (!this.alive || !this.pos || !this.vel) return;
+
+            this.trail.push({ x: this.pos.x, y: this.pos.y, alpha: 1 });
+            if (this.trail.length > 8) this.trail.shift();
+
+            for (let t of this.trail) {
+                t.alpha -= dt * 3;
+            }
+
+            this.pos = this.pos.add(this.vel.mul(dt));
+
+            if (isNaN(this.pos.x) || isNaN(this.pos.y)) {
+                this.alive = false;
+                return;
+            }
+
+            if (this.pos.x < 0 || this.pos.x > CANVAS_WIDTH ||
+                this.pos.y < 0 || this.pos.y > CANVAS_HEIGHT) {
+                this.alive = false;
+                return;
+            }
+
+            for (let wall of walls) {
+                if (wall && wall.w && wall.h &&
+                    this.pos.x > wall.x && this.pos.x < wall.x + wall.w &&
+                    this.pos.y > wall.y && this.pos.y < wall.y + wall.h) {
+                    this.alive = false;
+                    this.createImpact();
+                    break;
+                }
+            }
+        }
+
+        createImpact() {
+            for (let i = 0; i < 5; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 30 + Math.random() * 60;
+                particles.push(new Particle(
+                    this.pos.x, this.pos.y,
+                    Math.cos(angle) * speed,
+                    Math.sin(angle) * speed,
+                    '#ffffff',
+                    0.2 + Math.random() * 0.2
+                ));
+            }
+        }
+
+        checkCollision(tank) {
+            if (tank === this.owner) return false;
+            const dx = this.pos.x - tank.pos.x;
+            const dy = this.pos.y - tank.pos.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            return dist < this.radius + tank.width / 2;
+        }
+
+        draw() {
+            if (!this.alive || !this.pos || isNaN(this.pos.x) || isNaN(this.pos.y)) return;
+
+            for (let i = 0; i < this.trail.length; i++) {
+                const t = this.trail[i];
+                if (t.alpha > 0) {
+                    ctx.fillStyle = `rgba(255, 255, 255, ${t.alpha * 0.5})`;
+                    ctx.beginPath();
+                    ctx.arc(t.x, t.y, this.radius * (i / this.trail.length), 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            ctx.shadowColor = COLORS.bulletGlow;
+            ctx.shadowBlur = 10;
+            ctx.fillStyle = COLORS.bullet;
+            ctx.beginPath();
+            ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+    }
+
+    class Particle {
+        constructor(x, y, vx, vy, color, life) {
+            this.x = x;
+            this.y = y;
+            this.vx = vx;
+            this.vy = vy;
+            this.color = color;
+            this.life = life;
+            this.maxLife = life;
+            this.size = 3 + Math.random() * 4;
+        }
+
+        update(dt) {
+            if (isNaN(this.x) || isNaN(this.y)) {
+                this.life = 0;
+                return;
+            }
+            this.x += this.vx * dt;
+            this.y += this.vy * dt;
+            this.vx *= 0.98;
+            this.vy *= 0.98;
+            this.life -= dt;
+        }
+
+        draw() {
+            if (isNaN(this.x) || isNaN(this.y) || this.life <= 0) return;
+            const alpha = this.life / this.maxLife;
+            ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+            ctx.fillStyle = this.color;
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.size * alpha, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+        }
+    }
+
+    class Wall {
+        constructor(x, y, w, h) {
+            this.x = x;
+            this.y = y;
+            this.w = w;
+            this.h = h;
+        }
+
+        draw() {
+            ctx.fillStyle = COLORS.wall;
+            ctx.strokeStyle = COLORS.wallBorder;
+            ctx.lineWidth = 2;
+            ctx.fillRect(this.x, this.y, this.w, this.h);
+            ctx.strokeRect(this.x, this.y, this.w, this.h);
+        }
+    }
+
+    function generateLevel(levelNum) {
+        walls = [];
+        bullets = [];
+        particles = [];
+        enemies = [];
+
+        const gridCols = Math.floor(CANVAS_WIDTH / CELL_SIZE);
+        const gridRows = Math.floor(CANVAS_HEIGHT / CELL_SIZE);
+
+        let grid = [];
+        let attempts = 0;
+        const maxAttempts = 50;
+
+        do {
+            grid = [];
+            for (let y = 0; y < gridRows; y++) {
+                grid[y] = [];
+                for (let x = 0; x < gridCols; x++) {
+                    if (x === 0 || x === gridCols - 1 || y === 0 || y === gridRows - 1) {
+                        grid[y][x] = 1;
+                    } else {
+                        grid[y][x] = 0;
+                    }
+                }
+            }
+
+            const wallDensity = 0.20 + Math.min(levelNum * 0.015, 0.08);
+            const numWalls = Math.floor(gridCols * gridRows * wallDensity);
+
+            for (let i = 0; i < numWalls; i++) {
+                const x = 2 + Math.floor(Math.random() * (gridCols - 4));
+                const y = 2 + Math.floor(Math.random() * (gridRows - 4));
+                if (grid[y][x] === 0) {
+                    grid[y][x] = 1;
+
+                    if (Math.random() < 0.35) {
+                        const horiz = Math.random() < 0.5;
+                        const len = 2 + Math.floor(Math.random() * 2);
+                        for (let j = 0; j < len; j++) {
+                            const nx = horiz ? x + j : x;
+                            const ny = horiz ? y : y + j;
+                            if (nx < gridCols - 1 && ny < gridRows - 1) {
+                                grid[ny][nx] = 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            attempts++;
+        } while (!isGridValid(grid, gridCols, gridRows) && attempts < maxAttempts);
+
+        for (let y = 0; y < gridRows; y++) {
+            for (let x = 0; x < gridCols; x++) {
+                if (grid[y][x] === 1) {
+                    walls.push(new Wall(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE));
+                }
+            }
+        }
+
+        const playerX = CELL_SIZE * 2.5;
+        const playerY = CANVAS_HEIGHT - CELL_SIZE * 2.5;
+        player = new Player(playerX, playerY);
+
+        const numEnemies = Math.min(2 + Math.floor(levelNum * 1.2), 10);
+        const tier = Math.min(Math.ceil(levelNum / 2), 4);
+
+        const playerGridX = Math.floor(playerX / CELL_SIZE);
+        const playerGridY = Math.floor(playerY / CELL_SIZE);
+
+        for (let i = 0; i < numEnemies; i++) {
+            let ex, ey, gridX, gridY;
+            let bestEx = 0, bestEy = 0;
+            let bestDist = 0;
+            let foundSpot = false;
+
+            for (let attempt = 0; attempt < 100; attempt++) {
+                ex = CELL_SIZE * 2 + Math.random() * (CANVAS_WIDTH - CELL_SIZE * 4);
+                ey = CELL_SIZE * 2 + Math.random() * (CANVAS_HEIGHT - CELL_SIZE * 4);
+                gridX = Math.floor(ex / CELL_SIZE);
+                gridY = Math.floor(ey / CELL_SIZE);
+
+                if (gridX > 0 && gridX < gridCols - 1 && gridY > 0 && gridY < gridRows - 1) {
+                    if (grid[gridY][gridX] === 0) {
+                        const dist = Math.sqrt((gridX - playerGridX) ** 2 + (gridY - playerGridY) ** 2);
+                        const tooCloseToPlayer = Math.abs(ex - playerX) < CELL_SIZE * 3 && Math.abs(ey - playerY) < CELL_SIZE * 3;
+                        const tooCloseToEnemy = enemies.some(e => e.pos.distanceTo(new Vector2(ex, ey)) < CELL_SIZE * 2);
+
+                        if (!tooCloseToPlayer && !tooCloseToEnemy) {
+                            if (dist > bestDist) {
+                                bestDist = dist;
+                                bestEx = ex;
+                                bestEy = ey;
+                                foundSpot = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!foundSpot) {
+                for (let gy = 1; gy < gridRows - 1; gy++) {
+                    for (let gx = 1; gx < gridCols - 1; gx++) {
+                        if (grid[gy][gx] === 0) {
+                            const ex = gx * CELL_SIZE + CELL_SIZE / 2;
+                            const ey = gy * CELL_SIZE + CELL_SIZE / 2;
+                            const tooCloseToPlayer = Math.abs(ex - playerX) < CELL_SIZE * 3;
+                            const tooCloseToEnemy = enemies.some(e => e.pos.distanceTo(new Vector2(ex, ey)) < CELL_SIZE * 2);
+
+                            if (!tooCloseToPlayer && !tooCloseToEnemy) {
+                                bestEx = ex;
+                                bestEy = ey;
+                                foundSpot = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (foundSpot) break;
+                }
+            }
+
+            if (foundSpot) {
+                const enemyTier = Math.max(1, tier - (i % 2));
+                enemies.push(new Enemy(bestEx, bestEy, enemyTier));
+            }
+        }
+
+        levelStartTime = performance.now();
+    }
+
+    function isGridValid(grid, gridCols, gridRows) {
+        const playerGridX = 2;
+        const playerGridY = gridRows - 3;
+
+        const visited = [];
+        for (let y = 0; y < gridRows; y++) {
+            visited[y] = [];
+            for (let x = 0; x < gridCols; x++) {
+                visited[y][x] = false;
+            }
+        }
+
+        const queue = [[playerGridX, playerGridY]];
+        visited[playerGridY][playerGridX] = true;
+        let reachableCells = 0;
+
+        const directions = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+
+        while (queue.length > 0) {
+            const [cx, cy] = queue.shift();
+            reachableCells++;
+
+            for (const [dx, dy] of directions) {
+                const nx = cx + dx;
+                const ny = cy + dy;
+
+                if (nx >= 0 && nx < gridCols && ny >= 0 && ny < gridRows) {
+                    if (!visited[ny][nx] && grid[ny][nx] === 0) {
+                        visited[ny][nx] = true;
+                        queue.push([nx, ny]);
+                    }
+                }
+            }
+        }
+
+        const totalFreeCells = gridRows * gridCols - walls.length;
+        const reachabilityRatio = reachableCells / totalFreeCells;
+
+        if (reachabilityRatio < 0.7) return false;
+
+        let disconnectedRegions = 0;
+        for (let y = 1; y < gridRows - 1; y++) {
+            for (let x = 1; x < gridCols - 1; x++) {
+                if (grid[y][x] === 0 && !visited[y][x]) {
+                    disconnectedRegions++;
+                    if (disconnectedRegions > 2) return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    function updateUI() {
+        document.getElementById('levelCompleteScore').textContent = `SCORE: ${score}`;
+        document.getElementById('levelCompleteTime').textContent = `TIME: ${levelTime.toFixed(1)}s`;
+        document.getElementById('finalScore').textContent = `FINAL SCORE: ${score}`;
+        document.getElementById('finalLevel').textContent = `REACHED LEVEL ${level}`;
+    }
+
+    function showOverlay(id) {
+        document.querySelectorAll('.overlay').forEach(o => o.classList.remove('active'));
+        if (id) document.getElementById(id).classList.add('active');
+    }
+
+    function startGame() {
+        level = 1;
+        score = 0;
+        generateLevel(level);
+        gameState = GameState.PLAYING;
+        showOverlay(null);
+    }
+
+    function nextLevel() {
+        level++;
+        generateLevel(level);
+        gameState = GameState.PLAYING;
+        showOverlay(null);
+    }
+
+    function gameOver() {
+        gameState = GameState.GAME_OVER;
+        updateUI();
+        showOverlay('gameOverOverlay');
+    }
+
+    function levelComplete() {
+        const timeBonus = Math.max(0, Math.floor(1000 - levelTime * 10));
+        const levelBonus = 500 * level;
+        score += timeBonus + levelBonus;
+
+        gameState = GameState.LEVEL_COMPLETE;
+        updateUI();
+        showOverlay('levelCompleteOverlay');
+    }
+
+    let lastTime = performance.now();
+
+    function gameLoop(currentTime) {
+        const dt = Math.min((currentTime - lastTime) / 1000, 0.05);
+        lastTime = currentTime;
+
+        ctx.fillStyle = COLORS.background;
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        for (let wall of walls) {
+            wall.draw();
+        }
+
+        if (gameState === GameState.PLAYING) {
+            levelTime = (currentTime - levelStartTime) / 1000;
+
+            if (player && player.alive) {
+                player.update(dt, currentTime);
+            }
+
+            for (let enemy of enemies) {
+                if (enemy.alive) {
+                    enemy.update(dt, currentTime);
+                }
+            }
+
+            for (let bullet of bullets) {
+                if (bullet.alive) {
+                    bullet.update(dt);
+
+                    if (player && player.alive && bullet.checkCollision(player)) {
+                        bullet.alive = false;
+                        player.takeDamage();
+                        if (!player.alive) {
+                            gameOver();
+                        }
+                    }
+
+                    for (let enemy of enemies) {
+                        if (enemy.alive && bullet.checkCollision(enemy)) {
+                            bullet.alive = false;
+                            enemy.takeDamage();
+                            if (!enemy.alive) {
+                                score += 100 * level;
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+
+            bullets = bullets.filter(b => b.alive);
+
+            const aliveEnemies = enemies.filter(e => e.alive);
+            if (aliveEnemies.length === 0 && player.alive) {
+                levelComplete();
+            }
+        }
+
+        for (let particle of particles) {
+            if (particle.life > 0) {
+                particle.update(dt);
+                particle.draw();
+            }
+        }
+        particles = particles.filter(p => p.life > 0);
+
+        for (let bullet of bullets) {
+            bullet.draw();
+        }
+
+        if (player && player.alive) {
+            player.draw();
+        }
+
+        for (let enemy of enemies) {
+            if (enemy.alive) {
+                enemy.draw();
+            }
+        }
+
+        if (gameState === GameState.PLAYING) {
+            ctx.fillStyle = COLORS.text;
+            ctx.font = '18px Orbitron';
+            ctx.textAlign = 'left';
+            ctx.fillText(`LEVEL ${level}`, 20, 35);
+            ctx.fillText(`SCORE: ${score}`, 20, 60);
+
+            ctx.textAlign = 'right';
+            ctx.fillText(`TIME: ${levelTime.toFixed(1)}s`, CANVAS_WIDTH - 20, 35);
+        }
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    document.addEventListener('keydown', (e) => {
+        keys[e.key] = true;
+
+        if (e.key === ' ' && gameState === GameState.MENU) {
+            startGame();
+        } else if (e.key === ' ' && gameState === GameState.LEVEL_COMPLETE) {
+            nextLevel();
+        } else if ((e.key === 'r' || e.key === 'R') && gameState === GameState.GAME_OVER) {
+            startGame();
+        }
+    });
+
+    document.addEventListener('keyup', (e) => {
+        keys[e.key] = false;
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        mouseX = (e.clientX - rect.left) * (CANVAS_WIDTH / rect.width);
+        mouseY = (e.clientY - rect.top) * (CANVAS_HEIGHT / rect.height);
+    });
+
+    canvas.addEventListener('mousedown', (e) => {
+        if (e.button === 0) mouseDown = true;
+    });
+
+    canvas.addEventListener('mouseup', (e) => {
+        if (e.button === 0) mouseDown = false;
+    });
+
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    showOverlay('menuOverlay');
+    requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
