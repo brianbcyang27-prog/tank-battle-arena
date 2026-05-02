@@ -1,21 +1,28 @@
 {
   "rules": {
-    ".read": true,
-    ".write": true,
+    ".read": "auth != null",
+    ".write": "auth != null",
     "users": {
       "$uid": {
-        ".read": true,
-        ".write": "$uid === auth.uid"
+        ".read": "auth != null",
+        ".write": "auth != null && $uid === auth.uid"
       }
     },
     "leaderboard": {
-      ".read": true,
+      ".read": "auth != null",
       ".write": "auth != null",
       ".indexOn": ["score"]
     },
     "lobbies": {
-      ".read": true,
-      ".write": "auth != null"
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$lobbyId": {
+        "players": {
+          "$uid": {
+            ".write": "auth != null && $uid === auth.uid"
+          }
+        }
+      }
     }
   }
 }

@@ -98,6 +98,7 @@
         <div id="loadingScreen" class="loading-screen">
             <div class="loading-spinner"></div>
             <div class="loading-text" id="loadingTitle">GENERATING LEVEL...</div>
+            <div id="loadingSubtitle" style="color:#888;font-size:14px;margin-top:8px;"></div>
             <div id="loadingStatus" style="margin-top:10px;color:#666;font-size:12px;"></div>
         </div>
 
@@ -133,10 +134,17 @@
                     
                     <div id="roomCodeSection" style="display:none;flex-direction:column;align-items:center;gap:8px;margin-top:10px;width:100%;">
                         <div style="display:flex;gap:8px;align-items:center;">
-                            <input type="text" id="roomCodeInput" placeholder="ROOM CODE" style="width:150px;text-transform:uppercase;">
+                            <input type="text" id="roomCodeInput" placeholder="ROOM CODE" style="width:120px;text-transform:uppercase;">
                             <button class="btn btn-info" onclick="joinWithCode()">JOIN</button>
                         </div>
-                        <p style="color:#666;font-size:11px;">Enter a room code to join</p>
+                        <p style="color:#666;font-size:11px;margin-bottom:8px;">Enter a room code to join</p>
+                        <div style="display:flex;align-items:center;gap:8px;">
+                            <div style="flex:1;height:1px;background:#666;width:60px;"></div>
+                            <span style="color:#666;font-size:10px;">OR</span>
+                            <div style="flex:1;height:1px;background:#666;width:60px;"></div>
+                        </div>
+                        <button class="btn btn-success" onclick="createRoom()">CREATE ROOM</button>
+                        <p style="color:#666;font-size:11px;">Create a new room and share the code</p>
                     </div>
                     
                     <button class="btn btn-danger" onclick="startGameFromMenu()" style="margin-top:10px;">START GAME</button>
@@ -149,16 +157,20 @@
 
         <!-- MULTIPLAYER LOBBY -->
         <div id="lobbyOverlay" class="overlay">
-            <h2>MULTIPLAYER LOBBY</h2>
+            <h2 id="lobbyTitle">MULTIPLAYER LOBBY</h2>
             <p id="lobbyMode" style="color:#f39c12;"></p>
-            <div id="roomCodeDisplay" style="background:rgba(0,0,0,0.3);padding:10px 20px;border-radius:4px;margin:10px 0;">
-                <span style="color:#666;font-size:12px;">ROOM CODE: </span>
-                <span id="currentRoomCode" style="color:#f39c12;font-size:24px;letter-spacing:4px;font-weight:bold;"></span>
+            <div style="background:rgba(0,0,0,0.5);padding:20px 40px;border-radius:8px;border:2px solid #f39c12;margin:15px 0;">
+                <p style="color:#666;font-size:12px;margin-bottom:5px;">ROOM CODE</p>
+                <span id="currentRoomCode" style="color:#f39c12;font-size:48px;letter-spacing:8px;font-weight:900;text-shadow:0 0 20px #f39c12;"></span>
             </div>
+            <p id="lobbyShareHint" style="color:#888;font-size:11px;margin-bottom:10px;">Share this code with friends to join!</p>
             <div id="playerList" style="margin:15px 0;"></div>
-            <button class="btn btn-success" id="readyButton" onclick="toggleReady()">READY</button>
+            <div id="lobbyControls">
+                <button class="btn btn-success" id="readyButton" onclick="toggleReady()">READY</button>
+                <button class="btn btn-danger" id="startGameButton" onclick="startMultiplayerGame()" style="display:none;">START GAME</button>
+            </div>
             <p class="prompt" id="lobbyStatus">Waiting for players...</p>
-            <button class="btn btn-danger" onclick="leaveLobby()" style="margin-top:10px;">LEAVE</button>
+            <button class="btn btn-warning" onclick="leaveLobby()" style="margin-top:15px;">LEAVE LOBBY</button>
         </div>
 
         <!-- LEVEL COMPLETE -->
@@ -306,7 +318,7 @@
                 document.getElementById('displayName').textContent = user.email;
                 
                 const userRefInAuth = ref(db, 'users/' + user.uid);
-                userRefInAuth.set({
+                set(userRefInAuth, {
                     email: user.email,
                     lastLogin: Date.now(),
                     online: true
@@ -484,6 +496,26 @@
                 ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(22,0); ctx.stroke();
                 ctx.fillStyle='#000'; ctx.beginPath(); ctx.arc(0,0,6,0,Math.PI*2); ctx.fill();
                 ctx.restore();
+                
+                // Health bar
+                const barWidth = 36;
+                const barHeight = 5;
+                const barYOffset = 28;
+                const healthPercent = this.health / this.maxHealth;
+                
+                // Background
+                ctx.fillStyle = '#333';
+                ctx.fillRect(this.pos.x - barWidth/2, this.pos.y + barYOffset, barWidth, barHeight);
+                
+                // Health fill
+                const healthColor = healthPercent > 0.5 ? '#27ae60' : healthPercent > 0.25 ? '#f39c12' : '#e74c3c';
+                ctx.fillStyle = healthColor;
+                ctx.fillRect(this.pos.x - barWidth/2, this.pos.y + barYOffset, barWidth * healthPercent, barHeight);
+                
+                // Border
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(this.pos.x - barWidth/2, this.pos.y + barYOffset, barWidth, barHeight);
             }
         }
 
@@ -732,8 +764,28 @@
             joinLobbyByCode(code);
         };
 
+        window.createRoom = function(){
+            if(!currentUser){ log('warn','CREATE','Must be logged in'); return; }
+            if(gameMode==='single'){ log('warn','CREATE','Cannot create room in single player'); return; }
+            log('info','CREATE','Creating new room for mode: '+gameMode);
+            
+            // Show loading
+            document.getElementById('loadingScreen').style.display='flex';
+            document.getElementById('loadingTitle').textContent='CREATING YOUR ROOM...';
+            document.getElementById('loadingSubtitle').textContent='Please wait...';
+            
+            const playerCount = gameMode==='1v1'?2:gameMode==='2v2'?4:6;
+            createLobby(playerCount);
+        };
+
         function joinLobbyByCode(code){
             const lobbiesRef=ref(db, 'lobbies');
+            
+            // Show loading
+            document.getElementById('loadingScreen').style.display='flex';
+            document.getElementById('loadingTitle').textContent='JOINING ROOM...';
+            document.getElementById('loadingSubtitle').textContent=code;
+            
             get(lobbiesRef).then(snapshot=>{
                 let found=false;
                 snapshot.forEach(child=>{
@@ -742,23 +794,34 @@
                         found=true;
                         lobbyId=child.key;
                         localPlayerId=currentUser.uid;
-const lobbyRef=ref(db, 'lobbies/'+lobbyId);
+                        const lobbyRef=ref(db, 'lobbies/'+lobbyId);
                         const initialReady=settings.autoReady;
                         set(child(lobbyRef, 'players/'+currentUser.uid), {
                             name:currentUser.email, ready:initialReady, joined:serverTimestamp()
                         });
                         listenToLobby(lobbyRef);
                         showOverlay('lobbyOverlay');
+                        document.getElementById('lobbyTitle').textContent='MULTIPLAYER LOBBY';
                         document.getElementById('lobbyMode').textContent='Mode: '+gameMode.toUpperCase();
                         document.getElementById('currentRoomCode').textContent=code;
                         document.getElementById('readyButton').textContent=initialReady?'NOT READY':'READY';
+                        document.getElementById('readyButton').style.display='inline-block';
+                        document.getElementById('startGameButton').style.display='none';
+                        document.getElementById('lobbyShareHint').style.display='block';
                         log('info','LOBBY','Joined lobby via code: '+code);
                     }
                 });
                 if(!found){
                     log('warn','JOIN','Room not found or full: '+code);
                     alert('Room not found or already full!');
+                    showOverlay('loginOverlay');
+                    document.getElementById('loggedInPanel').style.display='flex';
                 }
+            }).catch(e=>{
+                log('error','JOIN','Failed to join room: '+e.message);
+                alert('Failed to join room. Please try again.');
+                showOverlay('loginOverlay');
+                document.getElementById('loggedInPanel').style.display='flex';
             });
         }
 
@@ -832,7 +895,12 @@ const lobbyRef=ref(db, 'lobbies/'+lobbyId);
                 } else {
                     createLobby(playerCount);
                 }
-            }).catch(e=>log('error','LOBBY','Lobby search failed: '+e.message));
+            }).catch(e=>{
+                log('error','LOBBY','Lobby search failed: '+e.message);
+                alert('Failed to create/join lobby. Please try again.');
+                showOverlay('loginOverlay');
+                document.getElementById('loggedInPanel').style.display='flex';
+            });
         }
 
         function createLobby(playerCount){
@@ -843,7 +911,7 @@ const lobbyRef=ref(db, 'lobbies/'+lobbyId);
             // Generate 6-character room code
             const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
             
-            lobbyRef.set({
+            set(lobbyRef, {
                 mode:gameMode, status:'waiting', playerCount:playerCount,
                 host:currentUser.uid, createdAt:serverTimestamp(),
                 code: roomCode,
@@ -856,9 +924,13 @@ const lobbyRef=ref(db, 'lobbies/'+lobbyId);
                 onDisconnect(lobbyRef).remove();
                 listenToLobby(lobbyRef);
                 showOverlay('lobbyOverlay');
+                document.getElementById('lobbyTitle').textContent='ROOM CREATED!';
                 document.getElementById('lobbyMode').textContent='Mode: '+gameMode.toUpperCase();
                 document.getElementById('currentRoomCode').textContent=roomCode;
-                document.getElementById('readyButton').textContent=initialReady?'NOT READY':'READY';
+                document.getElementById('readyButton').style.display='none'; // Host doesn't need ready
+                document.getElementById('startGameButton').style.display='inline-block';
+                document.getElementById('lobbyShareHint').style.display='block';
+                document.getElementById('lobbyStatus').textContent='Waiting for players to join...';
                 log('info','LOBBY','Created lobby: '+lobbyId+' with code: '+roomCode+' (auto-ready: '+initialReady+')');
             });
         }
@@ -878,22 +950,36 @@ const lobbyRef=ref(db, 'lobbies/'+lobbyId);
         }
 
         function listenToLobby(lobbyRef){
-            onValue(child(lobbyRef, 'players'), snapshot=>{
-                const players=snapshot.val()||{};
-                remotePlayers=players;
+            let isHost = false;
+            
+            onValue(lobbyRef, snapshot=>{
+                const l=snapshot.val();
+                if(!l) return;
+                
+                isHost = l.host === currentUser.uid;
+                const players = l.players || {};
+                remotePlayers = players;
                 updatePlayerList(players);
                 
-                const playerCount=lobbyRef.key?null:null;
-                get(lobbyRef).then(snap=>{
-                    const l=snap.val();
-                    if(l&&l.playerCount&&Object.keys(players).length>=l.playerCount){
-                        const allReady=Object.values(players).every(p=>p.ready);
-                        if(allReady){
-                            log('info','LOBBY','All players ready! Starting game...');
-                            update(lobbyRef, { status:'playing' });
-                        }
-                    }
-                });
+                // Show/hide controls based on host status
+                if(isHost){
+                    document.getElementById('readyButton').style.display='none';
+                    document.getElementById('startGameButton').style.display='inline-block';
+                    document.getElementById('lobbyTitle').textContent='ROOM CREATED!';
+                } else {
+                    document.getElementById('readyButton').style.display='inline-block';
+                    document.getElementById('startGameButton').style.display='none';
+                    document.getElementById('lobbyTitle').textContent='MULTIPLAYER LOBBY';
+                }
+                
+                // Update status based on player count
+                const playerCount = l.playerCount || 2;
+                const currentPlayers = Object.keys(players).length;
+                if(currentPlayers >= playerCount){
+                    document.getElementById('lobbyStatus').textContent='Room full! '+(isHost?'Click START to begin!':'Waiting for host...');
+                } else {
+                    document.getElementById('lobbyStatus').textContent='Waiting for players: '+currentPlayers+'/'+playerCount;
+                }
             });
             
             onValue(child(lobbyRef, 'status'), snapshot=>{
@@ -905,16 +991,16 @@ const lobbyRef=ref(db, 'lobbies/'+lobbyId);
 
         function updatePlayerList(players){
             const list=document.getElementById('playerList');
-            let html='';
+            let html='<div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;">';
             for(let [id,p] of Object.entries(players)){
                 const isMe=id===currentUser.uid;
-                html+='<div class="player-card '+(p.ready?'ready':'')+'">';
-                html+='<span class="name">'+(isMe?'You':p.name.split('@')[0])+'</span> ';
-                html+='<span class="status">'+(p.ready?'READY':'NOT READY')+'</span>';
+                html+='<div class="player-card '+(p.ready?'ready':'')+'" style="background:rgba(0,0,0,0.3);padding:8px 15px;border-radius:4px;border:1px solid '+(p.ready?'#27ae60':'#666')+';">';
+                html+='<span class="name" style="color:#eaeaea;">'+(isMe?'You':(p.name?p.name.split('@')[0]:'Player'))+'</span> ';
+                html+='<span class="status" style="color:'+(p.ready?'#27ae60':'#e74c3c')+';font-size:11px;">'+(p.ready?'✓ READY':'✗ NOT READY')+'</span>';
                 html+='</div>';
             }
+            html+='</div>';
             list.innerHTML=html;
-            document.getElementById('lobbyStatus').textContent='Players: '+Object.keys(players).length;
         }
 
         window.toggleReady = function(){
