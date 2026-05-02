@@ -1,0 +1,21 @@
+{
+  "rules": {
+    ".read": true,
+    ".write": true,
+    "users": {
+      "$uid": {
+        ".read": true,
+        ".write": "$uid === auth.uid"
+      }
+    },
+    "leaderboard": {
+      ".read": true,
+      ".write": "auth != null",
+      ".indexOn": ["score"]
+    },
+    "lobbies": {
+      ".read": true,
+      ".write": "auth != null"
+    }
+  }
+}
