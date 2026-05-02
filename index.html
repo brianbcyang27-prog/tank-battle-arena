@@ -256,6 +256,9 @@
         let lobbyId = null;
         let remotePlayers = {};
         let localPlayerId = null;
+        let isMultiplayerGame = false;
+        let remoteTanks = {}; // uid -> { tank: Tank, lastUpdate: number }
+        let playerUpdateInterval = null;
 
         try {
             app = initializeApp(firebaseConfig);
@@ -520,7 +523,7 @@
         }
 
         class Player extends Tank {
-            constructor(x,y){ super(x,y,COLORS.player); this.speed=200; this.fireRate=3; this.lastMine=0; }
+            constructor(x,y){ super(x,y,COLORS.player); this.speed=200; this.fireRate=3; this.lastMine=0; this.lastSync=0; }
             update(dt,now){
                 let mx=0,my=0;
                 if(keys['w']||keys['KeyW']) my-=1;
@@ -536,6 +539,12 @@
                     mines.push(new LandMine(this.pos.x,this.pos.y));
                     this.lastMine=now;
                     log('info','MINE','Mine placed at '+Math.round(this.pos.x)+','+Math.round(this.pos.y));
+                }
+                // Sync to Firebase every 50ms in multiplayer
+                if(isMultiplayerGame && now-this.lastSync>50 && lobbyId && currentUser){
+                    const playerDataRef = ref(db, 'lobbies/'+lobbyId+'/players/'+currentUser.uid);
+                    update(playerDataRef, { x:this.pos.x, y:this.pos.y, angle:this.turretAngle, health:this.health, lastUpdate:Date.now() });
+                    this.lastSync=now;
                 }
             }
             collidesWithWall(wall){
@@ -976,6 +985,41 @@
                 remotePlayers = players;
                 updatePlayerList(players);
                 
+                // Update remote tanks during gameplay
+                if(isMultiplayerGame && gameState === GameState.PLAYING){
+                    for(let [uid, p] of Object.entries(players)){
+                        if(uid === currentUser.uid) continue; // Skip self
+                        
+                        if(!remoteTanks[uid]){
+                            // Create new remote tank
+                            remoteTanks[uid] = {
+                                tank: new Tank(p.x || CANVAS_WIDTH/2, p.y || CANVAS_HEIGHT/2, COLORS.player),
+                                lastUpdate: Date.now()
+                            };
+                            remoteTanks[uid].tank.health = p.health || 3;
+                            remoteTanks[uid].tank.maxHealth = remoteTanks[uid].tank.health;
+                            log('info','MP','Created remote tank for: '+uid);
+                        }
+                        
+                        // Update remote tank position smoothly
+                        if(p.x !== undefined && p.y !== undefined){
+                            remoteTanks[uid].tank.pos.x = p.x;
+                            remoteTanks[uid].tank.pos.y = p.y;
+                            remoteTanks[uid].tank.turretAngle = p.angle || 0;
+                            remoteTanks[uid].tank.health = p.health || 3;
+                            remoteTanks[uid].lastUpdate = Date.now();
+                        }
+                    }
+                    
+                    // Remove tanks for disconnected players
+                    for(let uid in remoteTanks){
+                        if(!players[uid]){
+                            log('info','MP','Removing remote tank for disconnected: '+uid);
+                            delete remoteTanks[uid];
+                        }
+                    }
+                }
+                
                 // Show/hide controls based on host status
                 if(isHost){
                     document.getElementById('readyButton').style.display='none';
@@ -1033,7 +1077,7 @@
             const lobbyRef=ref(db, 'lobbies/'+lobbyId);
             remove(child(lobbyRef, 'players/'+currentUser.uid)).then(()=>{
                 log('info','LOBBY','Left lobby: '+lobbyId);
-                lobbyId=null; remotePlayers={};
+                lobbyId=null; remotePlayers={}; remoteTanks={}; isMultiplayerGame=false;
                 showOverlay('loginOverlay');
                 document.getElementById('loggedInPanel').style.display='flex';
             });
@@ -1041,11 +1085,19 @@
 
         window.startMultiplayerGame = function(){
             log('info','MP','Starting multiplayer game!');
+            isMultiplayerGame = true;
             showOverlay(null);
             document.getElementById('lobbyOverlay').style.display='none';
             gameState=GameState.LOADING;
             document.getElementById('loadingScreen').style.display='flex';
             document.getElementById('loadingTitle').textContent='STARTING MATCH...';
+            
+            // Clean up old lobby data
+            if(playerUpdateInterval){
+                clearInterval(playerUpdateInterval);
+                playerUpdateInterval = null;
+            }
+            
             generateLevel(1);
         }
 
@@ -1112,6 +1164,12 @@
                     if(m.armed&&!m.exploded){
                         if(player&&player.alive&&m.checkCollision(player)) m.explode();
                         for(let e of enemies){ if(e.alive&&m.checkCollision(e)){ m.explode(); break; } }
+                        if(isMultiplayerGame){
+                            for(let uid in remoteTanks){
+                                const rt=remoteTanks[uid].tank;
+                                if(rt.alive&&m.checkCollision(rt)){ m.explode(); break; }
+                            }
+                        }
                     }
                 }
                 mines=mines.filter(m=>!m.exploded);
@@ -1131,6 +1189,19 @@
                                 b.alive=false; e.takeDamage(); if(!e.alive){ score+=100*level; log('info','KILL','Enemy killed! Score: '+score); } break;
                             }
                         }
+                        // Remote player collision
+                        if(isMultiplayerGame){
+                            for(let uid in remoteTanks){
+                                const rt=remoteTanks[uid].tank;
+                                if(rt.alive&&b.checkCollision(rt)){
+                                    // Don't friendly fire on our own bullets hitting ourselves
+                                    const isOwnBullet = b.owner && b.owner === player;
+                                    if(!isOwnBullet){
+                                        b.alive=false; rt.takeDamage(); log('info','MP','Remote player hit! HP: '+rt.health); break;
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 bullets=bullets.filter(b=>b.alive);
@@ -1144,6 +1215,7 @@
             for(let b of bullets) b.draw();
             for(let m of mines) m.draw();
             if(player&&player.alive) player.draw();
+            for(let uid in remoteTanks){ const rt=remoteTanks[uid].tank; if(rt.alive) rt.draw(); }
             for(let e of enemies){ if(e.alive) e.draw(); }
             
             if(gameState===GameState.PLAYING){
