@@ -1039,9 +1039,10 @@
             });
         };
 
-        function startMultiplayerGame(){
+        window.startMultiplayerGame = function(){
             log('info','MP','Starting multiplayer game!');
             showOverlay(null);
+            document.getElementById('lobbyOverlay').style.display='none';
             gameState=GameState.LOADING;
             document.getElementById('loadingScreen').style.display='flex';
             document.getElementById('loadingTitle').textContent='STARTING MATCH...';
