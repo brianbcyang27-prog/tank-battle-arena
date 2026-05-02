@@ -803,25 +803,28 @@
                         });
                         listenToLobby(lobbyRef);
                         showOverlay('lobbyOverlay');
+                        document.getElementById('loadingScreen').style.display='none';
                         document.getElementById('lobbyTitle').textContent='MULTIPLAYER LOBBY';
                         document.getElementById('lobbyMode').textContent='Mode: '+gameMode.toUpperCase();
                         document.getElementById('currentRoomCode').textContent=code;
                         document.getElementById('readyButton').textContent=initialReady?'NOT READY':'READY';
                         document.getElementById('readyButton').style.display='inline-block';
                         document.getElementById('startGameButton').style.display='none';
-                        document.getElementById('lobbyShareHint').style.display='block';
+                        document.getElementById('lobbyShareHint').style.display='none';
                         log('info','LOBBY','Joined lobby via code: '+code);
                     }
                 });
                 if(!found){
                     log('warn','JOIN','Room not found or full: '+code);
                     alert('Room not found or already full!');
+                    document.getElementById('loadingScreen').style.display='none';
                     showOverlay('loginOverlay');
                     document.getElementById('loggedInPanel').style.display='flex';
                 }
             }).catch(e=>{
                 log('error','JOIN','Failed to join room: '+e.message);
                 alert('Failed to join room. Please try again.');
+                document.getElementById('loadingScreen').style.display='none';
                 showOverlay('loginOverlay');
                 document.getElementById('loggedInPanel').style.display='flex';
             });
@@ -902,6 +905,7 @@
             }).catch(e=>{
                 log('error','LOBBY','Lobby search failed: '+e.message);
                 alert('Failed to create/join lobby. Please try again.');
+                document.getElementById('loadingScreen').style.display='none';
                 showOverlay('loginOverlay');
                 document.getElementById('loggedInPanel').style.display='flex';
             });
@@ -928,6 +932,7 @@
                 onDisconnect(lobbyRef).remove();
                 listenToLobby(lobbyRef);
                 showOverlay('lobbyOverlay');
+                document.getElementById('loadingScreen').style.display='none';
                 document.getElementById('lobbyTitle').textContent='ROOM CREATED!';
                 document.getElementById('lobbyMode').textContent='Mode: '+gameMode.toUpperCase();
                 document.getElementById('currentRoomCode').textContent=roomCode;
@@ -948,6 +953,7 @@
             });
             listenToLobby(lobbyRef);
             showOverlay('lobbyOverlay');
+            document.getElementById('loadingScreen').style.display='none';
             document.getElementById('lobbyTitle').textContent='MULTIPLAYER LOBBY';
             document.getElementById('lobbyMode').textContent='Mode: '+gameMode.toUpperCase();
             document.getElementById('currentRoomCode').textContent=roomCode || 'N/A';
