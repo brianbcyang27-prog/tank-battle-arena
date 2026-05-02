@@ -674,17 +674,39 @@
         }
 
         // ==================== LEVEL GENERATION ====================
-        function generateLevel(lvl){
-            log('info','LEVEL','Generating level '+lvl);
+function generateLevel(lvl){
+            log('info','LEVEL','Generating level '+lvl+' (multiplayer: '+isMultiplayerGame+')');
             walls=[]; bullets=[]; particles=[]; mines=[]; enemies=[];
+            
+            // Ensure loading screen is hidden
+            const loadingEl = document.getElementById('loadingScreen');
+            if(loadingEl) loadingEl.style.display='none';
+            
             const gc=Math.floor(CANVAS_WIDTH/CELL_SIZE), gr=Math.floor(CANVAS_HEIGHT/CELL_SIZE);
             let grid=[];
             for(let y=0;y<gr;y++){ grid[y]=[]; for(let x=0;x<gc;x++) grid[y][x]=(x===0||x===gc-1||y===0||y===gr-1)?1:0; }
             const wl=Math.floor(gc*gr*(0.2+Math.min(lvl*0.015,0.08)));
             for(let i=0;i<wl;i++){
-                const x=2+Math.floor(Math.random()*(gc-4)), y=2+Math.floor(Math.random()*(gr-4));
+                const x=2+Math.floor(Math.random()*(gc-4)), y=2+Math.floor(Math.random()*(gc-4));
                 if(grid[y][x]===0){ grid[y][x]=1; }
             }
+            for(let y=0;y<gr;y++) for(let x=0;x<gc;x++) if(grid[y][x]===1) walls.push(new Wall(x*CELL_SIZE,y*CELL_SIZE,CELL_SIZE,CELL_SIZE));
+            player=new Player(CELL_SIZE*2.5,CANVAS_HEIGHT-CELL_SIZE*2.5);
+            const ne=Math.min(2+Math.floor(lvl*1.2),10), tier=Math.min(Math.ceil(lvl/2),4);
+            for(let i=0;i<ne;i++){
+                for(let a=0;a<50;a++){
+                    const ex=CELL_SIZE*2+Math.random()*(CANVAS_WIDTH-CELL_SIZE*4), ey=CELL_SIZE*2+Math.random()*(CANVAS_HEIGHT-CELL_SIZE*4);
+                    if(Math.abs(ex-player.pos.x)<100||Math.abs(ey-player.pos.y)<100) continue;
+                    const et=Math.max(1,tier-(i%2));
+                    enemies.push(new Enemy(ex,ey,et));
+                    break;
+                }
+            }
+            validateAllPaths();
+            levelStartTime=performance.now();
+            gameState=GameState.PLAYING;
+            log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '+player.pos.x+','+player.pos.y);
+        }
             for(let y=0;y<gr;y++) for(let x=0;x<gc;x++) if(grid[y][x]===1) walls.push(new Wall(x*CELL_SIZE,y*CELL_SIZE,CELL_SIZE,CELL_SIZE));
             player=new Player(CELL_SIZE*2.5,CANVAS_HEIGHT-CELL_SIZE*2.5);
             const ne=Math.min(2+Math.floor(lvl*1.2),10), tier=Math.min(Math.ceil(lvl/2),4);
@@ -961,8 +983,8 @@
                 name:currentUser.email, ready:initialReady, joined:serverTimestamp()
             });
             listenToLobby(lobbyRef);
-            showOverlay('lobbyOverlay');
             document.getElementById('loadingScreen').style.display='none';
+            showOverlay('lobbyOverlay');
             document.getElementById('lobbyTitle').textContent='MULTIPLAYER LOBBY';
             document.getElementById('lobbyMode').textContent='Mode: '+gameMode.toUpperCase();
             document.getElementById('currentRoomCode').textContent=roomCode || 'N/A';
@@ -983,7 +1005,11 @@
                 isHost = l.host === currentUser.uid;
                 const players = l.players || {};
                 remotePlayers = players;
-                updatePlayerList(players);
+                
+                // Only update player list if we're in lobby (not in game)
+                if(gameState !== GameState.PLAYING){
+                    updatePlayerList(players);
+                }
                 
                 // Update remote tanks during gameplay
                 if(isMultiplayerGame && gameState === GameState.PLAYING){
@@ -1018,9 +1044,10 @@
                             delete remoteTanks[uid];
                         }
                     }
+                    return; // Don't update UI during gameplay
                 }
                 
-                // Show/hide controls based on host status
+                // Show/hide controls based on host status (only in lobby)
                 if(isHost){
                     document.getElementById('readyButton').style.display='none';
                     document.getElementById('startGameButton').style.display='inline-block';
@@ -1043,6 +1070,7 @@
             
             onValue(child(lobbyRef, 'status'), snapshot=>{
                 if(snapshot.val()==='playing'){
+                    log('info','MP','Received status=playing, starting game...');
                     startMultiplayerGame();
                 }
             });
@@ -1086,11 +1114,15 @@
         window.startMultiplayerGame = function(){
             log('info','MP','Starting multiplayer game!');
             isMultiplayerGame = true;
-            showOverlay(null);
+            gameState = GameState.LOADING;
+            
+            // Hide all overlays completely
+            document.querySelectorAll('.overlay').forEach(o=>o.style.display='none');
             document.getElementById('lobbyOverlay').style.display='none';
-            gameState=GameState.LOADING;
             document.getElementById('loadingScreen').style.display='flex';
+            document.getElementById('loadingScreen').style.zIndex='100';
             document.getElementById('loadingTitle').textContent='STARTING MATCH...';
+            document.getElementById('loadingSubtitle').textContent='';
             
             // Clean up old lobby data
             if(playerUpdateInterval){
@@ -1098,6 +1130,7 @@
                 playerUpdateInterval = null;
             }
             
+            log('info','MP','Generating level for multiplayer...');
             generateLevel(1);
         }
 
