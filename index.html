@@ -900,6 +900,28 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
             log('info','GAME','Game over. Final score: '+score+', Level: '+level);
         }
 
+        function multiplayerGameOver(isWinner){
+            gameState=GameState.GAME_OVER;
+            const resultText=isWinner?'VICTORY!':'DEFEAT!';
+            const resultColor=isWinner?'#27ae60':'#e74c3c';
+            const resultOverlay=document.getElementById('gameOverOverlay');
+            resultOverlay.innerHTML=`
+                <h1 style="color:${resultColor};font-size:64px;margin:0 0 20px;text-shadow:0 0 30px ${resultColor};">${resultText}</h1>
+                <p style="color:#eaeaea;font-size:20px;margin:0 0 30px;">${isWinner?'You destroyed all enemies!':'You were destroyed!'}</p>
+                <button onclick="leaveLobby()" style="padding:15px 40px;font-size:18px;cursor:pointer;background:#3498db;border:none;border-radius:8px;color:white;">BACK TO MENU</button>
+            `;
+            showOverlay('gameOverOverlay');
+            // Announce result to Firebase so all clients see it
+            const lobbyRef=ref(db, 'lobbies/'+lobbyId);
+            const loserUid = isWinner ? Object.keys(remoteTanks)[0] : currentUser.uid;
+            update(lobbyRef, {
+                status: 'gameOver',
+                winner: isWinner ? currentUser.uid : loserUid,
+                gameResult: isWinner ? 'win' : 'lose'
+            });
+            log('info','MP','Game over. Result: '+(isWinner?'WIN':'LOSE'));
+        }
+
         // ==================== MULTIPLAYER ====================
         function createOrJoinLobby(){
             const playerCount = gameMode==='1v1'?2:gameMode==='2v2'?4:6;
@@ -1061,6 +1083,25 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
                     startMultiplayerGame();
                 }
             });
+
+            onValue(child(lobbyRef, 'gameResult'), snapshot=>{
+                const result = snapshot.val();
+                if(result && gameState === GameState.PLAYING){
+                    // We didn't trigger gameOver ourselves, so we lost
+                    const isWinner = result === 'win';
+                    gameState = GameState.GAME_OVER;
+                    const resultText=isWinner?'VICTORY!':'DEFEAT!';
+                    const resultColor=isWinner?'#27ae60':'#e74c3c';
+                    const resultOverlay=document.getElementById('gameOverOverlay');
+                    resultOverlay.innerHTML=`
+                        <h1 style="color:${resultColor};font-size:64px;margin:0 0 20px;text-shadow:0 0 30px ${resultColor};">${resultText}</h1>
+                        <p style="color:#eaeaea;font-size:20px;margin:0 0 30px;">${isWinner?'You destroyed all enemies!':'You were destroyed!'}</p>
+                        <button onclick="leaveLobby()" style="padding:15px 40px;font-size:18px;cursor:pointer;background:#3498db;border:none;border-radius:8px;color:white;">BACK TO MENU</button>
+                    `;
+                    showOverlay('gameOverOverlay');
+                    log('info','MP','Received game result: '+(isWinner?'WIN':'LOSE'));
+                }
+            });
         }
 
         function updatePlayerList(players){
@@ -1182,12 +1223,12 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
                 for(let m of mines) m.update(dt);
                 for(let m of mines){
                     if(m.armed&&!m.exploded){
-                        if(player&&player.alive&&m.checkCollision(player)) m.explode();
+                        if(player&&player.alive&&m.checkCollision(player)){ m.explode(); if(!player.alive&&isMultiplayerGame) multiplayerGameOver(false); else if(!player.alive) gameOver(); }
                         for(let e of enemies){ if(e.alive&&m.checkCollision(e)){ m.explode(); break; } }
                         if(isMultiplayerGame){
                             for(let uid in remoteTanks){
                                 const rt=remoteTanks[uid].tank;
-                                if(rt.alive&&m.checkCollision(rt)){ m.explode(); break; }
+                                if(rt.alive&&m.checkCollision(rt)){ m.explode(); rt.takeDamage(10); if(!rt.alive) multiplayerGameOver(true); break; }
                             }
                         }
                     }
@@ -1199,7 +1240,7 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
                 for(let b of bullets){
                     if(b.alive){
                         b.update(dt);
-                        if(player&&player.alive&&b.checkCollision(player)){ b.alive=false; player.takeDamage(); log('info','DAMAGE','Player hit! HP: '+player.health); if(!player.alive) gameOver(); }
+                        if(player&&player.alive&&b.checkCollision(player)){ b.alive=false; player.takeDamage(); log('info','DAMAGE','Player hit! HP: '+player.health); if(!player.alive){ if(isMultiplayerGame) multiplayerGameOver(false); else gameOver(); } }
                         for(let e of enemies){
                             if(e.alive&&b.checkCollision(e)){
                                 const isEnemyBullet = b.owner && b.owner !== player;
@@ -1214,10 +1255,13 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
                             for(let uid in remoteTanks){
                                 const rt=remoteTanks[uid].tank;
                                 if(rt.alive&&b.checkCollision(rt)){
-                                    // Don't friendly fire on our own bullets hitting ourselves
                                     const isOwnBullet = b.owner && b.owner === player;
                                     if(!isOwnBullet){
-                                        b.alive=false; rt.takeDamage(); log('info','MP','Remote player hit! HP: '+rt.health); break;
+                                        b.alive=false; rt.takeDamage(); log('info','MP','Remote player hit! HP: '+rt.health);
+                                        if(!rt.alive){
+                                            multiplayerGameOver(true); // We won!
+                                        }
+                                        break;
                                     }
                                 }
                             }
