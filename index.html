@@ -706,28 +706,10 @@ function generateLevel(lvl){
             validateAllPaths();
             levelStartTime=performance.now();
             gameState=GameState.PLAYING;
-            log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '+player.pos.x+','+player.pos.y);
-        }
-            for(let y=0;y<gr;y++) for(let x=0;x<gc;x++) if(grid[y][x]===1) walls.push(new Wall(x*CELL_SIZE,y*CELL_SIZE,CELL_SIZE,CELL_SIZE));
-            player=new Player(CELL_SIZE*2.5,CANVAS_HEIGHT-CELL_SIZE*2.5);
-            const ne=Math.min(2+Math.floor(lvl*1.2),10), tier=Math.min(Math.ceil(lvl/2),4);
-            for(let i=0;i<ne;i++){
-                for(let a=0;a<50;a++){
-                    const ex=CELL_SIZE*2+Math.random()*(CANVAS_WIDTH-CELL_SIZE*4), ey=CELL_SIZE*2+Math.random()*(CANVAS_HEIGHT-CELL_SIZE*4);
-                    if(Math.abs(ex-player.pos.x)<100||Math.abs(ey-player.pos.y)<100) continue;
-                    const et=Math.max(1,tier-(i%2));
-                    enemies.push(new Enemy(ex,ey,et));
-                    break;
-                }
-            }
-            validateAllPaths();
-            levelStartTime=performance.now();
-            document.getElementById('loadingScreen').style.display='none';
-            gameState=GameState.PLAYING;
-            log('info','LEVEL','Level '+lvl+' generated with '+enemies.length+' enemies');
-        }
+log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '+player.pos.x+','+player.pos.y);
+         }
 
-        function validateAllPaths(){
+         function validateAllPaths(){
             for(let t of [player,...enemies]){
                 if(!t) continue;
                 const dirs=[[0,-1],[0,1],[-1,0],[1,0]];
