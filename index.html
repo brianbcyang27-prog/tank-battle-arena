@@ -688,10 +688,10 @@ function generateLevel(lvl){
             for(let y=0;y<gr;y++){ grid[y]=[]; for(let x=0;x<gc;x++) grid[y][x]=(x===0||x===gc-1||y===0||y===gr-1)?1:0; }
             const wl=Math.floor(gc*gr*(0.2+Math.min(lvl*0.015,0.08)));
             for(let i=0;i<wl;i++){
-                const x=2+Math.floor(Math.random()*(gc-4)), y=2+Math.floor(Math.random()*(gc-4));
-                if(grid[y][x]===0){ grid[y][x]=1; }
+                const x=2+Math.floor(Math.random()*(gc-4)), y=2+Math.floor(Math.random()*(gr-4));
+                if(y>=0 && y<gr && x>=0 && x<gc && grid[y] && grid[y][x]===0){ grid[y][x]=1; }
             }
-            for(let y=0;y<gr;y++) for(let x=0;x<gc;x++) if(grid[y][x]===1) walls.push(new Wall(x*CELL_SIZE,y*CELL_SIZE,CELL_SIZE,CELL_SIZE));
+            for(let y=0;y<gr;y++) for(let x=0;x<gc;x++) if(grid[y] && grid[y][x]===1) walls.push(new Wall(x*CELL_SIZE,y*CELL_SIZE,CELL_SIZE,CELL_SIZE));
             player=new Player(CELL_SIZE*2.5,CANVAS_HEIGHT-CELL_SIZE*2.5);
             const ne=Math.min(2+Math.floor(lvl*1.2),10), tier=Math.min(Math.ceil(lvl/2),4);
             for(let i=0;i<ne;i++){
