@@ -259,6 +259,8 @@
         let localPlayerId = null;
         let isMultiplayerGame = false;
         let remoteTanks = {}; // uid -> { tank: Tank, lastUpdate: number }
+        let remoteBullets = {}; // bid -> { pos:{x,y}, vel:{x,y}, ownerUid:string, alive:bool }
+        let bulletListenerRef = null;
         let playerUpdateInterval = null;
 
         try {
@@ -431,7 +433,7 @@
 
         const COLORS = {
             background: '#1a1a2e', wall: '#16213e', wallBorder: '#0f3460',
-            player: '#e94560', playerTurret: '#ff6b6b',
+            player: '#e94560', playerTurret: '#ff6b6b', player2: '#3498db',
             enemies: ['#f39c12','#27ae60','#9b59b6','#e74c3c'],
             bullet: '#ffffff', bulletGlow: 'rgba(255,255,255,0.5)',
             health: '#e94560', healthBg: '#333', text: '#eaeaea',
@@ -466,13 +468,14 @@
         }
 
         class Tank {
-            constructor(x,y,color){
+            constructor(x,y,color,name=''){
                 this.pos=new Vector2(x,y); this.vel=new Vector2();
                 this.width=36; this.height=36; this.turretAngle=0;
-                this.color=color; this.health=3; this.maxHealth=3;
+                this.color=color; this.name=name; this.health=3; this.maxHealth=3;
                 this.speed=200; this.fireRate=3; this.lastFire=0; this.alive=true;
+                this.labelTime=3; // Show name for 3 seconds
             }
-            update(dt){ this.pos=this.pos.add(this.vel.mul(dt)); this.constrainToBounds(); }
+            update(dt){ this.pos=this.pos.add(this.vel.mul(dt)); this.constrainToBounds(); if(this.labelTime>0) this.labelTime-=dt; }
             constrainToBounds(){
                 this.pos.x=Math.max(18,Math.min(CANVAS_WIDTH-18,this.pos.x));
                 this.pos.y=Math.max(18,Math.min(CANVAS_HEIGHT-18,this.pos.y));
@@ -521,10 +524,21 @@
                 ctx.lineWidth = 1;
                 ctx.strokeRect(this.pos.x - barWidth/2, this.pos.y + barYOffset, barWidth, barHeight);
             }
+
+            // Draw name label above tank (fades after 3 seconds)
+            if(this.name && this.labelTime > 0){
+                ctx.save();
+                ctx.globalAlpha = Math.min(1, this.labelTime);
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 12px Orbitron, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(this.name, this.pos.x, this.pos.y - 32);
+                ctx.restore();
+            }
         }
 
         class Player extends Tank {
-            constructor(x,y){ super(x,y,COLORS.player); this.speed=200; this.fireRate=3; this.lastMine=0; this.lastSync=0; }
+            constructor(x,y,name=''){ super(x,y,COLORS.player,name); this.speed=200; this.fireRate=3; this.lastMine=0; this.lastSync=0; }
             update(dt,now){
                 let mx=0,my=0;
                 if(keys['w']||keys['KeyW']) my-=1;
@@ -535,7 +549,7 @@
                 this.turretAngle=Math.atan2(mouseY-this.pos.y,mouseX-this.pos.x);
                 super.update(dt);
                 for(let w of walls){ if(this.collidesWithWall(w)) resolveWallCollision(this,w); }
-                if(mouseDown){ const b=this.fire(now); if(b) bullets.push(b); }
+                if(mouseDown){ const b=this.fire(now); if(b){ bullets.push(b); if(isMultiplayerGame && lobbyId){ const bid = Date.now()+''+Math.random(); push(ref(db, 'lobbies/'+lobbyId+'/bullets/'+bid), { x:b.pos.x, y:b.pos.y, vx:b.vel.x, vy:b.vel.y, ownerUid:currentUser.uid, alive:true }); b.fbId = bid; } } }
                 if((keys['c']||keys['KeyC'])&&now-this.lastMine>=1000&&mines.length<3){
                     mines.push(new LandMine(this.pos.x,this.pos.y));
                     this.lastMine=now;
@@ -634,6 +648,29 @@
             }
             impact(){ for(let i=0;i<5;i++){ const a=Math.random()*Math.PI*2; particles.push(new Particle(this.pos.x,this.pos.y,Math.cos(a)*(30+Math.random()*60),Math.sin(a)*(30+Math.random()*60),'#ffffff',0.2+Math.random()*0.2)); } }
             checkCollision(tank){ if(tank===this.owner) return false; const d=this.pos.distanceTo(tank.pos); return d<this.radius+18; }
+            draw(){
+                if(!this.alive||isNaN(this.pos.x)||isNaN(this.pos.y)) return;
+                for(let i=0;i<this.trail.length;i++){ if(this.trail[i].a>0){ ctx.fillStyle='rgba(255,255,255,'+(this.trail[i].a*0.5)+')'; ctx.beginPath(); ctx.arc(this.trail[i].x,this.trail[i].y,this.radius*(i/this.trail.length),0,Math.PI*2); ctx.fill(); } }
+                ctx.fillStyle=COLORS.bullet; ctx.beginPath(); ctx.arc(this.pos.x,this.pos.y,this.radius,0,Math.PI*2); ctx.fill();
+            }
+        }
+
+        // Lightweight bullet for remote players (mirrors Bullet behavior)
+        class SimpleBullet {
+            constructor(x,y,vx,vy,ownerUid){ this.pos={x,y}; this.vel={x:vx,y:vy}; this.ownerUid=ownerUid; this.radius=5; this.alive=true; this.trail=[]; }
+            update(dt){
+                if(!this.alive) return;
+                this.trail.push({x:this.pos.x,y:this.pos.y,a:1}); if(this.trail.length>8) this.trail.shift();
+                for(let t of this.trail) t.a-=dt*3;
+                this.pos.x+=this.vel.x*dt; this.pos.y+=this.vel.y*dt;
+                if(isNaN(this.pos.x)||isNaN(this.pos.y)){ this.alive=false; return; }
+                if(this.pos.x<0||this.pos.x>CANVAS_WIDTH||this.pos.y<0||this.pos.y>CANVAS_HEIGHT){ this.alive=false; return; }
+                for(let w of walls){
+                    if(this.pos.x>w.x&&this.pos.x<w.x+w.w&&this.pos.y>w.y&&this.pos.y<w.y+w.h){ this.alive=false; break; }
+                }
+            }
+            checkCollisionWithPlayer(p){ if(!p||!p.alive) return false; if(this.ownerUid===currentUser.uid) return false; const d=Math.sqrt((this.pos.x-p.pos.x)**2+(this.pos.y-p.pos.y)**2); return d<this.radius+18; }
+            checkCollisionWithRemote(uid){ const rt=remoteTanks[uid]&&remoteTanks[uid].tank; if(!rt||!rt.alive) return false; if(this.ownerUid===uid) return false; const d=Math.sqrt((this.pos.x-rt.pos.x)**2+(this.pos.y-rt.pos.y)**2); return d<this.radius+18; }
             draw(){
                 if(!this.alive||isNaN(this.pos.x)||isNaN(this.pos.y)) return;
                 for(let i=0;i<this.trail.length;i++){ if(this.trail[i].a>0){ ctx.fillStyle='rgba(255,255,255,'+(this.trail[i].a*0.5)+')'; ctx.beginPath(); ctx.arc(this.trail[i].x,this.trail[i].y,this.radius*(i/this.trail.length),0,Math.PI*2); ctx.fill(); } }
@@ -965,6 +1002,8 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
                 code: roomCode,
                 players:{}
             }).then(()=>{
+                setInStorage('lobbyId', lobbyId);
+                setInStorage('lobbyHost', currentUser.uid);
                 const initialReady = settings.autoReady;
                 set(child(lobbyRef, 'players/'+currentUser.uid), {
                     name:currentUser.email, ready:initialReady, joined:serverTimestamp()
@@ -1140,9 +1179,36 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
         };
 
         window.startMultiplayerGame = function(){
-            log('info','MP','Starting multiplayer game!');
+log('info','MP','Starting multiplayer game!');
             isMultiplayerGame = true;
             gameState = GameState.LOADING;
+
+            // Set up Firebase bullet listener for real-time bullet sync
+            const bulletsRef = ref(db, 'lobbies/'+lobbyId+'/bullets');
+            bulletListenerRef = onValue(bulletsRef, snapshot=>{
+                if(!isMultiplayerGame || gameState !== GameState.PLAYING) return;
+                const data = snapshot.val() || {};
+                const remoteIds = new Set(Object.keys(data));
+
+                // Update/create remote bullets
+                for(let [bid, bd] of Object.entries(data)){
+                    if(bd.ownerUid === currentUser.uid) continue; // Skip our own bullets
+                    if(!remoteBullets[bid]){
+                        remoteBullets[bid] = new SimpleBullet(bd.x, bd.y, bd.vx, bd.vy, bd.ownerUid);
+                    } else {
+                        remoteBullets[bid].pos = {x: bd.x, y: bd.y};
+                        remoteBullets[bid].vel = {x: bd.vx, y: bd.vy};
+                        remoteBullets[bid].alive = bd.alive;
+                    }
+                }
+
+                // Remove bullets that no longer exist in Firebase
+                for(let bid in remoteBullets){
+                    if(!remoteIds.has(bid)){
+                        delete remoteBullets[bid];
+                    }
+                }
+            });
 
             // Hide all overlays completely
             document.querySelectorAll('.overlay').forEach(o=>o.style.display='none');
@@ -1167,8 +1233,94 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
             // Small delay so loading screen is visible to user
             setTimeout(()=>{
                 document.getElementById('loadingScreen').style.display='none';
-                generateLevel(1);
+
+                // Check Firebase to determine if we are host
+                get(ref(db, 'lobbies/'+lobbyId)).then(snap=>{
+                    const l = snap.val();
+                    const isHost = l && l.host === currentUser.uid;
+
+                    if(isHost){
+                        // Host: generate map and save to Firebase
+                        generateLevel(1);
+                        // Save walls to Firebase for joiner
+                        const wallData = walls.map(w=>({x:w.x,y:w.y,w:w.w,h:w.h}));
+                        const hostStart = { x: player.pos.x, y: player.pos.y };
+                        const joinerStart = { x: CANVAS_WIDTH-CELL_SIZE*2.5, y: CELL_SIZE*2.5 };
+                        update(ref(db, 'lobbies/'+lobbyId), {
+                            map: wallData,
+                            hostStart: hostStart,
+                            joinerStart: joinerStart,
+                            mapGenerated: true
+                        });
+                        // Set player color (host = red) and name
+                        player.color = COLORS.player;
+                        player.name = currentUser.email ? currentUser.email.split('@')[0] : 'Player';
+                        player.labelTime = 3;
+                        update(ref(db, 'lobbies/'+lobbyId+'/players/'+currentUser.uid), {
+                            color: COLORS.player,
+                            name: player.name
+                        });
+                        log('info','MP','Host generated map, saved to Firebase');
+                    } else {
+                        // Joiner: load map from Firebase
+                        listenToMapAndStart();
+                    }
+                }).catch(e=>{
+                    log('error','MP','Failed to check host status: '+e);
+                    // Fallback: try to generate anyway
+                    generateLevel(1);
+                });
             }, 300);
+        }
+
+        function getFromStorage(key){
+            try { return localStorage.getItem('tankBattle_'+key); } catch(e) { return null; }
+        }
+
+        function setInStorage(key,val){
+            try { localStorage.setItem('tankBattle_'+key, val); } catch(e) {}
+        }
+
+        function listenToMapAndStart(){
+            // Listen for map data from host
+            const mapRef = ref(db, 'lobbies/'+lobbyId);
+            onValue(mapRef, snapshot=>{
+                const data = snapshot.val();
+                if(data && data.map && data.mapGenerated && data.hostStart && data.joinerStart){
+                    log('info','MP','Received map from host, loading...');
+                    // Load map and walls
+                    loadMapFromData(data.map, data.hostStart, data.joinerStart);
+                    // Set player color (joiner = blue)
+                    player.color = COLORS.player2;
+                    // Also write player color to Firebase
+                    update(ref(db, 'lobbies/'+lobbyId+'/players/'+currentUser.uid), {
+                        color: COLORS.player2,
+                        name: currentUser.email ? currentUser.email.split('@')[0] : 'Player'
+                    });
+                    // Stop listening
+                    off(mapRef);
+                }
+            }, { onlyOnce: true });
+        }
+
+        function loadMapFromData(wallData, hostStart, joinerStart){
+            // Clear existing
+            walls = []; bullets = []; particles = []; mines = []; enemies = [];
+
+            // Load walls
+            for(let wd of wallData){
+                walls.push(new Wall(wd.x, wd.y, wd.w, wd.h));
+            }
+
+            // Determine our starting position (joiner)
+            const myStart = joinerStart;
+            player = new Player(myStart.x, myStart.y, currentUser.email ? currentUser.email.split('@')[0] : 'Player');
+            player.color = COLORS.player2;
+            player.pos = new Vector2(myStart.x, myStart.y);
+
+            levelStartTime = performance.now();
+            gameState = GameState.PLAYING;
+            log('info','LEVEL','Map loaded - walls: '+walls.length);
         }
 
         // ==================== LEADERBOARD ====================
@@ -1278,6 +1430,38 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
                     }
                 }
                 bullets=bullets.filter(b=>b.alive);
+
+                // Remove dead local bullets from Firebase
+                if(isMultiplayerGame && lobbyId){
+                    for(let b of bullets){
+                        if(!b.alive && b.fbId){
+                            remove(ref(db, 'lobbies/'+lobbyId+'/bullets/'+b.fbId));
+                        }
+                    }
+                }
+
+                // Update and draw remote bullets from Firebase
+                if(isMultiplayerGame){
+                    for(let bid in remoteBullets){
+                        const rb = remoteBullets[bid];
+                        rb.update(dt);
+                        // Collision: remote bullet hits local player
+                        if(rb.alive && rb.checkCollisionWithPlayer(player)){
+                            rb.alive = false;
+                            player.takeDamage();
+                            log('info','MP','Hit by remote bullet! HP: '+player.health);
+                            if(!player.alive) multiplayerGameOver(false);
+                        }
+                    }
+                    // Remove dead remote bullets from Firebase
+                    for(let bid in remoteBullets){
+                        if(!remoteBullets[bid].alive){
+                            remove(ref(db, 'lobbies/'+lobbyId+'/bullets/'+bid));
+                            delete remoteBullets[bid];
+                        }
+                    }
+                    remoteBullets = Object.fromEntries(Object.entries(remoteBullets).filter(([k,b])=>b.alive));
+                }
 
                 if(!isMultiplayerGame && enemies.filter(e=>e.alive).length===0 && player.alive) levelComplete();
             }
