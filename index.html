@@ -1164,7 +1164,11 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
             }
 
             log('info','MP','Generating level for multiplayer...');
-            generateLevel(1);
+            // Small delay so loading screen is visible to user
+            setTimeout(()=>{
+                document.getElementById('loadingScreen').style.display='none';
+                generateLevel(1);
+            }, 300);
         }
 
         // ==================== LEADERBOARD ====================
