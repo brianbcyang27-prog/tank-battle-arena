@@ -1269,8 +1269,8 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
                     }
                 }
                 bullets=bullets.filter(b=>b.alive);
-                
-                if(enemies.filter(e=>e.alive).length===0&&player.alive) levelComplete();
+
+                if(!isMultiplayerGame && enemies.filter(e=>e.alive).length===0 && player.alive) levelComplete();
             }
             
             for(let p of particles){ if(p.life>0){ p.update(dt); p.draw(); } }
