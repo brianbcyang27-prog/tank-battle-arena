@@ -1143,7 +1143,7 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
             log('info','MP','Starting multiplayer game!');
             isMultiplayerGame = true;
             gameState = GameState.LOADING;
-            
+
             // Hide all overlays completely
             document.querySelectorAll('.overlay').forEach(o=>o.style.display='none');
             document.getElementById('lobbyOverlay').style.display='none';
@@ -1151,13 +1151,18 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
             document.getElementById('loadingScreen').style.zIndex='100';
             document.getElementById('loadingTitle').textContent='STARTING MATCH...';
             document.getElementById('loadingSubtitle').textContent='';
-            
+
             // Clean up old lobby data
             if(playerUpdateInterval){
                 clearInterval(playerUpdateInterval);
                 playerUpdateInterval = null;
             }
-            
+
+            // Notify Firebase so joiner receives the signal to start
+            if(lobbyId){
+                update(ref(db, 'lobbies/'+lobbyId), { status: 'playing' });
+            }
+
             log('info','MP','Generating level for multiplayer...');
             generateLevel(1);
         }
