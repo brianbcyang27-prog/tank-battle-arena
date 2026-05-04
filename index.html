@@ -221,7 +221,7 @@
 
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut as fbSignOut, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut as fbSignOut, onAuthStateChanged, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
         import { getDatabase, ref, set, push, get, onValue, off, update, remove, serverTimestamp, query, orderByChild, limitToLast, onDisconnect, child } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 
         // Build: 2025-05-03 force rebuild
@@ -400,27 +400,6 @@
             }
         };
 
-        window.signInWithGoogle = async function() {
-            const errorDiv = document.getElementById('authError');
-            errorDiv.style.display = 'none';
-            log('info','AUTH','Attempting Google sign-in');
-            
-            try {
-                const provider = new GoogleAuthProvider();
-                await signInWithPopup(auth, provider);
-                log('info','AUTH','Google sign-in successful');
-            } catch(e) {
-                if (e.code !== 'auth/popup-closed-by-user') {
-                    errorDiv.textContent = e.message;
-                    errorDiv.style.display = 'block';
-                    log('error','AUTH','Google sign-in failed: ' + e.message);
-                } else {
-                    log('info','AUTH','Google sign-in popup closed by user');
-                }
-            }
-        };
-
-
         window.signInAsGuest = async function(){
             const errorDiv = document.getElementById('authError');
             errorDiv.style.display = 'none';
@@ -555,8 +534,6 @@
                 ctx.restore();
             }
         }
-        }
-
 
         class Player extends Tank {
             constructor(x,y,name=''){ super(x,y,COLORS.player,name); this.speed=200; this.fireRate=3; this.lastMine=0; this.lastSync=0; }
