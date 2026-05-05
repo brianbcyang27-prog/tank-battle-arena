@@ -546,7 +546,7 @@
                 this.turretAngle=Math.atan2(mouseY-this.pos.y,mouseX-this.pos.x);
                 super.update(dt);
                 for(let w of walls){ if(this.collidesWithWall(w)) resolveWallCollision(this,w); }
-                if(mouseDown){ const b=this.fire(now); if(b){ bullets.push(b); if(isMultiplayerGame && lobbyId){ const bid = Date.now()+''+Math.random(); push(ref(db, 'lobbies/'+lobbyId+'/bullets/'+bid), { x:b.pos.x, y:b.pos.y, vx:b.vel.x, vy:b.vel.y, ownerUid:currentUser.uid, alive:true }); b.fbId = bid; } } }
+                if(mouseDown){ const b=this.fire(now); if(b){ bullets.push(b); if(isMultiplayerGame && lobbyId){ const bid = Date.now()+'-'+Math.random(); push(ref(db, 'lobbies/'+lobbyId+'/bullets/'+bid), { x:b.pos.x, y:b.pos.y, vx:b.vel.x, vy:b.vel.y, ownerUid:currentUser.uid, alive:true }); b.fbId = bid; } } }
                 if((keys['c']||keys['KeyC'])&&now-this.lastMine>=1000&&mines.length<3){
                     mines.push(new LandMine(this.pos.x,this.pos.y));
                     this.lastMine=now;
