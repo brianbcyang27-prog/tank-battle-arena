@@ -1,9 +1,9 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut as fbSignOut, onAuthStateChanged, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut as fbSignOut, onAuthStateChanged, signInAnonymously, updateProfile } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getDatabase, ref, set, push, get, onValue, off, update, remove, serverTimestamp, query, orderByChild, limitToLast, onDisconnect, child } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 
 export {
-    getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, fbSignOut as signOut, onAuthStateChanged, signInAnonymously,
+    getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, fbSignOut as signOut, onAuthStateChanged, signInAnonymously, updateProfile,
     getDatabase, ref, set, push, get, onValue, off, update, remove, serverTimestamp, query, orderByChild, limitToLast, onDisconnect, child
 };
 
@@ -136,7 +136,7 @@ window.signInAsGuest = async function(){
         const result = await signInAnonymously(auth);
         const userRef = ref(db, 'users/'+result.user.uid);
         await set(userRef, { name: name, email: name+'@guest.local', createdAt: serverTimestamp() });
-        await result.user.updateProfile({ displayName: name });
+        await updateProfile(result.user, { displayName: name });
         log('info','AUTH','Guest sign-in successful: '+result.user.uid);
     } catch(e) {
         errorDiv.textContent = e.message;

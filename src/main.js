@@ -180,15 +180,24 @@ function gameLoop(ct) {
     requestAnimationFrame(gameLoop);
 }
 
+let spaceConsumed = false;
+
 document.addEventListener('keydown', (e) => {
     const tag = document.activeElement ? document.activeElement.tagName : '';
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
     G.keys[e.code] = true;
     if (e.key === ' ' && G.gameState === GameState.MENU) startGame();
-    if (e.key === ' ' && G.gameState === GameState.LEVEL_COMPLETE) nextLevel();
+    if (e.key === ' ' && G.gameState === GameState.LEVEL_COMPLETE && !spaceConsumed) {
+        spaceConsumed = true;
+        e.preventDefault();
+        nextLevel();
+    }
 });
 
-document.addEventListener('keyup', (e) => { G.keys[e.code] = false; });
+document.addEventListener('keyup', (e) => {
+    G.keys[e.code] = false;
+    if (e.key === ' ') spaceConsumed = false;
+});
 
 canvas.addEventListener('mousemove', (e) => {
     const r = canvas.getBoundingClientRect();

@@ -1,0 +1,14 @@
+- generic [active] [ref=e1]:
+  - button "LOG" [ref=e2] [cursor=pointer]
+  - generic [ref=e5]:
+    - heading "TANK BATTLE" [level=1] [ref=e6]
+    - heading "ARENA" [level=2] [ref=e7]
+    - generic [ref=e8]:
+      - textbox "Email" [ref=e9]
+      - textbox "Password" [ref=e10]
+      - button "LOGIN" [ref=e11] [cursor=pointer]
+      - button "SIGN UP" [ref=e12] [cursor=pointer]
+      - generic [ref=e14]: OR
+      - textbox "Enter your name" [ref=e15]
+      - button "PLAY AS GUEST" [ref=e16] [cursor=pointer]
+    - generic [ref=e17]: Please enter a name

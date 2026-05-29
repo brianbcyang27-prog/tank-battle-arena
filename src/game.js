@@ -7,6 +7,8 @@ import { log } from './log.js';
 
 // ==================== GAME FLOW ====================
 export function startGame(){
+    if (G.gameState === GameState.LOADING) return;
+    G.gameState = GameState.LOADING;
     showOverlay(null);
     G.level=1; G.score=0;
     document.getElementById('loadingScreen').style.display='flex';
@@ -33,6 +35,7 @@ window.startGameFromMenu = startGameFromMenu;
 
 // ==================== LEVEL COMPLETE ====================
 export function levelComplete(){
+    G.mouseDown = false;
     const tb=Math.max(0,Math.floor(1000-G.levelTime*10));
     G.score+=tb+500*G.level;
     G.gameState=GameState.LEVEL_COMPLETE;
@@ -43,6 +46,10 @@ export function levelComplete(){
 }
 
 export function nextLevel(){
+    if (G.gameState === GameState.LOADING) return;
+    G.gameState = GameState.LOADING;
+    G.mouseDown = false;
+    showOverlay(null);
     G.level++;
     document.getElementById('loadingScreen').style.display='flex';
     document.getElementById('loadingTitle').textContent='GENERATING LEVEL '+G.level+'...';

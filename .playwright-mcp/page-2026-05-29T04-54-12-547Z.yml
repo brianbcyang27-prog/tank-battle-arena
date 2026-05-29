@@ -1,0 +1,20 @@
+- generic [active] [ref=e1]:
+  - button "LOG" [ref=e2] [cursor=pointer]
+  - generic [ref=e5]:
+    - heading "TANK BATTLE" [level=1] [ref=e6]
+    - heading "ARENA" [level=2] [ref=e7]
+    - generic [ref=e18]:
+      - paragraph [ref=e19]:
+        - text: Welcome,
+        - text: "!"
+      - generic [ref=e20]:
+        - paragraph [ref=e21]: SELECT GAME MODE
+        - generic [ref=e22]:
+          - button "SINGLE PLAYER" [ref=e23] [cursor=pointer]
+          - button "1v1" [ref=e24] [cursor=pointer]
+          - button "2v2" [ref=e25] [cursor=pointer]
+          - button "3v3" [ref=e26] [cursor=pointer]
+        - button "START GAME" [ref=e27] [cursor=pointer]
+        - button "LOG OUT" [ref=e28] [cursor=pointer]
+        - button "SETTINGS" [ref=e29] [cursor=pointer]
+    - generic [ref=e17]: result.user.updateProfile is not a function
