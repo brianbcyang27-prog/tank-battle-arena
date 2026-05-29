@@ -4,7 +4,7 @@ import { COLORS, CANVAS_WIDTH, CANVAS_HEIGHT, GameState } from './config.js';
 import { loadSettings, showOverlay } from './ui.js';
 import { startGame, startGameFromMenu, levelComplete, nextLevel, gameOver, multiplayerGameOver } from './game.js';
 import { generateLevel } from './levels.js';
-import { db, ref, update, push, remove } from './firebase.js';
+import { db, ref, set, update, remove } from './firebase.js';
 import './multiplayer.js';
 
 const canvas = document.getElementById('gameCanvas');
@@ -34,8 +34,8 @@ function gameLoop(ct) {
         if (G.isMultiplayerGame && G.lobbyId && G.currentUser) {
             for (let b of G.bullets) {
                 if (b._isPlayerBullet && !b._synced && b.alive) {
-                    const bid = Date.now() + '-' + Math.random();
-                    push(ref(db, 'lobbies/' + G.lobbyId + '/bullets/' + bid), {
+                    const bid = Date.now() + '-' + Math.floor(Math.random() * 1e9) + '-' + ++G._bulletSeq;
+                    set(ref(db, 'lobbies/' + G.lobbyId + '/bullets/' + bid), {
                         x: b.pos.x, y: b.pos.y, vx: b.vel.x, vy: b.vel.y,
                         ownerUid: G.currentUser.uid, alive: true
                     });
@@ -208,6 +208,10 @@ document.addEventListener('keyup', (e) => {
     G.keys[e.code] = false;
     if (e.key === ' ') spaceConsumed = false;
 });
+
+// Clear all keys on blur/visibility loss to prevent stuck keys (e.g., holding C then alt-tabbing)
+window.addEventListener('blur', () => { G.keys = {}; });
+document.addEventListener('visibilitychange', () => { if (document.hidden) G.keys = {}; });
 
 canvas.addEventListener('mousemove', (e) => {
     const r = canvas.getBoundingClientRect();

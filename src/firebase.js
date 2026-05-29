@@ -136,12 +136,17 @@ window.signOut = async function() {
     }
 };
 
+let _guestSigningIn = false;
 window.signInAsGuest = async function(){
+    if (_guestSigningIn) { log('warn','AUTH','Guest sign-in already in progress, ignoring'); return; }
+    _guestSigningIn = true;
+    const btn = document.getElementById('guestSignInBtn');
+    if (btn) btn.disabled = true;
     const errorDiv = document.getElementById('authError');
     errorDiv.style.display = 'none';
     const nameInput = document.getElementById('guestNameInput');
     const name = nameInput ? nameInput.value.trim() : 'Guest';
-    if(!name) { errorDiv.textContent = 'Please enter a name'; errorDiv.style.display = 'block'; return; }
+    if(!name) { errorDiv.textContent = 'Please enter a name'; errorDiv.style.display = 'block'; _guestSigningIn = false; if(btn) btn.disabled = false; return; }
     log('info','AUTH','Attempting guest sign-in with name: '+name);
     try {
         const result = await signInAnonymously(auth);
@@ -153,5 +158,8 @@ window.signInAsGuest = async function(){
         errorDiv.textContent = e.message;
         errorDiv.style.display = 'block';
         log('error','AUTH','Guest sign-in failed: '+e.message);
+    } finally {
+        _guestSigningIn = false;
+        if (btn) btn.disabled = false;
     }
 };

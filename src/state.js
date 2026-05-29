@@ -35,6 +35,7 @@ export const G = {
     remoteTanks: {},
     remoteBullets: {},
     _multiplayerStarting: false,
+    _bulletSeq: 0,
     bulletListenerRef: null,
     playerUpdateInterval: null,
 

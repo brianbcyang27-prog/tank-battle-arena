@@ -1,6 +1,6 @@
 import { G } from './state.js';
 import { log } from './log.js';
-import { COLORS, CANVAS_WIDTH, CELL_SIZE, GameState } from './config.js';
+import { COLORS, CANVAS_WIDTH, CANVAS_HEIGHT, CELL_SIZE, GameState } from './config.js';
 import { Tank, Player, Wall, Vector2, SimpleBullet } from './engine.js';
 import { generateLevel } from './levels.js';
 import { ref, update, set, child, get, onValue, off, remove, serverTimestamp, onDisconnect, db } from './firebase.js';
