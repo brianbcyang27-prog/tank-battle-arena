@@ -118,22 +118,19 @@ function gameLoop(ct) {
                 if (G.isMultiplayerGame) {
                     for (let uid in G.remoteTanks) {
                         const rt = G.remoteTanks[uid].tank;
+                        // b.checkCollision already prevents hitting yourself (owner check),
+                        // so all passing bullets should damage the remote player's tank
                         if (rt.alive && b.checkCollision(rt)) {
-                            const isOwnBullet = b.owner && b.owner === G.player;
-                            if (!isOwnBullet) {
-                                b.alive = false;
-                                rt.takeDamage();
-                                log('info', 'MP', 'Remote player hit! HP: ' + rt.health);
-                                if (!rt.alive) { multiplayerGameOver(true); }
-                                break;
-                            }
+                            b.alive = false;
+                            rt.takeDamage();
+                            log('info', 'MP', 'Remote player hit! HP: ' + rt.health);
+                            if (!rt.alive) { multiplayerGameOver(true); }
+                            break;
                         }
                     }
                 }
             }
         }
-        G.bullets = G.bullets.filter(b => b.alive);
-
         if (G.isMultiplayerGame && G.lobbyId) {
             for (let b of G.bullets) {
                 if (!b.alive && b.fbId) {
@@ -142,6 +139,7 @@ function gameLoop(ct) {
                 }
             }
         }
+        G.bullets = G.bullets.filter(b => b.alive);
 
         if (G.isMultiplayerGame) {
             for (let bid in G.remoteBullets) {
@@ -171,6 +169,7 @@ function gameLoop(ct) {
     G.particles = G.particles.filter(p => p.life > 0);
 
     for (let b of G.bullets) b.draw();
+    for (let bid in G.remoteBullets) G.remoteBullets[bid].draw();
     for (let m of G.mines) m.draw();
     if (G.player && G.player.alive) G.player.draw();
     for (let uid in G.remoteTanks) { const rt = G.remoteTanks[uid].tank; if (rt.alive) rt.draw(); }

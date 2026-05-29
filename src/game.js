@@ -69,6 +69,7 @@ export function gameOver(){
 }
 
 export function multiplayerGameOver(isWinner){
+    if (G.gameState !== GameState.PLAYING) return; // prevent overwriting an already-decided game
     G.gameState=GameState.GAME_OVER;
     const resultText=isWinner?'VICTORY!':'DEFEAT!';
     const resultColor=isWinner?'#27ae60':'#e74c3c';
@@ -76,16 +77,19 @@ export function multiplayerGameOver(isWinner){
     resultOverlay.innerHTML=`
         <h1 style="color:${resultColor};font-size:64px;margin:0 0 20px;text-shadow:0 0 30px ${resultColor};">${resultText}</h1>
         <p style="color:#eaeaea;font-size:20px;margin:0 0 30px;">${isWinner?'You destroyed all enemies!':'You were destroyed!'}</p>
-        <button onclick="leaveLobby()" style="padding:15px 40px;font-size:18px;cursor:pointer;background:#3498db;border:none;border-radius:8px;color:white;">BACK TO MENU</button>
+        <div style="display:flex;gap:15px;justify-content:center;">
+            <button onclick="rematch()" style="padding:15px 40px;font-size:18px;cursor:pointer;background:#27ae60;border:none;border-radius:8px;color:white;">PLAY AGAIN</button>
+            <button onclick="leaveLobby()" style="padding:15px 40px;font-size:18px;cursor:pointer;background:#3498db;border:none;border-radius:8px;color:white;">BACK TO MENU</button>
+        </div>
     `;
     showOverlay('gameOverOverlay');
     import('./firebase.js').then(({ ref, update, db }) => {
         const lobbyRef=ref(db, 'lobbies/'+G.lobbyId);
         const remoteUids = Object.keys(G.remoteTanks);
-        const loserUid = isWinner && remoteUids.length > 0 ? remoteUids[0] : G.currentUser.uid;
+        const winnerUid = isWinner ? G.currentUser.uid : (remoteUids.length > 0 ? remoteUids[0] : null);
         update(lobbyRef, {
             status: 'gameOver',
-            winner: isWinner ? G.currentUser.uid : loserUid,
+            winner: winnerUid,
             gameResult: isWinner ? 'win' : 'lose'
         });
     });

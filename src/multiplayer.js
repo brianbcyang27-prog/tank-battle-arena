@@ -191,7 +191,10 @@ export function listenToLobby(lobbyRef) {
                     G.remoteTanks[uid].tank.pos.x = p.x;
                     G.remoteTanks[uid].tank.pos.y = p.y;
                     G.remoteTanks[uid].tank.turretAngle = p.angle || 0;
-                    G.remoteTanks[uid].tank.health = p.health || 3;
+                    // Use Math.min: local damage predictions (lower) are NOT overwritten
+                    // by stale Firebase values (higher). Only Firebase-confirmed hits go lower.
+                    const remoteHealth = p.health !== undefined ? p.health : 3;
+                    G.remoteTanks[uid].tank.health = Math.min(G.remoteTanks[uid].tank.health, remoteHealth);
                     G.remoteTanks[uid].lastUpdate = Date.now();
                 }
             }
@@ -236,11 +239,15 @@ export function listenToLobby(lobbyRef) {
         }
     });
 
-    // Listen for game result
-    onValue(child(lobbyRef, 'gameResult'), snapshot => {
-        const result = snapshot.val();
-        if (result && G.gameState === GameState.PLAYING) {
-            const isWinner = result === 'win';
+    // Listen for game result (uses `winner` UID to determine VICTORY/DEFEAT).
+    // Only fires if the game is still locally PLAYING (no local kill/death detected yet).
+    // The guard prevents the Firebase result from overwriting a correct local result
+    // in the simultaneous-death race. If BOTH players detect a kill locally, each trusts
+    // their own result; the player who didn't detect anything gets the Firebase result.
+    onValue(child(lobbyRef, 'winner'), snapshot => {
+        const winner = snapshot.val();
+        if (winner && G.gameState === GameState.PLAYING) {
+            const isWinner = winner === G.currentUser.uid;
             G.gameState = GameState.GAME_OVER;
             const resultText = isWinner ? 'VICTORY!' : 'DEFEAT!';
             const resultColor = isWinner ? '#27ae60' : '#e74c3c';
@@ -248,7 +255,10 @@ export function listenToLobby(lobbyRef) {
             resultOverlay.innerHTML = `
                 <h1 style="color:${resultColor};font-size:64px;margin:0 0 20px;text-shadow:0 0 30px ${resultColor};">${resultText}</h1>
                 <p style="color:#eaeaea;font-size:20px;margin:0 0 30px;">${isWinner ? 'You destroyed all enemies!' : 'You were destroyed!'}</p>
-                <button onclick="leaveLobby()" style="padding:15px 40px;font-size:18px;cursor:pointer;background:#3498db;border:none;border-radius:8px;color:white;">BACK TO MENU</button>
+                <div style="display:flex;gap:15px;justify-content:center;">
+                    <button onclick="rematch()" style="padding:15px 40px;font-size:18px;cursor:pointer;background:#27ae60;border:none;border-radius:8px;color:white;">PLAY AGAIN</button>
+                    <button onclick="leaveLobby()" style="padding:15px 40px;font-size:18px;cursor:pointer;background:#3498db;border:none;border-radius:8px;color:white;">BACK TO MENU</button>
+                </div>
             `;
             showOverlay('gameOverOverlay');
             log('info', 'MP', 'Received game result: ' + (isWinner ? 'WIN' : 'LOSE'));
@@ -294,6 +304,18 @@ export function cleanupMultiplayer() {
     G.remoteTanks = {};
     G.remoteBullets = {};
 }
+
+window.rematch = function() {
+    log('info', 'MP', 'Rematch requested');
+    cleanupMultiplayer();
+    G.gameState = GameState.MENU;
+    document.getElementById('gameOverOverlay').style.display = 'none';
+    // Clear previous game result so the winner listener doesn't fire immediately
+    remove(child(ref(db, 'lobbies/' + G.lobbyId), 'winner'));
+    remove(child(ref(db, 'lobbies/' + G.lobbyId), 'gameResult'));
+    // Re-start multiplayer: host regenerates map, joiner waits
+    window.startMultiplayerGame();
+};
 
 window.leaveLobby = function() {
     if (!G.lobbyId) return;
