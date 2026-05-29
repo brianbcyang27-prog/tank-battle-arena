@@ -295,6 +295,10 @@ export function cleanupMultiplayer() {
         if (typeof G.bulletListenerRef === 'function') G.bulletListenerRef();
         G.bulletListenerRef = null;
     }
+    if (G.explosionListenerRef) {
+        if (typeof G.explosionListenerRef === 'function') G.explosionListenerRef();
+        G.explosionListenerRef = null;
+    }
     if (G.playerUpdateInterval) {
         clearInterval(G.playerUpdateInterval);
         G.playerUpdateInterval = null;
@@ -303,6 +307,7 @@ export function cleanupMultiplayer() {
     G._multiplayerStarting = false;
     G.remoteTanks = {};
     G.remoteBullets = {};
+    G._processedExplosions = {};
 }
 
 window.rematch = function() {
@@ -310,9 +315,10 @@ window.rematch = function() {
     cleanupMultiplayer();
     G.gameState = GameState.MENU;
     document.getElementById('gameOverOverlay').style.display = 'none';
-    // Clear previous game result so the winner listener doesn't fire immediately
+    // Clear previous game data so stale listeners don't fire
     remove(child(ref(db, 'lobbies/' + G.lobbyId), 'winner'));
     remove(child(ref(db, 'lobbies/' + G.lobbyId), 'gameResult'));
+    remove(child(ref(db, 'lobbies/' + G.lobbyId), 'explosions'));
     // Re-start multiplayer: host regenerates map, joiner waits
     window.startMultiplayerGame();
 };
@@ -360,6 +366,30 @@ window.startMultiplayerGame = function() {
         for (let bid in G.remoteBullets) {
             if (!remoteIds.has(bid)) {
                 delete G.remoteBullets[bid];
+            }
+        }
+    });
+
+    // Set up Firebase explosion listener (sync wall destruction from opponent)
+    const explosionsRef = ref(db, 'lobbies/' + G.lobbyId + '/explosions');
+    G.explosionListenerRef = onValue(explosionsRef, snapshot => {
+        if (G.gameState !== GameState.PLAYING) return;
+        const data = snapshot.val() || {};
+        if (!G._processedExplosions) G._processedExplosions = {};
+        for (let [eid, explosion] of Object.entries(data)) {
+            if (G._processedExplosions[eid]) continue;
+            G._processedExplosions[eid] = true;
+            // Destroy walls within explosion radius (same logic as Mine.explode)
+            const radius = explosion.radius || 120;
+            const expPos = new Vector2(explosion.x, explosion.y);
+            for (let i = G.walls.length - 1; i >= 0; i--) {
+                const wallCenter = new Vector2(
+                    G.walls[i].x + G.walls[i].w / 2,
+                    G.walls[i].y + G.walls[i].h / 2
+                );
+                if (expPos.distanceTo(wallCenter) < radius) {
+                    G.walls.splice(i, 1);
+                }
             }
         }
     });

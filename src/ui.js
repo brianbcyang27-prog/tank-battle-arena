@@ -52,6 +52,16 @@ window.closeSettings = function() {
     log('info','SETTINGS','Closing settings panel');
 };
 
+window.showAbout = function() {
+    showOverlay('aboutOverlay');
+    log('info','UI','Opening about panel');
+};
+
+window.closeAbout = function() {
+    showOverlay('loginOverlay');
+    log('info','UI','Closing about panel');
+};
+
 // ==================== UI HELPERS ====================
 export function showOverlay(id){
     document.querySelectorAll('.overlay').forEach(o=>{ o.style.display='none'; o.classList.remove('active'); });

@@ -79,6 +79,19 @@ function gameLoop(ct) {
                 }
             }
         }
+        // Sync mine explosions to opponent in multiplayer
+        if (G.isMultiplayerGame && G.lobbyId) {
+            for (let m of G.mines) {
+                if (m.exploded && !m._explosionSynced) {
+                    m._explosionSynced = true;
+                    const explosionId = Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+                    set(ref(db, 'lobbies/' + G.lobbyId + '/explosions/' + explosionId), {
+                        x: m.pos.x, y: m.pos.y,
+                        radius: m.explosionRadius
+                    });
+                }
+            }
+        }
         G.mines = G.mines.filter(m => !m.exploded);
 
         for (let e of G.enemies) { if (e.alive) e.update(dt, ct); }
