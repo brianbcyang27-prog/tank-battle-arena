@@ -253,9 +253,8 @@
         let currentUser = null;
         let gameMode = 'single';
         let lobbyId = null;
-        let remotePlayers = {};
-        let localPlayerId = null;
         let isMultiplayerGame = false;
+        let _multiplayerStarting = false; // Re-entrancy guard
         let remoteTanks = {}; // uid -> { tank: Tank, lastUpdate: number }
         let remoteBullets = {}; // bid -> { pos:{x,y}, vel:{x,y}, ownerUid:string, alive:bool }
         let bulletListenerRef = null;
@@ -411,7 +410,7 @@
                 const result = await signInAnonymously(auth);
                 const userRef = ref(db, 'users/'+result.user.uid);
                 await set(userRef, { name: name, email: name+'@guest.local', createdAt: serverTimestamp() });
-                update(result.user, { displayName: name });
+                await result.user.updateProfile({ displayName: name });
                 log('info','AUTH','Guest sign-in successful: '+result.user.uid);
             } catch(e) {
                 errorDiv.textContent = e.message;
@@ -573,7 +572,6 @@
                 tank.pos.y=ot<ob?wall.y-18:wall.y+wall.h+18;
             }
         }
-        window.resolveWallCollision = resolveWallCollision;
 
         class Enemy extends Tank {
             constructor(x,y,tier){
@@ -847,12 +845,12 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
                     if(l.code===code&&l.status==='waiting'){
                         found=true;
                         lobbyId=snap.key;
-                        localPlayerId=currentUser.uid;
                         const lobbyRef=ref(db, 'lobbies/'+lobbyId);
                         const initialReady=settings.autoReady;
                         set(child(lobbyRef, 'players/'+currentUser.uid), {
                             name:currentUser.email, ready:initialReady, joined:serverTimestamp()
                         });
+                        onDisconnect(child(lobbyRef, 'players/'+currentUser.uid)).remove();
                         listenToLobby(lobbyRef);
                         showOverlay('lobbyOverlay');
                         document.getElementById('loadingScreen').style.display='none';
@@ -947,7 +945,8 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
             showOverlay('gameOverOverlay');
             // Announce result to Firebase so all clients see it
             const lobbyRef=ref(db, 'lobbies/'+lobbyId);
-            const loserUid = isWinner ? Object.keys(remoteTanks)[0] : currentUser.uid;
+            const remoteUids = Object.keys(remoteTanks);
+            const loserUid = isWinner && remoteUids.length > 0 ? remoteUids[0] : currentUser.uid;
             update(lobbyRef, {
                 status: 'gameOver',
                 winner: isWinner ? currentUser.uid : loserUid,
@@ -988,7 +987,6 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
         function createLobby(playerCount){
             lobbyId='lobby_'+Date.now();
             const lobbyRef=ref(db, 'lobbies/'+lobbyId);
-            localPlayerId=currentUser.uid;
             
             // Generate 6-character room code
             const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -1021,12 +1019,13 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
         }
 
         function joinLobby(id, roomCode){
-            lobbyId=id; localPlayerId=currentUser.uid;
+            lobbyId=id;
             const lobbyRef=ref(db, 'lobbies/'+lobbyId);
             const initialReady = settings.autoReady;
             set(child(lobbyRef, 'players/'+currentUser.uid), {
                 name:currentUser.email, ready:initialReady, joined:serverTimestamp()
             });
+            onDisconnect(child(lobbyRef, 'players/'+currentUser.uid)).remove();
             listenToLobby(lobbyRef);
             document.getElementById('loadingScreen').style.display='none';
             showOverlay('lobbyOverlay');
@@ -1049,7 +1048,6 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
                 
                 isHost = l.host === currentUser.uid;
                 const players = l.players || {};
-                remotePlayers = players;
                 
                 // Only update player list if we're in lobby (not in game)
                 if(gameState !== GameState.PLAYING){
@@ -1114,7 +1112,7 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
             });
             
             onValue(child(lobbyRef, 'status'), snapshot=>{
-                if(snapshot.val()==='playing'){
+                if(snapshot.val()==='playing' && !_multiplayerStarting && gameState !== GameState.LOADING && gameState !== GameState.PLAYING){
                     log('info','MP','Received status=playing, starting game...');
                     startMultiplayerGame();
                 }
@@ -1164,25 +1162,45 @@ log('info','LEVEL','Level generated - enemies: '+enemies.length+', player pos: '
             });
         };
 
+        function cleanupMultiplayer(){
+            // Clean up bullet listener
+            if(bulletListenerRef){
+                if(typeof bulletListenerRef === 'function') bulletListenerRef();
+                bulletListenerRef = null;
+            }
+            // Clean up player update interval
+            if(playerUpdateInterval){
+                clearInterval(playerUpdateInterval);
+                playerUpdateInterval = null;
+            }
+            isMultiplayerGame = false;
+            _multiplayerStarting = false;
+            remoteTanks = {};
+            remoteBullets = {};
+        }
+
         window.leaveLobby = function(){
             if(!lobbyId) return;
+            cleanupMultiplayer();
             const lobbyRef=ref(db, 'lobbies/'+lobbyId);
             remove(child(lobbyRef, 'players/'+currentUser.uid)).then(()=>{
                 log('info','LOBBY','Left lobby: '+lobbyId);
-                lobbyId=null; remotePlayers={}; remoteTanks={}; isMultiplayerGame=false;
+                lobbyId=null;
                 showOverlay('loginOverlay');
                 document.getElementById('loggedInPanel').style.display='flex';
             });
         };
 
         window.startMultiplayerGame = function(){
+            if(_multiplayerStarting) { log('warn','MP','startMultiplayerGame already in progress, ignoring'); return; }
+            _multiplayerStarting = true;
 log('info','MP','Starting multiplayer game!');
             isMultiplayerGame = true;
             gameState = GameState.LOADING;
 
             // Set up Firebase bullet listener for real-time bullet sync
             const bulletsRef = ref(db, 'lobbies/'+lobbyId+'/bullets');
-            bulletListenerRef = onValue(bulletsRef, snapshot=>{
+            const bulletHandler = snapshot=>{
                 if(!isMultiplayerGame || gameState !== GameState.PLAYING) return;
                 const data = snapshot.val() || {};
                 const remoteIds = new Set(Object.keys(data));
@@ -1205,7 +1223,8 @@ log('info','MP','Starting multiplayer game!');
                         delete remoteBullets[bid];
                     }
                 }
-            });
+            };
+            bulletListenerRef = onValue(bulletsRef, bulletHandler);
 
             // Hide all overlays completely
             document.querySelectorAll('.overlay').forEach(o=>o.style.display='none');
@@ -1268,10 +1287,8 @@ log('info','MP','Starting multiplayer game!');
                     generateLevel(1);
                 });
             }, 300);
-        }
-
-        function getFromStorage(key){
-            try { return localStorage.getItem('tankBattle_'+key); } catch(e) { return null; }
+            // Reset guard after a reasonable timeout (game has started)
+            setTimeout(() => { _multiplayerStarting = false; }, 1000);
         }
 
         function setInStorage(key,val){
@@ -1281,7 +1298,7 @@ log('info','MP','Starting multiplayer game!');
         function listenToMapAndStart(){
             // Listen for map data from host
             const mapRef = ref(db, 'lobbies/'+lobbyId);
-            onValue(mapRef, snapshot=>{
+            get(mapRef).then(snapshot=>{
                 const data = snapshot.val();
                 if(data && data.map && data.mapGenerated && data.hostStart && data.joinerStart){
                     log('info','MP','Received map from host, loading...');
@@ -1294,10 +1311,24 @@ log('info','MP','Starting multiplayer game!');
                         color: COLORS.player2,
                         name: currentUser.email ? currentUser.email.split('@')[0] : 'Player'
                     });
-                    // Stop listening
-                    off(mapRef);
+                } else {
+                    // Map not ready yet, listen for it
+                    const waitMapRef = ref(db, 'lobbies/'+lobbyId);
+                    const waitFn = onValue(waitMapRef, snap2=>{
+                        const d2 = snap2.val();
+                        if(d2 && d2.map && d2.mapGenerated && d2.hostStart && d2.joinerStart){
+                            log('info','MP','Received map from host (deferred), loading...');
+                            loadMapFromData(d2.map, d2.hostStart, d2.joinerStart);
+                            player.color = COLORS.player2;
+                            update(ref(db, 'lobbies/'+lobbyId+'/players/'+currentUser.uid), {
+                                color: COLORS.player2,
+                                name: currentUser.email ? currentUser.email.split('@')[0] : 'Player'
+                            });
+                            off(waitMapRef, 'value', waitFn);
+                        }
+                    });
                 }
-            }, { onlyOnce: true });
+            });
         }
 
         function loadMapFromData(wallData, hostStart, joinerStart){
@@ -1428,11 +1459,12 @@ log('info','MP','Starting multiplayer game!');
                 }
                 bullets=bullets.filter(b=>b.alive);
 
-                // Remove dead local bullets from Firebase
+                // Remove dead local bullets from Firebase (once per bullet)
                 if(isMultiplayerGame && lobbyId){
                     for(let b of bullets){
                         if(!b.alive && b.fbId){
                             remove(ref(db, 'lobbies/'+lobbyId+'/bullets/'+b.fbId));
+                            b.fbId = null; // Clear to avoid repeated removes
                         }
                     }
                 }
