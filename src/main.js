@@ -1,0 +1,206 @@
+import { G } from './state.js';
+import { log } from './log.js';
+import { COLORS, CANVAS_WIDTH, CANVAS_HEIGHT, GameState } from './config.js';
+import { loadSettings, showOverlay } from './ui.js';
+import { startGame, startGameFromMenu, levelComplete, nextLevel, gameOver, multiplayerGameOver } from './game.js';
+import { generateLevel } from './levels.js';
+import { db, ref, update, push, remove } from './firebase.js';
+import './multiplayer.js';
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = CANVAS_WIDTH;
+canvas.height = CANVAS_HEIGHT;
+G.ctx = ctx;
+
+loadSettings();
+
+let lastTime = performance.now();
+
+function gameLoop(ct) {
+    const dt = Math.min((ct - lastTime) / 1000, 0.05);
+    lastTime = ct;
+
+    ctx.fillStyle = COLORS.background;
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    for (let w of G.walls) w.draw();
+
+    if (G.gameState === GameState.PLAYING) {
+        G.levelTime = (ct - G.levelStartTime) / 1000;
+
+        if (G.player && G.player.alive) G.player.update(dt, ct);
+
+        // Sync newly fired player bullets to Firebase
+        if (G.isMultiplayerGame && G.lobbyId && G.currentUser) {
+            for (let b of G.bullets) {
+                if (b._isPlayerBullet && !b._synced && b.alive) {
+                    const bid = Date.now() + '-' + Math.random();
+                    push(ref(db, 'lobbies/' + G.lobbyId + '/bullets/' + bid), {
+                        x: b.pos.x, y: b.pos.y, vx: b.vel.x, vy: b.vel.y,
+                        ownerUid: G.currentUser.uid, alive: true
+                    });
+                    b.fbId = bid;
+                    b._synced = true;
+                }
+            }
+        }
+
+        // Sync player position to Firebase
+        if (G.isMultiplayerGame && G.lobbyId && G.currentUser && G.player && G.player.alive) {
+            if (ct - G.player.lastSync > 50) {
+                const playerDataRef = ref(db, 'lobbies/' + G.lobbyId + '/players/' + G.currentUser.uid);
+                update(playerDataRef, {
+                    x: G.player.pos.x, y: G.player.pos.y,
+                    angle: G.player.turretAngle, health: G.player.health,
+                    lastUpdate: Date.now()
+                });
+                G.player.lastSync = ct;
+            }
+        }
+
+        for (let m of G.mines) m.update(dt);
+        for (let m of G.mines) {
+            if (m.armed && !m.exploded) {
+                if (G.player && G.player.alive && m.checkCollision(G.player)) {
+                    m.explode();
+                    if (!G.player.alive) {
+                        if (G.isMultiplayerGame) multiplayerGameOver(false);
+                        else gameOver();
+                    }
+                }
+                for (let e of G.enemies) {
+                    if (e.alive && m.checkCollision(e)) { m.explode(); break; }
+                }
+                if (G.isMultiplayerGame) {
+                    for (let uid in G.remoteTanks) {
+                        const rt = G.remoteTanks[uid].tank;
+                        if (rt.alive && m.checkCollision(rt)) { m.explode(); rt.takeDamage(10); if (!rt.alive) multiplayerGameOver(true); break; }
+                    }
+                }
+            }
+        }
+        G.mines = G.mines.filter(m => !m.exploded);
+
+        for (let e of G.enemies) { if (e.alive) e.update(dt, ct); }
+
+        for (let b of G.bullets) {
+            if (b.alive) {
+                b.update(dt);
+                if (G.player && G.player.alive && b.checkCollision(G.player)) {
+                    b.alive = false;
+                    G.player.takeDamage();
+                    log('info', 'DAMAGE', 'Player hit! HP: ' + G.player.health);
+                    if (!G.player.alive) {
+                        if (G.isMultiplayerGame) multiplayerGameOver(false);
+                        else gameOver();
+                    }
+                }
+                for (let e of G.enemies) {
+                    if (e.alive && b.checkCollision(e)) {
+                        const isEnemyBullet = b.owner && b.owner !== G.player;
+                        if (!G.settings.friendlyFire && isEnemyBullet) break;
+                        b.alive = false;
+                        e.takeDamage();
+                        if (!e.alive) { G.score += 100 * G.level; log('info', 'KILL', 'Enemy killed! Score: ' + G.score); }
+                        break;
+                    }
+                }
+                if (G.isMultiplayerGame) {
+                    for (let uid in G.remoteTanks) {
+                        const rt = G.remoteTanks[uid].tank;
+                        if (rt.alive && b.checkCollision(rt)) {
+                            const isOwnBullet = b.owner && b.owner === G.player;
+                            if (!isOwnBullet) {
+                                b.alive = false;
+                                rt.takeDamage();
+                                log('info', 'MP', 'Remote player hit! HP: ' + rt.health);
+                                if (!rt.alive) { multiplayerGameOver(true); }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        G.bullets = G.bullets.filter(b => b.alive);
+
+        if (G.isMultiplayerGame && G.lobbyId) {
+            for (let b of G.bullets) {
+                if (!b.alive && b.fbId) {
+                    remove(ref(db, 'lobbies/' + G.lobbyId + '/bullets/' + b.fbId));
+                    b.fbId = null;
+                }
+            }
+        }
+
+        if (G.isMultiplayerGame) {
+            for (let bid in G.remoteBullets) {
+                const rb = G.remoteBullets[bid];
+                rb.update(dt);
+                if (rb.alive && rb.checkCollisionWithPlayer(G.player)) {
+                    rb.alive = false;
+                    G.player.takeDamage();
+                    log('info', 'MP', 'Hit by remote bullet! HP: ' + G.player.health);
+                    if (!G.player.alive) multiplayerGameOver(false);
+                }
+            }
+            for (let bid in G.remoteBullets) {
+                if (!G.remoteBullets[bid].alive) {
+                    remove(ref(db, 'lobbies/' + G.lobbyId + '/bullets/' + bid));
+                    delete G.remoteBullets[bid];
+                }
+            }
+        }
+
+        if (!G.isMultiplayerGame && G.enemies.filter(e => e.alive).length === 0 && G.player.alive) {
+            levelComplete();
+        }
+    }
+
+    for (let p of G.particles) { if (p.life > 0) { p.update(dt); p.draw(); } }
+    G.particles = G.particles.filter(p => p.life > 0);
+
+    for (let b of G.bullets) b.draw();
+    for (let m of G.mines) m.draw();
+    if (G.player && G.player.alive) G.player.draw();
+    for (let uid in G.remoteTanks) { const rt = G.remoteTanks[uid].tank; if (rt.alive) rt.draw(); }
+    for (let e of G.enemies) { if (e.alive) e.draw(); }
+
+    if (G.gameState === GameState.PLAYING) {
+        ctx.fillStyle = COLORS.text;
+        ctx.font = '18px Orbitron';
+        ctx.textAlign = 'left';
+        ctx.fillText('LEVEL ' + G.level, 20, 35);
+        ctx.fillText('SCORE: ' + G.score, 20, 60);
+        ctx.textAlign = 'right';
+        ctx.fillText('TIME: ' + G.levelTime.toFixed(1) + 's', CANVAS_WIDTH - 20, 35);
+        ctx.fillText('MINES: ' + (3 - G.mines.length) + '/3', CANVAS_WIDTH - 20, 60);
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+document.addEventListener('keydown', (e) => {
+    const tag = document.activeElement ? document.activeElement.tagName : '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    G.keys[e.code] = true;
+    if (e.key === ' ' && G.gameState === GameState.MENU) startGame();
+    if (e.key === ' ' && G.gameState === GameState.LEVEL_COMPLETE) nextLevel();
+});
+
+document.addEventListener('keyup', (e) => { G.keys[e.code] = false; });
+
+canvas.addEventListener('mousemove', (e) => {
+    const r = canvas.getBoundingClientRect();
+    G.mouseX = (e.clientX - r.left) * (CANVAS_WIDTH / r.width);
+    G.mouseY = (e.clientY - r.top) * (CANVAS_HEIGHT / r.height);
+});
+
+canvas.addEventListener('mousedown', (e) => { if (e.button === 0) G.mouseDown = true; });
+canvas.addEventListener('mouseup', (e) => { if (e.button === 0) G.mouseDown = false; });
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+document.getElementById('loadingScreen').style.display = 'none';
+if (!G.currentUser) showOverlay('loginOverlay');
+requestAnimationFrame(gameLoop);
+log('info', 'INIT', 'Game engine initialized and running');
