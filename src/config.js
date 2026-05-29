@@ -12,7 +12,7 @@ export const COLORS = {
     mine: '#f1c40f', mineDanger: '#e74c3c', explosion: '#ff8c00'
 };
 
-export const GameState = { MENU:'menu', LOADING:'loading', PLAYING:'playing', LEVEL_COMPLETE:'levelComplete', GAME_OVER:'gameOver' };
+export const GameState = { MENU:'menu', LOADING:'loading', PLAYING:'playing', PAUSED:'paused', LEVEL_COMPLETE:'levelComplete', GAME_OVER:'gameOver' };
 
 export const DEFAULT_SETTINGS = {
     friendlyFire: true,

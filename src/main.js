@@ -5,6 +5,7 @@ import { loadSettings, showOverlay } from './ui.js';
 import { startGame, startGameFromMenu, levelComplete, nextLevel, gameOver, multiplayerGameOver } from './game.js';
 import { generateLevel } from './levels.js';
 import { db, ref, set, update, remove } from './firebase.js';
+import { recordHit, recordKill, recordDeath, recordDistance, recordDamageTaken } from './stats.js';
 import './multiplayer.js';
 
 const canvas = document.getElementById('gameCanvas');
@@ -14,6 +15,31 @@ canvas.height = CANVAS_HEIGHT;
 G.ctx = ctx;
 
 loadSettings();
+
+// Start listening for friend invitations globally (shows notification toast)
+import('./friends.js').then(m => {
+    setTimeout(() => m.listenInvitations(invites => {
+        import('./ui.js').then(ui => {
+            if (invites && invites.length > 0 && !G.lobbyId) {
+                const inv = invites[invites.length - 1];
+                ui.showNotification(
+                    inv.fromName + ' invited you to a ' + (inv.mode || 'multiplayer') + ' room! Code: ' + (inv.roomCode || '—'),
+                    [
+                        { label: 'JOIN', cls: 'accept', onClick: () => {
+                            window.joinByCode && window.joinByCode(inv.roomCode);
+                            m.clearInvitation(inv.from);
+                            ui.hideNotification();
+                        }},
+                        { label: 'DECLINE', cls: 'decline', onClick: () => {
+                            m.clearInvitation(inv.from);
+                            ui.hideNotification();
+                        }}
+                    ]
+                );
+            }
+        });
+    }), 2000); // slight delay to let auth finish
+});
 
 let lastTime = performance.now();
 
@@ -28,7 +54,12 @@ function gameLoop(ct) {
     if (G.gameState === GameState.PLAYING) {
         G.levelTime = (ct - G.levelStartTime) / 1000;
 
-        if (G.player && G.player.alive) G.player.update(dt, ct);
+        if (G.player && G.player.alive) {
+            G.player.update(dt, ct);
+            // Track distance traveled
+            const speed = G.player.vel.length();
+            if (speed > 0) recordDistance(speed * dt);
+        }
 
         // Sync newly fired player bullets to Firebase
         if (G.isMultiplayerGame && G.lobbyId && G.currentUser) {
@@ -112,8 +143,10 @@ function gameLoop(ct) {
                 if (G.player && G.player.alive && b.checkCollision(G.player)) {
                     b.alive = false;
                     G.player.takeDamage();
+                    recordDamageTaken();
                     log('info', 'DAMAGE', 'Player hit! HP: ' + G.player.health);
                     if (!G.player.alive) {
+                        recordDeath();
                         if (G.isMultiplayerGame) multiplayerGameOver(false);
                         else gameOver();
                     }
@@ -124,7 +157,8 @@ function gameLoop(ct) {
                         if (!G.settings.friendlyFire && isEnemyBullet) break;
                         b.alive = false;
                         e.takeDamage();
-                        if (!e.alive) { G.score += 100 * G.level; log('info', 'KILL', 'Enemy killed! Score: ' + G.score); }
+                        recordHit();
+                        if (!e.alive) { recordKill(); G.score += 100 * G.level; log('info', 'KILL', 'Enemy killed! Score: ' + G.score); }
                         break;
                     }
                 }
@@ -136,8 +170,9 @@ function gameLoop(ct) {
                         if (rt.alive && b.checkCollision(rt)) {
                             b.alive = false;
                             rt.takeDamage();
+                            recordHit();
                             log('info', 'MP', 'Remote player hit! HP: ' + rt.health);
-                            if (!rt.alive) { multiplayerGameOver(true); }
+                            if (!rt.alive) { recordKill(); multiplayerGameOver(true); }
                             break;
                         }
                     }
@@ -161,8 +196,9 @@ function gameLoop(ct) {
                 if (rb.alive && rb.checkCollisionWithPlayer(G.player)) {
                     rb.alive = false;
                     G.player.takeDamage();
+                    recordDamageTaken();
                     log('info', 'MP', 'Hit by remote bullet! HP: ' + G.player.health);
-                    if (!G.player.alive) multiplayerGameOver(false);
+                    if (!G.player.alive) { recordDeath(); multiplayerGameOver(false); }
                 }
             }
             for (let bid in G.remoteBullets) {
@@ -214,6 +250,15 @@ document.addEventListener('keydown', (e) => {
         e.preventDefault();
         nextLevel();
     }
+    if (e.key === 'Escape') {
+        if (G.gameState === GameState.PLAYING) {
+            G.gameState = GameState.PAUSED;
+            showOverlay('pauseOverlay');
+            log('info','PAUSE','Game paused');
+        } else if (G.gameState === GameState.PAUSED) {
+            resumeGame();
+        }
+    }
 });
 
 document.addEventListener('keyup', (e) => {
@@ -234,6 +279,24 @@ canvas.addEventListener('mousemove', (e) => {
 canvas.addEventListener('mousedown', (e) => { if (e.button === 0) G.mouseDown = true; });
 canvas.addEventListener('mouseup', (e) => { if (e.button === 0) G.mouseDown = false; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+window.resumeGame = function(){
+    if (G.gameState !== GameState.PAUSED) return;
+    const prev = G._pausedPrevState || GameState.PLAYING;
+    G.gameState = prev;
+    showOverlay(null);
+    log('info','PAUSE','Game resumed');
+};
+
+window.leaveGame = function(){
+    log('info','PAUSE','Leaving game');
+    // Clean up multiplayer listeners if active
+    import('./multiplayer.js').then(m => m.cleanupMultiplayer()).catch(() => {});
+    G.gameState = GameState.MENU;
+    document.getElementById('loadingScreen').style.display = 'none';
+    showOverlay('loginOverlay');
+    document.getElementById('loggedInPanel').style.display = 'flex';
+};
 
 document.getElementById('loadingScreen').style.display = 'none';
 if (!G.currentUser) showOverlay('loginOverlay');

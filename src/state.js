@@ -43,5 +43,9 @@ export const G = {
     settings: { ...DEFAULT_SETTINGS },
 
     // Log helper flag
-    _log: true
+    _log: true,
+
+    // Friends
+    friendCode: null,
+    friendUids: new Set()
 };

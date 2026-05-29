@@ -1,5 +1,6 @@
 import { G } from './state.js';
 import { log } from './log.js';
+import { GameState } from './config.js';
 
 // ==================== SETTINGS ====================
 export function loadSettings() {
@@ -48,8 +49,16 @@ window.showSettings = function() {
 
 window.closeSettings = function() {
     saveSettings();
-    showOverlay('loginOverlay');
+    if (G.gameState === GameState.PAUSED) {
+        showOverlay('pauseOverlay');
+    } else {
+        showOverlay('loginOverlay');
+    }
     log('info','SETTINGS','Closing settings panel');
+};
+
+window.openPauseSettings = function() {
+    showSettings();
 };
 
 window.showAbout = function() {
@@ -60,6 +69,74 @@ window.showAbout = function() {
 window.closeAbout = function() {
     showOverlay('loginOverlay');
     log('info','UI','Closing about panel');
+};
+
+// ==================== STATS OVERLAY ====================
+function buildStatsHtml(stats) {
+    if (!stats) return '<p style="color:#888;">No data</p>';
+    const rows = [
+        ['Kills', stats.kills, 'good'],
+        ['Deaths', stats.deaths, 'bad'],
+        ['K/D Ratio', stats.kd || (stats.deaths ? (stats.kills / stats.deaths).toFixed(2) : stats.kills > 0 ? stats.kills.toFixed(2) : '0.00'), ''],
+        ['Shots Fired', stats.shotsFired, ''],
+        ['Shots Hit', stats.shotsHit, ''],
+        ['Accuracy', (stats.accuracy || '0.0') + '%', stats.accuracy > 50 ? 'good' : 'bad'],
+        ['Damage Dealt', stats.damageDealt, ''],
+        ['Damage Taken', stats.damageTaken, 'bad'],
+        ['Mines Placed', stats.minesPlaced, ''],
+        ['Distance', Math.round(stats.distanceTraveled) + ' px', ''],
+        ['Play Time', stats.playTime ? stats.playTime.toFixed(1) + 's' : '—', '']
+    ];
+    return rows.map(([label, value, cls]) =>
+        `<div class="stats-row"><span class="stats-label">${label}</span><span class="stats-value${cls ? ' ' + cls : ''}">${value}</span></div>`
+    ).join('');
+}
+
+function buildLifetimeHtml(l) {
+    if (!l) return '<p style="color:#888;">No data</p>';
+    const rows = [
+        ['Games Played', l.gamesPlayed],
+        ['Wins', l.wins],
+        ['Losses', l.losses],
+        ['Win Rate', (l.winRate || '0.0') + '%'],
+        ['Total Kills', l.totalKills],
+        ['Total Deaths', l.totalDeaths],
+        ['K/D Ratio', l.kd || '0.00'],
+        ['Total Shots', l.totalShotsFired],
+        ['Total Hits', l.totalShotsHit],
+        ['Accuracy', (l.accuracy || '0.0') + '%'],
+        ['Total Damage Dealt', l.totalDamageDealt],
+        ['Total Damage Taken', l.totalDamageTaken],
+        ['Total Mines', l.totalMinesPlaced],
+        ['Total Distance', Math.round(l.totalDistanceTraveled) + ' px'],
+        ['Total Play Time', formatTime(l.totalPlayTime)]
+    ];
+    return rows.map(([label, value]) =>
+        `<div class="stats-row"><span class="stats-label">${label}</span><span class="stats-value">${value}</span></div>`
+    ).join('');
+}
+
+function formatTime(seconds) {
+    if (!seconds) return '0s';
+    const m = Math.floor(seconds / 60);
+    const s = Math.round(seconds % 60);
+    return m > 0 ? m + 'm ' + s + 's' : s + 's';
+}
+
+window.closeStats = function() {
+    showOverlay('loginOverlay');
+    log('info','STATS','Closing stats panel');
+};
+
+window.showStats = function() {
+    import('./stats.js').then(m => {
+        const current = m.getCurrentStats();
+        const lifetime = m.getLifetimeStats();
+        document.getElementById('statsLastGame').innerHTML = buildStatsHtml(current);
+        document.getElementById('statsLifetime').innerHTML = buildLifetimeHtml(lifetime);
+    });
+    showOverlay('statsOverlay');
+    log('info','STATS','Opening stats panel');
 };
 
 // ==================== UI HELPERS ====================
@@ -77,15 +154,28 @@ export function updateUI(){
 
 window.setMode = function(m,btn){
     G.gameMode=m;
-    document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('selected'));
+    document.querySelectorAll('.mode-tab').forEach(b=>b.classList.remove('selected'));
     btn.classList.add('selected');
-    const roomSection=document.getElementById('roomCodeSection');
-    if(m==='single'){
-        roomSection.style.display='none';
-    } else {
-        roomSection.style.display='flex';
-    }
     log('info','MODE','Game mode set to: '+m);
+};
+
+window.startSolo = function(){
+    G.gameMode='single';
+    import('./game.js').then(m => m.startGameFromMenu());
+};
+
+window.toggleVersus = function(){
+    const panel=document.getElementById('versusPanel');
+    if(panel.style.display!=='none'){
+        panel.style.display='none';
+        return;
+    }
+    panel.style.display='block';
+    G.gameMode='1v1';
+    document.querySelectorAll('.mode-tab').forEach((b,i)=>{
+        b.classList.toggle('selected',i===0);
+    });
+    log('info','MODE','Versus panel opened, mode: 1v1');
 };
 
 window.handleRestart = function(){
@@ -147,3 +237,163 @@ export function displayLeaderboard(entries){
     lb.innerHTML=html;
     log('info','LB','Leaderboard displayed with '+Math.min(entries.length,10)+' entries');
 }
+
+// ==================== FRIENDS OVERLAY ====================
+window.showFriends = function() {
+    import('./friends.js').then(m => {
+        const codeEl = document.getElementById('myFriendCode');
+        if (codeEl) codeEl.textContent = G.friendCode || '—';
+        // Start listening for friend requests + friend list
+        m.listenFriendRequests(renderFriendRequests);
+        m.listenFriends(renderFriendList);
+        // Also listen for invitations so requests show in notification
+        m.listenInvitations(handleInvitations);
+    });
+    showOverlay('friendsOverlay');
+    log('info','FRIENDS','Opening friends panel');
+};
+
+window.closeFriends = function() {
+    import('./friends.js').then(m => {
+        m.stopListeningFriendRequests();
+        m.stopListeningFriends();
+        m.stopListeningInvitations();
+    });
+    showOverlay('loginOverlay');
+    log('info','FRIENDS','Closing friends panel');
+};
+
+window.addFriend = function() {
+    const input = document.getElementById('friendCodeInput');
+    const errEl = document.getElementById('friendRequestError');
+    const code = input.value.trim().toUpperCase();
+    if (!code || code.length < 6) { errEl.textContent = 'Enter a valid 6-character code'; errEl.style.display = 'block'; return; }
+    errEl.style.display = 'none';
+    import('./friends.js').then(m => {
+        m.sendFriendRequest(code)
+            .then(() => { input.value = ''; alert('Friend request sent!'); })
+            .catch(e => { errEl.textContent = e.message; errEl.style.display = 'block'; });
+    });
+};
+
+function renderFriendRequests(requests) {
+    const list = document.getElementById('friendRequestsList');
+    if (!list) return;
+    if (!requests || requests.length === 0) {
+        list.innerHTML = '<p style="color:#666;font-size:11px;text-align:center;">No pending requests</p>';
+        return;
+    }
+    list.innerHTML = requests.map(r =>
+        `<div class="req-entry">
+            <span class="req-name">${r.fromName}</span>
+            <span style="color:#888;font-size:9px;letter-spacing:1px;">${r.fromCode || ''}</span>
+            <button class="toast-btn accept" onclick="acceptFriendRequest('${r.from}')" style="padding:4px 10px;font-size:10px;">ACCEPT</button>
+            <button class="toast-btn decline" onclick="declineFriendRequest('${r.from}')" style="padding:4px 10px;font-size:10px;">DECLINE</button>
+        </div>`
+    ).join('');
+}
+
+function renderFriendList(friends) {
+    const list = document.getElementById('friendsList');
+    if (!list) return;
+    if (!friends || friends.length === 0) {
+        list.innerHTML = '<p style="color:#666;font-size:11px;text-align:center;">No friends yet. Add some above!</p>';
+        return;
+    }
+    list.innerHTML = friends.map(f =>
+        `<div class="friend-entry">
+            <span class="friend-status-dot ${f.online ? 'online' : 'offline'}"></span>
+            <span class="friend-name">${f.name}</span>
+            <span class="friend-code-label">${f.friendCode}</span>
+        </div>`
+    ).join('');
+}
+
+window.acceptFriendRequest = function(fromUid) {
+    import('./friends.js').then(m => m.respondToFriendRequest(fromUid, true));
+};
+window.declineFriendRequest = function(fromUid) {
+    import('./friends.js').then(m => m.respondToFriendRequest(fromUid, false));
+};
+
+// ==================== NOTIFICATION SYSTEM ====================
+let _notificationTimer = null;
+let _notificationHandlers = {};
+
+export function showNotification(title, actions = []) {
+    const toast = document.getElementById('notificationToast');
+    const content = document.getElementById('notificationContent');
+    const actionsEl = document.getElementById('notificationActions');
+    if (!toast || !content || !actionsEl) return;
+
+    content.textContent = title;
+    actionsEl.innerHTML = actions.map((a, i) => {
+        const id = 'toast_btn_' + i;
+        _notificationHandlers[id] = a.onClick;
+        return `<button class="toast-btn ${a.cls || 'dismiss'}" id="${id}">${a.label}</button>`;
+    }).join('');
+
+    // Bind click handlers
+    actions.forEach((a, i) => {
+        const btn = document.getElementById('toast_btn_' + i);
+        if (btn) btn.onclick = a.onClick;
+    });
+
+    toast.className = 'show';
+    toast.style.display = 'block';
+
+    // Auto-hide after 10s if no actions, or 20s with actions
+    const timeout = actions.length > 0 ? 20000 : 10000;
+    if (_notificationTimer) clearTimeout(_notificationTimer);
+    _notificationTimer = setTimeout(() => hideNotification(), timeout);
+}
+
+export function hideNotification() {
+    const toast = document.getElementById('notificationToast');
+    if (!toast) return;
+    toast.className = 'hide';
+    setTimeout(() => { toast.style.display = 'none'; }, 300);
+    if (_notificationTimer) { clearTimeout(_notificationTimer); _notificationTimer = null; }
+}
+
+// Handle incoming lobby invitations
+function handleInvitations(invites) {
+    if (!invites || invites.length === 0) return;
+    // Show notification for the latest invite
+    const inv = invites[invites.length - 1];
+    showNotification(
+        inv.fromName + ' invited you to a ' + (inv.mode || 'multiplayer') + ' room! Code: ' + (inv.roomCode || '—'),
+        [
+            { label: 'JOIN', cls: 'accept', onClick: () => {
+                inviteJoinLobby(inv.roomCode);
+                import('./friends.js').then(m => m.clearInvitation(inv.from));
+                hideNotification();
+            }},
+            { label: 'DECLINE', cls: 'decline', onClick: () => {
+                import('./friends.js').then(m => m.clearInvitation(inv.from));
+                hideNotification();
+            }}
+        ]
+    );
+}
+
+function inviteJoinLobby(roomCode) {
+    if (!roomCode) return;
+    // Close current overlay and join by code
+    showOverlay(null);
+    document.getElementById('loadingScreen').style.display = 'flex';
+    document.getElementById('loadingTitle').textContent = 'JOINING ROOM...';
+    document.getElementById('loadingSubtitle').textContent = roomCode;
+    // Import multiplayer and join
+    import('./multiplayer.js').then(m => m.joinByCode(roomCode));
+}
+
+// ==================== LOBBY HELPERS ====================
+window.copyRoomCode = function() {
+    const code = document.getElementById('currentRoomCode');
+    if (!code) return;
+    navigator.clipboard.writeText(code.textContent).then(() => {
+        const btn = document.querySelector('[onclick="copyRoomCode()"]');
+        if (btn) { btn.textContent = 'COPIED!'; setTimeout(() => { btn.textContent = 'COPY'; }, 2000); }
+    }).catch(() => {});
+};

@@ -1,10 +1,9 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut as fbSignOut, onAuthStateChanged, signInAnonymously, updateProfile } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getDatabase, ref, set, push, get, onValue, off, update, remove, serverTimestamp, query, orderByChild, limitToLast, onDisconnect, child } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
+import { getDatabase, ref, set, push, get, onValue, off, update, remove, serverTimestamp, query, orderByChild, limitToLast, onDisconnect, child, equalTo } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 
 export {
-    getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, fbSignOut as signOut, onAuthStateChanged, signInAnonymously, updateProfile,
-    getDatabase, ref, set, push, get, onValue, off, update, remove, serverTimestamp, query, orderByChild, limitToLast, onDisconnect, child
+    getDatabase, ref, set, push, get, onValue, off, update, remove, serverTimestamp, query, orderByChild, limitToLast, onDisconnect, child, equalTo
 };
 
 import { log } from './log.js';
@@ -45,6 +44,8 @@ onAuthStateChanged(auth, (user) => {
         document.getElementById('loginForm').style.display = 'none';
         document.getElementById('loggedInPanel').style.display = 'flex';
         document.getElementById('displayName').textContent = user.email;
+        const avatarEl = document.getElementById('homeAvatar');
+        if (avatarEl) avatarEl.textContent = (user.email || 'P')[0].toUpperCase();
 
         const userRefInAuth = ref(db, 'users/' + user.uid);
         set(userRefInAuth, {
@@ -54,6 +55,11 @@ onAuthStateChanged(auth, (user) => {
         });
         onDisconnect(userRefInAuth).update({ online: false });
         log('info','AUTH','User data saved to database');
+
+        // Initialize friend system (generate friend code if needed)
+        import('./friends.js').then(m => m.initFriendSystem()).then(code => {
+            if (code) document.getElementById('homeFriendCode').textContent = code;
+        });
 
         // Load persistent settings from Firebase
         get(ref(db, 'users/' + user.uid + '/settings')).then(snapshot => {
@@ -70,6 +76,10 @@ onAuthStateChanged(auth, (user) => {
         document.getElementById('loginForm').style.display = 'flex';
         document.getElementById('loggedInPanel').style.display = 'none';
         document.getElementById('displayName').textContent = '';
+        const avatarEl2 = document.getElementById('homeAvatar');
+        if (avatarEl2) avatarEl2.textContent = 'P';
+        const codeEl = document.getElementById('homeFriendCode');
+        if (codeEl) codeEl.textContent = '—';
     }
 });
 

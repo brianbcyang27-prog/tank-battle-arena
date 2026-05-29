@@ -177,12 +177,14 @@ export class Player extends Tank {
             if(b){
                 b._isPlayerBullet = true;
                 G.bullets.push(b);
+                import('./stats.js').then(m => m.recordShot());
             }
         }
         if((G.keys['c']||G.keys['KeyC'])&&now-this.lastMine>=1000&&G.mines.length<3){
             G.mines.push(new LandMine(this.pos.x,this.pos.y));
             this.lastMine=now;
             window.log('info','MINE','Mine placed at '+Math.round(this.pos.x)+','+Math.round(this.pos.y));
+            import('./stats.js').then(m => m.recordMinePlaced());
         }
     }
     collidesWithWall(wall){

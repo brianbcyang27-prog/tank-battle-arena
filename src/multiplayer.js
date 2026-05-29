@@ -5,6 +5,8 @@ import { Tank, Player, Wall, Vector2, SimpleBullet } from './engine.js';
 import { generateLevel } from './levels.js';
 import { ref, update, set, child, get, onValue, off, remove, serverTimestamp, onDisconnect, db } from './firebase.js';
 import { showOverlay } from './ui.js';
+import { initStats } from './stats.js';
+import { inviteToLobby } from './friends.js';
 
 function setInStorage(key, val) {
     try { localStorage.setItem('tankBattle_' + key, val); } catch(e) {}
@@ -160,6 +162,16 @@ function joinLobbyByCode(code) {
 export function listenToLobby(lobbyRef) {
     let isHost = false;
 
+    // Fetch friend UIDs for friend badges in player list
+    import('./firebase.js').then(({ ref: fbRef, get: fbGet, db: fbDb }) => {
+        fbGet(fbRef(fbDb, 'friends/' + G.currentUser.uid)).then(snap => {
+            G.friendUids = new Set();
+            if (snap.exists()) {
+                snap.forEach(child => G.friendUids.add(child.key));
+            }
+        }).catch(() => {});
+    });
+
     onValue(lobbyRef, snapshot => {
         const l = snapshot.val();
         if (!l) return;
@@ -268,15 +280,30 @@ export function listenToLobby(lobbyRef) {
 
 function updatePlayerList(players) {
     const list = document.getElementById('playerList');
-    let html = '<div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;">';
+    if (!list) return;
+    let html = '';
     for (let [id, p] of Object.entries(players)) {
         const isMe = id === G.currentUser.uid;
-        html += '<div class="player-card ' + (p.ready ? 'ready' : '') + '" style="background:rgba(0,0,0,0.3);padding:8px 15px;border-radius:4px;border:1px solid ' + (p.ready ? '#27ae60' : '#666') + ';">';
-        html += '<span class="name" style="color:#eaeaea;">' + (isMe ? 'You' : (p.name ? p.name.split('@')[0] : 'Player')) + '</span> ';
-        html += '<span class="status" style="color:' + (p.ready ? '#27ae60' : '#e74c3c') + ';font-size:11px;">' + (p.ready ? '\u2713 READY' : '\u2717 NOT READY') + '</span>';
+        const displayName = p.name ? p.name.split('@')[0] : 'Player';
+        const initial = displayName.charAt(0).toUpperCase();
+        const color = p.color || '#666';
+        const isFriend = G.friendUids && G.friendUids.has(id);
+        html += '<div class="player-card' +
+            (p.ready ? ' ready' : '') +
+            (isMe ? ' host' : '') + '">';
+        html += '<div class="pc-avatar" style="background:' + color + ';">' + initial + '</div>';
+        html += '<div class="pc-info">';
+        html += '<span class="pc-name">' + (isMe ? 'You' : displayName) + '</span>';
+        if (isMe) html += '<span class="pc-tag you-tag">(YOU)</span>';
+        if (isFriend && !isMe) html += '<span class="pc-tag friend-tag">★ FRIEND</span>';
+        html += '</div>';
+        html += '<span class="pc-status" style="color:' + (p.ready ? '#27ae60' : '#888') + ';font-size:11px;">' +
+            (p.ready ? '✓ READY' : '○') + '</span>';
         html += '</div>';
     }
-    html += '</div>';
+    if (Object.keys(players).length === 0) {
+        html = '<p style="color:#666;font-size:12px;text-align:center;">No players yet</p>';
+    }
     list.innerHTML = html;
 }
 
@@ -322,6 +349,56 @@ window.rematch = function() {
     // Re-start multiplayer: host regenerates map, joiner waits
     window.startMultiplayerGame();
 };
+
+// ==================== FRIEND INVITES ====================
+window.showInviteFriends = function() {
+    const panel = document.getElementById('invitePanel');
+    if (panel) {
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        if (panel.style.display === 'block') {
+            renderInviteFriendList();
+        }
+    }
+};
+
+function renderInviteFriendList() {
+    const list = document.getElementById('inviteFriendList');
+    if (!list) return;
+    import('./friends.js').then(m => {
+        m.listenFriends(friends => {
+            const onlineFriends = friends.filter(f => f.online);
+            if (onlineFriends.length === 0) {
+                list.innerHTML = '<p style="color:#666;font-size:11px;text-align:center;">No online friends to invite</p>';
+                return;
+            }
+            list.innerHTML = onlineFriends.map(f =>
+                `<div class="invite-friend-entry" onclick="sendInvite('${f.uid}', '${f.name}')">
+                    <span class="friend-status-dot online"></span>
+                    <span style="flex:1;color:#eaeaea;font-size:12px;">${f.name}</span>
+                    <span style="color:#27ae60;font-size:10px;">INVITE →</span>
+                </div>`
+            ).join('');
+        });
+    });
+}
+
+window.sendInvite = function(friendUid, friendName) {
+    if (!G.lobbyId) return;
+    const roomCode = document.getElementById('currentRoomCode');
+    const code = roomCode ? roomCode.textContent : '';
+    inviteToLobby(friendUid, G.lobbyId, code, G.gameMode).then(() => {
+        const invitedDiv = document.getElementById('invitedContent');
+        if (invitedDiv) {
+            const current = invitedDiv.textContent;
+            invitedDiv.textContent = current === 'None' ? friendName : current + ', ' + friendName;
+        }
+    });
+};
+
+export function joinByCode(code) {
+    joinLobbyByCode(code);
+}
+window.joinByCode = joinByCode;
 
 window.leaveLobby = function() {
     if (!G.lobbyId) return;
@@ -426,6 +503,7 @@ window.startMultiplayerGame = function() {
 
             if (isHost) {
                 // Host: generate map and save to Firebase
+                initStats();
                 generateLevel(1);
                 const wallData = G.walls.map(w => ({ x: w.x, y: w.y, w: w.w, h: w.h }));
                 const hostStart = { x: G.player.pos.x, y: G.player.pos.y };
@@ -450,6 +528,7 @@ window.startMultiplayerGame = function() {
             }
         }).catch(e => {
             log('error', 'MP', 'Failed to check host status: ' + e);
+            initStats();
             generateLevel(1);
         });
     }, 300);
@@ -507,6 +586,7 @@ function loadMapFromData(wallData, hostStart, joinerStart) {
     G.player.pos = new Vector2(myStart.x, myStart.y);
 
     G.levelStartTime = performance.now();
+    initStats();
     G.gameState = GameState.PLAYING;
     log('info', 'LEVEL', 'Map loaded - walls: ' + G.walls.length);
 }
