@@ -15,7 +15,7 @@ export function startGame(){
     log('info','START','Game started');
 }
 
-window.startGameFromMenu = function(){
+export function startGameFromMenu(){
     if(!G.currentUser){ log('warn','START','Cannot start: no user'); return; }
     showOverlay(null);
     if(G.gameMode==='single'){
@@ -28,7 +28,8 @@ window.startGameFromMenu = function(){
         log('info','START','Starting multiplayer: '+G.gameMode);
         import('./multiplayer.js').then(m => m.createOrJoinLobby());
     }
-};
+}
+window.startGameFromMenu = startGameFromMenu;
 
 // ==================== LEVEL COMPLETE ====================
 export function levelComplete(){
