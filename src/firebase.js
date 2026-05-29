@@ -54,6 +54,17 @@ onAuthStateChanged(auth, (user) => {
         });
         onDisconnect(userRefInAuth).update({ online: false });
         log('info','AUTH','User data saved to database');
+
+        // Load persistent settings from Firebase
+        get(ref(db, 'users/' + user.uid + '/settings')).then(snapshot => {
+            if (snapshot.exists()) {
+                const fbSettings = snapshot.val();
+                G.settings = { ...G.settings, ...fbSettings };
+                localStorage.setItem('tankBattleSettings', JSON.stringify(G.settings));
+                import('./ui.js').then(m => m.applySettingsToUI());
+                log('info','AUTH','Settings loaded from Firebase');
+            }
+        }).catch(e => log('warn','AUTH','Failed to load settings: ' + e.message));
     } else {
         log('info','AUTH','No user signed in');
         document.getElementById('loginForm').style.display = 'flex';

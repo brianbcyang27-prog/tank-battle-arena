@@ -15,11 +15,12 @@ export function loadSettings() {
     applySettingsToUI();
 }
 
-function applySettingsToUI() {
+export function applySettingsToUI() {
     document.getElementById('settingFriendlyFire').checked = G.settings.friendlyFire;
     document.getElementById('settingShowFPS').checked = G.settings.showFPS;
     document.getElementById('settingAutoReady').checked = G.settings.autoReady;
     document.getElementById('settingVolume').value = G.settings.volume;
+    document.getElementById('settingBulletBounce').value = G.settings.bulletBounce || 0;
 }
 
 export function saveSettings() {
@@ -27,7 +28,15 @@ export function saveSettings() {
     G.settings.showFPS = document.getElementById('settingShowFPS').checked;
     G.settings.autoReady = document.getElementById('settingAutoReady').checked;
     G.settings.volume = parseInt(document.getElementById('settingVolume').value);
+    G.settings.bulletBounce = parseInt(document.getElementById('settingBulletBounce').value);
     localStorage.setItem('tankBattleSettings', JSON.stringify(G.settings));
+    // Sync to Firebase for cross-session persistence
+    if (G.currentUser) {
+        import('./firebase.js').then(({ ref, update, db }) => {
+            update(ref(db, 'users/' + G.currentUser.uid + '/settings'), G.settings)
+                .catch(e => log('warn','SETTINGS','Firebase save failed: '+e.message));
+        });
+    }
     log('info','SETTINGS','Settings saved: '+JSON.stringify(G.settings));
 }
 

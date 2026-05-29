@@ -24,19 +24,46 @@ export class Particle {
 }
 
 export class Bullet {
-    constructor(x,y,vel,owner){ this.pos=new Vector2(x,y); this.vel=vel; this.owner=owner; this.radius=5; this.alive=true; this.trail=[]; this.fbId=null; }
+    constructor(x,y,vel,owner){
+        this.pos=new Vector2(x,y); this.vel=vel; this.owner=owner;
+        this.radius=5; this.alive=true; this.trail=[]; this.fbId=null;
+        this.bounces = G.settings ? (G.settings.bulletBounce || 0) : 0;
+    }
     update(dt){
         if(!this.alive) return;
         this.trail.push({x:this.pos.x,y:this.pos.y,a:1}); if(this.trail.length>8) this.trail.shift();
         for(let t of this.trail) t.a-=dt*3;
         this.pos=this.pos.add(this.vel.mul(dt));
         if(isNaN(this.pos.x)||isNaN(this.pos.y)){ this.alive=false; return; }
-        if(this.pos.x<0||this.pos.x>CANVAS_WIDTH||this.pos.y<0||this.pos.y>CANVAS_HEIGHT){ this.alive=false; return; }
+        if(this.pos.x+this.radius<0||this.pos.x-this.radius>CANVAS_WIDTH||this.pos.y+this.radius<0||this.pos.y-this.radius>CANVAS_HEIGHT){ this.alive=false; return; }
         for(let w of G.walls){
-            if(this.pos.x>w.x&&this.pos.x<w.x+w.w&&this.pos.y>w.y&&this.pos.y<w.y+w.h){
-                this.alive=false; this.impact(); break;
+            if(this.pos.x+this.radius>w.x&&this.pos.x-this.radius<w.x+w.w&&this.pos.y+this.radius>w.y&&this.pos.y-this.radius<w.y+w.h){
+                if(this.bounces>0){
+                    this.bounce(w);
+                } else {
+                    this.alive=false; this.impact();
+                }
+                break;
             }
         }
+    }
+    bounce(wall){
+        this.bounces--;
+        this.impact();
+        const overlapLeft = (this.pos.x+this.radius)-wall.x;
+        const overlapRight = (wall.x+wall.w)-(this.pos.x-this.radius);
+        const overlapTop = (this.pos.y+this.radius)-wall.y;
+        const overlapBottom = (wall.y+wall.h)-(this.pos.y-this.radius);
+        const minX = Math.min(overlapLeft, overlapRight);
+        const minY = Math.min(overlapTop, overlapBottom);
+        if(minX < minY){
+            this.vel.x *= -1;
+            this.pos.x = overlapLeft < overlapRight ? wall.x - this.radius : wall.x + wall.w + this.radius;
+        } else {
+            this.vel.y *= -1;
+            this.pos.y = overlapTop < overlapBottom ? wall.y - this.radius : wall.y + wall.h + this.radius;
+        }
+        if(isNaN(this.pos.x)||isNaN(this.pos.y)) this.alive=false;
     }
     impact(){ for(let i=0;i<5;i++){ const a=Math.random()*Math.PI*2; G.particles.push(new Particle(this.pos.x,this.pos.y,Math.cos(a)*(30+Math.random()*60),Math.sin(a)*(30+Math.random()*60),'#ffffff',0.2+Math.random()*0.2)); } }
     checkCollision(tank){ if(tank===this.owner) return false; const d=this.pos.distanceTo(tank.pos); return d<this.radius+18; }
@@ -227,12 +254,19 @@ export class Enemy extends Tank {
 }
 
 export class LandMine {
-    constructor(x,y){ this.pos=new Vector2(x,y); this.radius=12; this.armed=false; this.armedTime=0; this.blinkTimer=0; this.blinkState=false; this.exploded=false; this.explosionRadius=120; }
-    update(dt){
-        if(!this.armed){ this.armedTime+=dt; if(this.armedTime>=2) this.armed=true; }
-        else { this.blinkTimer+=dt; if(this.blinkTimer>=0.5){ this.blinkTimer=0; this.blinkState=!this.blinkState; } }
+    constructor(x,y){
+        this.pos=new Vector2(x,y); this.radius=12;
+        this.lifeTimer=0; this.blinkTimer=0; this.blinkState=false;
+        this.exploded=false; this.explosionRadius=120;
     }
-    checkCollision(tank){ if(!this.armed||this.exploded) return false; return this.pos.distanceTo(tank.pos)<this.radius+18; }
+    update(dt){
+        if(this.exploded) return;
+        this.lifeTimer+=dt;
+        this.blinkTimer+=dt;
+        if(this.blinkTimer>=0.5){ this.blinkTimer=0; this.blinkState=!this.blinkState; }
+        if(this.lifeTimer>=3) this.explode();
+    }
+    checkCollision(tank){ if(this.exploded) return false; return this.pos.distanceTo(tank.pos)<this.radius+18; }
     explode(){
         this.exploded=true;
         window.log('info','MINE','Mine exploded!');
@@ -242,8 +276,8 @@ export class LandMine {
     }
     draw(){
         if(this.exploded) return;
-        G.ctx.fillStyle=this.armed&&this.blinkState?COLORS.mineDanger:COLORS.mine;
+        G.ctx.fillStyle=this.blinkState?COLORS.mineDanger:COLORS.mine;
         G.ctx.beginPath(); G.ctx.arc(this.pos.x,this.pos.y,this.radius,0,Math.PI*2); G.ctx.fill();
-        if(this.armed){ G.ctx.strokeStyle=this.blinkState?'#ff0000':'#ffff00'; G.ctx.lineWidth=2; G.ctx.beginPath(); G.ctx.arc(this.pos.x,this.pos.y,this.radius+4,0,Math.PI*2); G.ctx.stroke(); }
+        G.ctx.strokeStyle=this.blinkState?'#ff0000':'#ffff00'; G.ctx.lineWidth=2; G.ctx.beginPath(); G.ctx.arc(this.pos.x,this.pos.y,this.radius+4,0,Math.PI*2); G.ctx.stroke();
     }
 }

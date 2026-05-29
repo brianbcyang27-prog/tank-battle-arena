@@ -86,6 +86,16 @@ function gameLoop(ct) {
         for (let b of G.bullets) {
             if (b.alive) {
                 b.update(dt);
+                // Bullet vs mine
+                if (b.alive) {
+                    for (let m of G.mines) {
+                        if (!m.exploded && b.pos.distanceTo(m.pos) < b.radius + m.radius) {
+                            b.alive = false;
+                            m.explode();
+                            break;
+                        }
+                    }
+                }
                 if (G.player && G.player.alive && b.checkCollision(G.player)) {
                     b.alive = false;
                     G.player.takeDamage();

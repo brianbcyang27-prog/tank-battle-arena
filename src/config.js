@@ -18,5 +18,6 @@ export const DEFAULT_SETTINGS = {
     friendlyFire: true,
     showFPS: false,
     autoReady: true,
-    volume: 50
+    volume: 50,
+    bulletBounce: 0
 };
