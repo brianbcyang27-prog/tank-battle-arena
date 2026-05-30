@@ -124,6 +124,12 @@ function gameLoop(ct) {
             }
         }
         G.mines = G.mines.filter(m => !m.exploded);
+        // Catch player death from mine auto-explosion or bullet-triggered explosion
+        if (G.player && !G.player.alive && G.gameState === GameState.PLAYING) {
+            recordDeath();
+            if (G.isMultiplayerGame) multiplayerGameOver(false);
+            else gameOver();
+        }
 
         for (let e of G.enemies) { if (e.alive) e.update(dt, ct); }
 

@@ -1,5 +1,5 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut as fbSignOut, onAuthStateChanged, signInAnonymously, updateProfile } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut as fbSignOut, onAuthStateChanged, signInAnonymously, updateProfile, GoogleAuthProvider, signInWithPopup } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import { getDatabase, ref, set, push, get, onValue, off, update, remove, serverTimestamp, query, orderByChild, limitToLast, onDisconnect, child, equalTo } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js';
 
 export {
@@ -40,25 +40,38 @@ export { auth, db };
 onAuthStateChanged(auth, (user) => {
     G.currentUser = user;
     if (user) {
-        log('info','AUTH','User logged in: ' + user.email);
+        log('info','AUTH','User logged in: ' + (user.email || 'guest'));
         document.getElementById('loginForm').style.display = 'none';
         document.getElementById('loggedInPanel').style.display = 'flex';
-        document.getElementById('displayName').textContent = user.email;
+        const dispName = user.email || user.displayName || 'Player';
+        document.getElementById('displayName').textContent = dispName;
         const avatarEl = document.getElementById('homeAvatar');
-        if (avatarEl) avatarEl.textContent = (user.email || 'P')[0].toUpperCase();
+        if (avatarEl) avatarEl.textContent = (dispName)[0].toUpperCase();
 
         const userRefInAuth = ref(db, 'users/' + user.uid);
-        set(userRefInAuth, {
-            email: user.email,
+        update(userRefInAuth, {
+            email: user.email || (user.displayName ? user.displayName + '@guest.local' : 'guest@local'),
             lastLogin: Date.now(),
             online: true
         });
         onDisconnect(userRefInAuth).update({ online: false });
         log('info','AUTH','User data saved to database');
 
-        // Initialize friend system (generate friend code if needed)
+        // Initialize friend system (generates code once on first sign-in)
         import('./friends.js').then(m => m.initFriendSystem()).then(code => {
             if (code) document.getElementById('homeFriendCode').textContent = code;
+        });
+
+        get(ref(db, 'users/' + user.uid + '/profile')).then(snapshot => {
+            if (!snapshot.exists()) {
+                document.getElementById('loggedInPanel').style.display = 'none';
+                const po = document.getElementById('profileOverlay');
+                po.style.display = 'flex';
+                po.classList.add('active');
+                log('info','AUTH','New user — showing profile setup');
+            } else {
+                G.userProfile = snapshot.val();
+            }
         });
 
         // Load persistent settings from Firebase
@@ -75,6 +88,9 @@ onAuthStateChanged(auth, (user) => {
         log('info','AUTH','No user signed in');
         document.getElementById('loginForm').style.display = 'flex';
         document.getElementById('loggedInPanel').style.display = 'none';
+        const poEl = document.getElementById('profileOverlay');
+        poEl.style.display = 'none';
+        poEl.classList.remove('active');
         document.getElementById('displayName').textContent = '';
         const avatarEl2 = document.getElementById('homeAvatar');
         if (avatarEl2) avatarEl2.textContent = 'P';
@@ -171,5 +187,55 @@ window.signInAsGuest = async function(){
     } finally {
         _guestSigningIn = false;
         if (btn) btn.disabled = false;
+    }
+};
+
+window.signInWithGoogle = async function() {
+    const provider = new GoogleAuthProvider();
+    const errorDiv = document.getElementById('authError');
+    errorDiv.style.display = 'none';
+    log('info','AUTH','Attempting Google sign-in');
+    try {
+        const result = await signInWithPopup(auth, provider);
+        log('info','AUTH','Google sign-in successful: ' + result.user.email);
+    } catch(e) {
+        if (e.code !== 'auth/popup-closed-by-user') {
+            errorDiv.textContent = e.message;
+            errorDiv.style.display = 'block';
+            log('error','AUTH','Google sign-in failed: ' + e.message);
+        }
+    }
+};
+
+window.saveProfile = async function() {
+    const birthday = document.getElementById('profileBirthday').value;
+    const gender = document.getElementById('profileGender').value;
+    const errorEl = document.getElementById('profileError');
+
+    if (!birthday) {
+        errorEl.textContent = 'Please select your birthday';
+        errorEl.style.display = 'block';
+        return;
+    }
+    errorEl.style.display = 'none';
+
+    const profile = {
+        birthday: birthday,
+        gender: gender || 'prefer-not',
+        createdAt: Date.now()
+    };
+
+    try {
+        await set(ref(db, 'users/' + G.currentUser.uid + '/profile'), profile);
+        G.userProfile = profile;
+        const pp = document.getElementById('profileOverlay');
+        pp.style.display = 'none';
+        pp.classList.remove('active');
+        document.getElementById('loggedInPanel').style.display = 'flex';
+        log('info','AUTH','Profile saved successfully');
+    } catch(e) {
+        errorEl.textContent = 'Failed to save: ' + e.message;
+        errorEl.style.display = 'block';
+        log('error','AUTH','Profile save failed: ' + e.message);
     }
 };

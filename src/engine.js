@@ -181,7 +181,7 @@ export class Player extends Tank {
             }
         }
         if((G.keys['c']||G.keys['KeyC'])&&now-this.lastMine>=1000&&G.mines.length<3){
-            G.mines.push(new LandMine(this.pos.x,this.pos.y));
+            G.mines.push(new LandMine(this.pos.x,this.pos.y,this));
             this.lastMine=now;
             window.log('info','MINE','Mine placed at '+Math.round(this.pos.x)+','+Math.round(this.pos.y));
             import('./stats.js').then(m => m.recordMinePlaced());
@@ -256,10 +256,12 @@ export class Enemy extends Tank {
 }
 
 export class LandMine {
-    constructor(x,y){
+    constructor(x,y,placer=null){
         this.pos=new Vector2(x,y); this.radius=12;
         this.lifeTimer=0; this.blinkTimer=0; this.blinkState=false;
         this.exploded=false; this.explosionRadius=120;
+        this.armed=true;
+        this.placer=placer;
     }
     update(dt){
         if(this.exploded) return;
@@ -268,7 +270,7 @@ export class LandMine {
         if(this.blinkTimer>=0.5){ this.blinkTimer=0; this.blinkState=!this.blinkState; }
         if(this.lifeTimer>=3) this.explode();
     }
-    checkCollision(tank){ if(this.exploded) return false; return this.pos.distanceTo(tank.pos)<this.radius+18; }
+    checkCollision(tank){ if(this.exploded) return false; if(tank===this.placer) return false; return this.pos.distanceTo(tank.pos)<this.radius+18; }
     explode(){
         this.exploded=true;
         window.log('info','MINE','Mine exploded!');

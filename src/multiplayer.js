@@ -184,6 +184,9 @@ export function listenToLobby(lobbyRef) {
             updatePlayerList(players);
         }
 
+        // Cache player UIDs for rematch detection
+        G._playerUids = Object.keys(players);
+
         // Update remote tanks during gameplay
         if (G.isMultiplayerGame && G.gameState === GameState.PLAYING) {
             for (let [uid, p] of Object.entries(players)) {
@@ -219,6 +222,17 @@ export function listenToLobby(lobbyRef) {
                 }
             }
             return; // Don't update UI during gameplay
+        }
+
+        // Check for rematch during game over — both players must click Play Again
+        if (G.gameState === GameState.GAME_OVER) {
+            const rematchData = l.rematch || {};
+            const playerUids = G._playerUids || [];
+            const allRematched = playerUids.length >= 2 && playerUids.every(uid => rematchData[uid] === true);
+            if (allRematched && !G._rematchStarting) {
+                G._rematchStarting = true;
+                startRematchCountdown();
+            }
         }
 
         // Show/hide controls based on host status (only in lobby)
@@ -332,23 +346,52 @@ export function cleanupMultiplayer() {
     }
     G.isMultiplayerGame = false;
     G._multiplayerStarting = false;
+    G._rematchStarting = false;
     G.remoteTanks = {};
     G.remoteBullets = {};
     G._processedExplosions = {};
 }
 
 window.rematch = function() {
-    log('info', 'MP', 'Rematch requested');
+    log('info', 'MP', 'Rematch requested by player');
+    set(ref(db, 'lobbies/' + G.lobbyId + '/rematch/' + G.currentUser.uid), true);
+    const overlay = document.getElementById('gameOverOverlay');
+    const btn = overlay ? overlay.querySelector('button[onclick*="rematch"]') : null;
+    if (btn) {
+        btn.textContent = 'WAITING FOR OPPONENT...';
+        btn.disabled = true;
+    }
+};
+
+function startRematchCountdown() {
+    log('info', 'MP', 'All players requested rematch, starting countdown');
+    let countdown = 3;
+    const overlay = document.getElementById('gameOverOverlay');
+    const h1 = overlay ? overlay.querySelector('h1') : null;
+    if (!h1) { executeRematch(); return; }
+    const interval = setInterval(() => {
+        if (countdown > 0) {
+            h1.textContent = 'REMATCH IN ' + countdown + '...';
+            countdown--;
+        } else {
+            clearInterval(interval);
+            executeRematch();
+        }
+    }, 1000);
+}
+
+function executeRematch() {
+    log('info', 'MP', 'Executing rematch');
     cleanupMultiplayer();
     G.gameState = GameState.MENU;
     document.getElementById('gameOverOverlay').style.display = 'none';
-    // Clear previous game data so stale listeners don't fire
+    G._rematchStarting = false;
+    remove(child(ref(db, 'lobbies/' + G.lobbyId), 'rematch'));
     remove(child(ref(db, 'lobbies/' + G.lobbyId), 'winner'));
     remove(child(ref(db, 'lobbies/' + G.lobbyId), 'gameResult'));
     remove(child(ref(db, 'lobbies/' + G.lobbyId), 'explosions'));
-    // Re-start multiplayer: host regenerates map, joiner waits
     window.startMultiplayerGame();
-};
+}
 
 // ==================== FRIEND INVITES ====================
 window.showInviteFriends = function() {
@@ -433,8 +476,11 @@ window.startMultiplayerGame = function() {
             if (!G.remoteBullets[bid]) {
                 G.remoteBullets[bid] = new SimpleBullet(bd.x, bd.y, bd.vx, bd.vy, bd.ownerUid);
             } else {
-                G.remoteBullets[bid].pos = { x: bd.x, y: bd.y };
-                G.remoteBullets[bid].vel = { x: bd.vx, y: bd.vy };
+                // Don't overwrite pos/vel — they only contain initial launch values from Firebase.
+                // The bullet is simulated locally via physics on each frame. Overwriting with
+                // stale initial values would teleport the bullet back to its origin on every
+                // onValue fire (which happens on ANY bullet create/remove), making it impossible
+                // for remote bullets to ever reach the target.
                 G.remoteBullets[bid].alive = bd.alive;
             }
         }
