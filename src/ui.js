@@ -44,6 +44,10 @@ export function saveSettings() {
 window.showSettings = function() {
     applySettingsToUI();
     showOverlay('settingsOverlay');
+    // Fullscreen when opened from home screen, not from in-game pause
+    if (G.gameState === GameState.MENU) {
+        document.getElementById('settingsOverlay').classList.add('overlay-home');
+    }
     log('info','SETTINGS','Opening settings panel');
 };
 
@@ -140,9 +144,30 @@ window.showStats = function() {
 };
 
 // ==================== UI HELPERS ====================
+const HOME_OVERLAYS = ['loginOverlay','missionsOverlay','shopOverlay','statsOverlay','leaderboardOverlay','friendsOverlay','aboutOverlay'];
+
 export function showOverlay(id){
-    document.querySelectorAll('.overlay').forEach(o=>{ o.style.display='none'; o.classList.remove('active'); });
-    if(id){ document.getElementById(id).style.display='flex'; document.getElementById(id).classList.add('active'); log('info','UI','Showing overlay: '+id); }
+    document.querySelectorAll('.overlay').forEach(o=>{
+        o.style.display='none';
+        o.classList.remove('active');
+        o.classList.remove('overlay-home');
+    });
+    if(id){
+        const el = document.getElementById(id);
+        el.style.display='flex';
+        el.classList.add('active');
+        // Home overlays fill the full viewport
+        if (HOME_OVERLAYS.includes(id)) {
+            // Only fullscreen loginOverlay when loggedInPanel is showing
+            if (id === 'loginOverlay') {
+                const panel = document.getElementById('loggedInPanel');
+                if (panel && panel.style.display !== 'none') el.classList.add('overlay-home');
+            } else {
+                el.classList.add('overlay-home');
+            }
+        }
+        log('info','UI','Showing overlay: '+id);
+    }
 }
 
 export function updateUI(){
@@ -451,4 +476,171 @@ window.copyRoomCode = function() {
         const btn = document.querySelector('[onclick="copyRoomCode()"]');
         if (btn) { btn.textContent = 'COPIED!'; setTimeout(() => { btn.textContent = 'COPY'; }, 2000); }
     }).catch(() => {});
+};
+
+// ==================== PROGRESSION UI ====================
+import { SKINS, WEAPONS } from './config.js';
+
+export function updateCurrencyDisplay() {
+    import('./progression.js').then(m => {
+        const gemEl = document.getElementById('homeGems');
+        const coinEl = document.getElementById('homeCoins');
+        const rankEl = document.getElementById('homeRankBadge');
+        const rankBar = document.getElementById('homeRankBar');
+        if (gemEl) gemEl.textContent = '💎 ' + m.getGems();
+        if (coinEl) coinEl.textContent = '🪙 ' + m.getCoins();
+        if (rankEl) rankEl.textContent = m.getRank().icon;
+        if (rankBar) rankBar.style.width = Math.round(m.getRankProgress() * 100) + '%';
+    });
+}
+
+window.showMissions = function() {
+    import('./progression.js').then(m => {
+        const container = document.getElementById('missionsContainer');
+        const missions = m.getMissions();
+        if (!missions || missions.length === 0) {
+            container.innerHTML = '<p style="color:#666;text-align:center;">No missions today</p>';
+        } else {
+            let html = '';
+            for (const mission of missions) {
+                const pct = Math.min(100, Math.round((mission.progress / mission.count) * 100));
+                const done = mission.completed;
+                const claimed = mission.claimed;
+                const cardClass = claimed ? 'mission-card claimed' : done ? 'mission-card completed' : 'mission-card';
+                let rewardsParts = [];
+                if (mission.rewards.gems) rewardsParts.push('<span class="gem">💎' + mission.rewards.gems + '</span>');
+                if (mission.rewards.coins) rewardsParts.push('<span class="coin">🪙' + mission.rewards.coins + '</span>');
+                if (mission.rewards.xp) rewardsParts.push('<span class="xp">⭐' + mission.rewards.xp + 'xp</span>');
+                const btnDisabled = claimed ? 'disabled' : done ? '' : 'disabled';
+                const btnClass = claimed ? 'done' : done ? 'ready' : 'locked';
+                const btnText = claimed ? '✓ DONE' : done ? 'CLAIM' : 'LOCKED';
+                const btnClick = claimed ? '' : done ? `claimMission('${mission.id}')` : '';
+
+                html += `
+                <div class="${cardClass}">
+                    <div class="mission-header">
+                        <span class="mission-title">${mission.title}</span>
+                        <span class="mission-rewards">${rewardsParts.join(' ')}</span>
+                    </div>
+                    <div class="mission-desc">${mission.desc.replace('{progress}', mission.progress).replace('{count}', mission.count)}</div>
+                    <div class="mission-bar-bg"><div class="mission-bar-fill" style="width:${pct}%"></div></div>
+                    <div class="mission-progress">
+                        <span class="mission-pct">${pct}%</span>
+                        <button class="mission-claim-btn ${btnClass}" onclick="${btnClick}" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
+                    </div>
+                </div>`;
+            }
+            container.innerHTML = html;
+        }
+        updateCurrencyDisplay();
+    });
+    showOverlay('missionsOverlay');
+    log('info','UI','Opening missions panel');
+};
+
+window.claimMission = function(missionId) {
+    import('./progression.js').then(m => {
+        const result = m.claimMissionReward(missionId);
+        if (result.ok) {
+            log('info','MISSIONS','Claimed reward');
+            window.showMissions(); // refresh
+        }
+    });
+};
+
+window.closeMissions = function() {
+    showOverlay('loginOverlay');
+    log('info','UI','Closing missions panel');
+};
+
+window.showShop = function() {
+    const gemEl = document.getElementById('shopGems');
+    const coinEl = document.getElementById('shopCoins');
+    import('./progression.js').then(m => {
+        if (gemEl) gemEl.textContent = m.getGems();
+        if (coinEl) coinEl.textContent = m.getCoins();
+    });
+    switchShopTab('skins');
+    showOverlay('shopOverlay');
+    log('info','UI','Opening shop');
+};
+
+window.switchShopTab = function(tab) {
+    document.getElementById('shopTabSkins').classList.toggle('selected', tab === 'skins');
+    document.getElementById('shopTabWeapons').classList.toggle('selected', tab === 'weapons');
+    const content = document.getElementById('shopContent');
+    import('./progression.js').then(m => {
+        if (tab === 'skins') {
+            renderShopItems(content, SKINS, 'skin', m);
+        } else {
+            renderShopItems(content, WEAPONS, 'weapon', m);
+        }
+    });
+};
+
+function renderShopItems(container, items, type, prog) {
+    const ownedList = type === 'skin' ? prog.getOwnedSkins() : prog.getOwnedWeapons();
+    const equippedId = type === 'skin' ? prog.getEquippedSkin() : prog.getEquippedWeapon();
+
+    let html = '<div class="shop-grid">';
+    for (const item of items) {
+        const owned = ownedList.includes(item.id);
+        const equipped = equippedId === item.id;
+        const itemClass = equipped ? 'shop-item equipped' : owned ? 'shop-item owned' : 'shop-item';
+        const icon = type === 'skin' ? '🎨' : '🔫';
+
+        let priceHtml = '';
+        if (item.cost === 0) {
+            priceHtml = '<div class="shop-item-price"><span class="free">FREE</span></div>';
+        } else if (item.currency === 'gems') {
+            priceHtml = '<div class="shop-item-price"><span class="gem">💎 ' + item.cost + '</span></div>';
+        } else {
+            priceHtml = '<div class="shop-item-price"><span class="coin">🪙 ' + item.cost + '</span></div>';
+        }
+
+        let btnHtml = '';
+        if (equipped) {
+            btnHtml = '<button class="shop-item-btn equipped">EQUIPPED</button>';
+        } else if (owned) {
+            const fn = type === 'skin' ? 'equipShopSkin' : 'equipShopWeapon';
+            btnHtml = `<button class="shop-item-btn equip" onclick="${fn}('${item.id}')">EQUIP</button>`;
+        } else if (item.cost === 0) {
+            const fn = type === 'skin' ? 'buyShopSkin' : 'buyShopWeapon';
+            btnHtml = `<button class="shop-item-btn buy" onclick="${fn}('${item.id}')">GET FREE</button>`;
+        } else {
+            const fn = type === 'skin' ? 'buyShopSkin' : 'buyShopWeapon';
+            btnHtml = `<button class="shop-item-btn buy" onclick="${fn}('${item.id}')">BUY</button>`;
+        }
+
+        html += `
+        <div class="${itemClass}">
+            <div class="shop-item-icon">${icon}</div>
+            <div class="shop-item-name">${item.name}</div>
+            <div class="shop-item-desc">${item.desc}</div>
+            ${priceHtml}
+            ${btnHtml}
+        </div>`;
+    }
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+window.closeShop = function() {
+    updateCurrencyDisplay();
+    showOverlay('loginOverlay');
+    log('info','UI','Closing shop');
+};
+
+// Shop helper functions (callable from onclick)
+window.buyShopSkin = function(id) {
+    import('./progression.js').then(m => { m.buySkin(id); window.showShop(); });
+};
+window.buyShopWeapon = function(id) {
+    import('./progression.js').then(m => { m.buyWeapon(id); window.showShop(); });
+};
+window.equipShopSkin = function(id) {
+    import('./progression.js').then(m => { m.equipSkin(id); window.showShop(); });
+};
+window.equipShopWeapon = function(id) {
+    import('./progression.js').then(m => { m.equipWeapon(id); window.showShop(); });
 };

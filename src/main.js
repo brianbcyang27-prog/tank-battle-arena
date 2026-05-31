@@ -1,11 +1,12 @@
 import { G } from './state.js';
 import { log } from './log.js';
-import { COLORS, CANVAS_WIDTH, CANVAS_HEIGHT, GameState } from './config.js';
+import { COLORS, CANVAS_WIDTH, CANVAS_HEIGHT, GameState, WEAPONS } from './config.js';
 import { loadSettings, showOverlay } from './ui.js';
 import { startGame, startGameFromMenu, levelComplete, nextLevel, gameOver, multiplayerGameOver } from './game.js';
 import { generateLevel } from './levels.js';
 import { db, ref, set, update, remove } from './firebase.js';
 import { recordHit, recordKill, recordDeath, recordDistance, recordDamageTaken } from './stats.js';
+import { trackKill, trackMineKill, trackSurvivalTime } from './progression.js';
 import './multiplayer.js';
 
 const canvas = document.getElementById('gameCanvas');
@@ -53,6 +54,7 @@ function gameLoop(ct) {
 
     if (G.gameState === GameState.PLAYING) {
         G.levelTime = (ct - G.levelStartTime) / 1000;
+        trackSurvivalTime(Math.min(dt, 0.05));
 
         if (G.player && G.player.alive) {
             G.player.update(dt, ct);
@@ -103,7 +105,7 @@ function gameLoop(ct) {
                     }
                 }
                 for (let e of G.enemies) {
-                    if (e.alive && m.checkCollision(e)) { m.explode(); break; }
+                    if (e.alive && m.checkCollision(e)) { m.explode(); if (!e.alive) trackMineKill(); break; }
                 }
                 if (G.isMultiplayerGame) {
                     for (let uid in G.remoteTanks) {
@@ -153,8 +155,8 @@ function gameLoop(ct) {
                 }
                 if (G.player && G.player.alive && b.checkCollision(G.player)) {
                     b.alive = false;
-                    G.player.takeDamage();
-                    recordDamageTaken();
+                    G.player.takeDamage(b.damage||1);
+                    recordDamageTaken(b.damage||1);
                     log('info', 'DAMAGE', 'Player hit! HP: ' + G.player.health);
                     if (!G.player.alive) {
                         recordDeath();
@@ -168,10 +170,10 @@ function gameLoop(ct) {
                     if (e.alive && b.checkCollision(e)) {
                         const isEnemyBullet = b.owner && b.owner !== G.player;
                         if (!G.settings.friendlyFire && isEnemyBullet) break;
-                        b.alive = false;
-                        e.takeDamage();
+                        if (!b.pierceCount) b.alive = false;
+                        e.takeDamage(b.damage||1);
                         recordHit(); if (G.aiTracker) G.aiTracker.recordHit();
-                        if (!e.alive) { recordKill(); if (G.aiTracker) G.aiTracker.recordKill(); G.score += 100 * G.level; log('info', 'KILL', 'Enemy killed! Score: ' + G.score); }
+                        if (!e.alive) { recordKill(); trackKill(); if (G.aiTracker) G.aiTracker.recordKill(); G.score += 100 * G.level; log('info', 'KILL', 'Enemy killed! Score: ' + G.score); }
                         break;
                     }
                 }
@@ -182,7 +184,7 @@ function gameLoop(ct) {
                         // so all passing bullets should damage the remote player's tank
                         if (rt.alive && b.checkCollision(rt)) {
                             b.alive = false;
-                            rt.takeDamage();
+                            rt.takeDamage(b.damage||1);
                             recordHit();
                             log('info', 'MP', 'Remote player hit! HP: ' + rt.health);
                             if (!rt.alive) { recordKill(); multiplayerGameOver(true); }
@@ -260,6 +262,81 @@ function gameLoop(ct) {
             ctx.fillText('TIME: ' + G.levelTime.toFixed(1) + 's', CANVAS_WIDTH - 20, 35);
             ctx.fillText('MINES: ' + (3 - G.mines.length) + '/3', CANVAS_WIDTH - 20, 60);
         }
+
+        // Ammo + cooldown HUD (bottom-right)
+        const p = G.player;
+        if (p) {
+            let weaponName = 'CANNON';
+            if (p.weaponId) {
+                const w = WEAPONS.find(x => x.id === p.weaponId);
+                if (w) weaponName = w.name;
+            }
+            const hudX = CANVAS_WIDTH - 175;
+            const hudY = CANVAS_HEIGHT - 72;
+            const hudW = 160;
+
+            ctx.fillStyle = 'rgba(0,0,0,0.55)';
+            ctx.beginPath();
+            ctx.roundRect(hudX, hudY, hudW, 64, 6);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.roundRect(hudX, hudY, hudW, 64, 6);
+            ctx.stroke();
+
+            ctx.textAlign = 'left';
+            ctx.font = '10px Orbitron';
+            ctx.fillStyle = '#888';
+            ctx.fillText(weaponName.toUpperCase(), hudX + 12, hudY + 16);
+
+            const ammoPct = p.ammo / p.maxAmmo;
+            ctx.fillStyle = ammoPct > 0.5 ? '#eaeaea' : ammoPct > 0.25 ? '#f39c12' : '#e74c3c';
+            ctx.font = '20px Orbitron';
+            ctx.fillText(Math.ceil(p.ammo) + ' / ' + p.maxAmmo, hudX + 12, hudY + 44);
+
+            ctx.fillStyle = p.reloading ? '#f39c12' : (ammoPct > 0.5 ? '#27ae60' : ammoPct > 0.25 ? '#f39c12' : '#e74c3c');
+            ctx.font = '10px Orbitron';
+            ctx.fillText(p.reloading ? '⏳' : '🔫', hudX + hudW - 14, hudY + 16);
+
+            const barX = hudX + 12;
+            const barY = hudY + 52;
+            const barW = hudW - 24;
+            const barH = 6;
+
+            let fillPct = 0;
+            let barColor = '#555';
+            let labelText = '';
+
+            if (p.reloading) {
+                const elapsed = Math.min(1, (performance.now() - p.reloadStart) / p.reloadDuration);
+                fillPct = elapsed;
+                barColor = '#f39c12';
+                labelText = Math.round(elapsed * 100) + '%';
+            } else {
+                const cooldownMs = p.fireRate > 0 ? 1000 / p.fireRate : 1000;
+                const timeSinceFire = Math.min(cooldownMs, performance.now() - p.lastFire);
+                fillPct = Math.min(1, timeSinceFire / cooldownMs);
+                barColor = '#3498db';
+            }
+
+            ctx.fillStyle = 'rgba(255,255,255,0.06)';
+            ctx.beginPath();
+            ctx.roundRect(barX, barY, barW, barH, 3);
+            ctx.fill();
+            if (fillPct > 0) {
+                ctx.fillStyle = barColor;
+                ctx.beginPath();
+                ctx.roundRect(barX, barY, barW * fillPct, barH, 3);
+                ctx.fill();
+            }
+            if (labelText) {
+                ctx.textAlign = 'right';
+                ctx.font = '8px Orbitron';
+                ctx.fillStyle = barColor;
+                ctx.fillText(labelText, hudX + hudW - 12, barY - 3);
+            }
+        }
     }
 
     requestAnimationFrame(gameLoop);
@@ -286,7 +363,7 @@ document.addEventListener('keydown', (e) => {
             resumeGame();
         } else if (G.gameState === GameState.MENU || G.gameState === GameState.LOADING || !G.gameState) {
             // Close overlay if one is open (detect via visible non-login overlays)
-            const overlays = ['settingsOverlay','aboutOverlay','statsOverlay','friendsOverlay','leaderboardOverlay','aiDifficultyOverlay','profileOverlay'];
+            const overlays = ['settingsOverlay','aboutOverlay','statsOverlay','friendsOverlay','leaderboardOverlay','aiDifficultyOverlay','profileOverlay','missionsOverlay','shopOverlay'];
             const active = overlays.find(id => {
                 const el = document.getElementById(id);
                 return el && el.classList.contains('active');
@@ -297,6 +374,8 @@ document.addEventListener('keydown', (e) => {
             else if (active === 'friendsOverlay') closeFriends();
             else if (active === 'leaderboardOverlay') closeLeaderboard();
             else if (active === 'aiDifficultyOverlay') closeAIDifficulty();
+            else if (active === 'missionsOverlay') closeMissions();
+            else if (active === 'shopOverlay') closeShop();
         }
     }
 });

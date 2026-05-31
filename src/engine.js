@@ -28,6 +28,7 @@ export class Bullet {
         this.pos=new Vector2(x,y); this.vel=vel; this.owner=owner;
         this.radius=5; this.alive=true; this.trail=[]; this.fbId=null;
         this.bounces = G.settings ? (G.settings.bulletBounce || 0) : 0;
+        this.damage=1; this.pierceCount=0; this._trailColor=null;
     }
     update(dt){
         if(!this.alive) return;
@@ -38,7 +39,10 @@ export class Bullet {
         if(this.pos.x+this.radius<0||this.pos.x-this.radius>CANVAS_WIDTH||this.pos.y+this.radius<0||this.pos.y-this.radius>CANVAS_HEIGHT){ this.alive=false; return; }
         for(let w of G.walls){
             if(this.pos.x+this.radius>w.x&&this.pos.x-this.radius<w.x+w.w&&this.pos.y+this.radius>w.y&&this.pos.y-this.radius<w.y+w.h){
-                if(this.bounces>0){
+                if(this.pierceCount>0){
+                    this.pierceCount--;
+                    this.bounce(w);
+                } else if(this.bounces>0){
                     this.bounce(w);
                 } else {
                     this.alive=false; this.impact();
@@ -65,12 +69,24 @@ export class Bullet {
         }
         if(isNaN(this.pos.x)||isNaN(this.pos.y)) this.alive=false;
     }
-    impact(){ for(let i=0;i<5;i++){ const a=Math.random()*Math.PI*2; G.particles.push(new Particle(this.pos.x,this.pos.y,Math.cos(a)*(30+Math.random()*60),Math.sin(a)*(30+Math.random()*60),'#ffffff',0.2+Math.random()*0.2)); } }
+    impact(){ for(let i=0;i<5;i++){ const a=Math.random()*Math.PI*2; G.particles.push(new Particle(this.pos.x,this.pos.y,Math.cos(a)*(30+Math.random()*60),Math.sin(a)*(30+Math.random()*60),this._trailColor||'#ffffff',0.2+Math.random()*0.2)); } }
     checkCollision(tank){ if(tank===this.owner) return false; const d=this.pos.distanceTo(tank.pos); return d<this.radius+18; }
     draw(){
         if(!this.alive||isNaN(this.pos.x)||isNaN(this.pos.y)) return;
-        for(let i=0;i<this.trail.length;i++){ if(this.trail[i].a>0){ G.ctx.fillStyle='rgba(255,255,255,'+(this.trail[i].a*0.5)+')'; G.ctx.beginPath(); G.ctx.arc(this.trail[i].x,this.trail[i].y,this.radius*(i/this.trail.length),0,Math.PI*2); G.ctx.fill(); } }
-        G.ctx.fillStyle=COLORS.bullet; G.ctx.beginPath(); G.ctx.arc(this.pos.x,this.pos.y,this.radius,0,Math.PI*2); G.ctx.fill();
+        const tc=this._trailColor;
+        for(let i=0;i<this.trail.length;i++){ if(this.trail[i].a>0){
+            if(tc){
+                const r=parseInt(tc.slice(1,3),16), g=parseInt(tc.slice(3,5),16), b=parseInt(tc.slice(5,7),16);
+                G.ctx.fillStyle='rgba('+r+','+g+','+b+','+(this.trail[i].a*0.5)+')';
+            } else {
+                G.ctx.fillStyle='rgba(255,255,255,'+(this.trail[i].a*0.5)+')';
+            }
+            G.ctx.beginPath(); G.ctx.arc(this.trail[i].x,this.trail[i].y,this.radius*(i/this.trail.length),0,Math.PI*2); G.ctx.fill();
+        } }
+        G.ctx.fillStyle=tc||COLORS.bullet;
+        if(tc){ G.ctx.shadowColor=tc; G.ctx.shadowBlur=12; }
+        G.ctx.beginPath(); G.ctx.arc(this.pos.x,this.pos.y,this.radius,0,Math.PI*2); G.ctx.fill();
+        G.ctx.shadowBlur=0;
     }
 }
 
@@ -161,7 +177,20 @@ export class Tank {
 }
 
 export class Player extends Tank {
-    constructor(x,y,name=''){ super(x,y,COLORS.player,name); this.speed=200; this.fireRate=3; this.lastMine=0; this.lastSync=0; }
+    constructor(x,y,name=''){
+        super(x,y,COLORS.player,name);
+        this.speed=200; this.fireRate=3; this.lastMine=0; this.lastSync=0;
+        // Weapon stats (overridden by progression)
+        this.bulletDamage=1; this.bulletSpread=0; this.bulletCount=1;
+        this.bulletPiercing=false; this.bulletSpeed=500;
+        this.bulletTrailColor=null; // null = default white
+        // Ammo / reload
+        this.maxAmmo = 12;
+        this.ammo = 12;
+        this.reloading = false;
+        this.reloadStart = 0;
+        this.reloadDuration = 1200; // ms
+    }
     update(dt,now){
         let mx=0,my=0;
         if(G.keys['w']||G.keys['KeyW']) my-=1;
@@ -173,13 +202,36 @@ export class Player extends Tank {
         super.update(dt);
         for(let w of G.walls){ if(this.collidesWithWall(w)) resolveWallCollision(this,w); }
         if(G.mouseDown){
-            const b=this.fire(now);
-            if(b){
-                b._isPlayerBullet = true;
-                G.bullets.push(b);
+            if(!this.reloading && !this.canFire(now)) return;
+            if(!this.reloading){
+                if(this.ammo <= 0){
+                    this.startReload(now);
+                    return;
+                }
+                this.lastFire=now;
+                this.ammo--;
+                const baseAngle=this.turretAngle;
+                for(let i=0;i<this.bulletCount;i++){
+                    const spread=this.bulletCount>1?(i/(this.bulletCount-1)-0.5)*this.bulletSpread*2:0;
+                    const angle=baseAngle+spread+(Math.random()-0.5)*this.bulletSpread*0.2;
+                    const d=new Vector2(Math.cos(angle),Math.sin(angle));
+                    const b=new Bullet(this.pos.x+d.x*25,this.pos.y+d.y*25,d.mul(this.bulletSpeed),this);
+                    b.damage=this.bulletDamage;
+                    b.pierceCount=this.bulletPiercing?999:0;
+                    b._trailColor=this.bulletTrailColor;
+                    b._isPlayerBullet=true;
+                    G.bullets.push(b);
+                }
                 import('./stats.js').then(m => m.recordShot());
                 if(G.aiTracker) G.aiTracker.recordShot();
             }
+        }
+        // Auto-reload when empty
+        if(this.ammo <= 0 && !this.reloading) this.startReload(now);
+        // Reload timer
+        if(this.reloading && now - this.reloadStart >= this.reloadDuration){
+            this.ammo = this.maxAmmo;
+            this.reloading = false;
         }
         if((G.keys['c']||G.keys['KeyC'])&&now-this.lastMine>=1000&&G.mines.length<3){
             G.mines.push(new LandMine(this.pos.x,this.pos.y,this));
@@ -188,6 +240,10 @@ export class Player extends Tank {
             import('./stats.js').then(m => m.recordMinePlaced());
             if(G.aiTracker) G.aiTracker.recordMinePlaced();
         }
+    }
+    startReload(now){
+        this.reloading = true;
+        this.reloadStart = now;
     }
     collidesWithWall(wall){
         return this.pos.x-18<wall.x+wall.w&&this.pos.x+18>wall.x&&this.pos.y-18<wall.y+wall.h&&this.pos.y+18>wall.y;

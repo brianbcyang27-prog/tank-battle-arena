@@ -2,9 +2,10 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT, CELL_SIZE, COLORS, GameState } from './con
 import { G } from './state.js';
 import { Vector2, Player, Tank } from './engine.js';
 import { generateLevel } from './levels.js';
-import { showOverlay, updateUI } from './ui.js';
+import { showOverlay, updateUI, updateCurrencyDisplay } from './ui.js';
 import { log } from './log.js';
 import { initStats, finalizeStats } from './stats.js';
+import { awardLevelComplete, awardGameOver, awardAiWin, awardAiRoundWin } from './progression.js';
 
 // ==================== GAME FLOW ====================
 export function startGame(){
@@ -51,8 +52,12 @@ export function levelComplete(){
     G.score+=tb+500*G.level;
     G.gameState=GameState.LEVEL_COMPLETE;
     updateUI();
+    const rewards = awardLevelComplete(G.level);
+    document.getElementById('levelCompleteScore').textContent='SCORE: '+G.score;
+    document.getElementById('levelCompleteTime').innerHTML = 'TIME: ' + G.levelTime.toFixed(1) + 's &nbsp;|&nbsp; 🪙 +' + rewards.coins + ' &nbsp;⭐ +' + rewards.xp + 'xp';
     showOverlay('levelCompleteOverlay');
     document.getElementById('nextLevelButton').onclick=nextLevel;
+    updateCurrencyDisplay();
     log('info','LEVEL','Level complete! Score: '+G.score);
 }
 
@@ -88,6 +93,8 @@ export function gameOver(){
     G.gameState=GameState.GAME_OVER;
     finalizeStats(false);
     saveToLeaderboard();
+    awardGameOver(G.score);
+    updateCurrencyDisplay();
 
     const prevBest = getPersonalBest();
     const isNewRecord = G.score > 0 && G.score > prevBest;
@@ -454,6 +461,10 @@ export function multiplayerGameOver(isWinner){
 
         if (matchOver) {
             G.aiMatch.state = 'matchOver';
+            if (playerWonMatch) {
+                awardAiWin();
+                updateCurrencyDisplay();
+            }
             const mt = playerWonMatch ? 'VICTORY!' : 'DEFEAT!';
             const mc = playerWonMatch ? '#27ae60' : '#e74c3c';
             const sub = playerWonMatch ? 'You won the match!' : 'You lost the match!';
@@ -481,6 +492,10 @@ export function multiplayerGameOver(isWinner){
             log('info','MATCH','Match over. Result: '+(playerWonMatch?'WIN':'LOSE')+' ('+myWins+'-'+aiWins+')');
         } else {
             G.aiMatch.state = 'roundOver';
+            if (isWinner) {
+                awardAiRoundWin();
+                updateCurrencyDisplay();
+            }
             const rt = isWinner ? 'ROUND WON!' : 'ROUND LOST!';
             const rc = isWinner ? '#27ae60' : '#e74c3c';
             const overlay=document.getElementById('gameOverOverlay');

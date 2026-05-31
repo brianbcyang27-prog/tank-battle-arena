@@ -2,6 +2,7 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT, CELL_SIZE, COLORS, GameState } from './con
 import { G } from './state.js';
 import { Vector2, Player, Enemy, Wall } from './engine.js';
 import { log } from './log.js';
+import { applyProgressionToPlayer } from './progression.js';
 
 export function generateLevel(lvl){
     log('info','LEVEL','Generating level '+lvl+' (multiplayer: '+G.isMultiplayerGame+')');
@@ -20,6 +21,7 @@ export function generateLevel(lvl){
     }
     for(let y=0;y<gr;y++) for(let x=0;x<gc;x++) if(grid[y] && grid[y][x]===1) G.walls.push(new Wall(x*CELL_SIZE,y*CELL_SIZE,CELL_SIZE,CELL_SIZE));
     G.player=new Player(CELL_SIZE*2.5,CANVAS_HEIGHT-CELL_SIZE*2.5);
+    applyProgressionToPlayer(G.player);
 
     if(!G.isMultiplayerGame){
         if (G.gameMode === 'ai1v1') {

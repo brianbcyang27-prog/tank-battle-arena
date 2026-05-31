@@ -19,6 +19,32 @@
             overflow: hidden;
         }
 
+        /* Fullscreen home overlay */
+        .overlay-home {
+            position: fixed !important; top: 0 !important; left: 0 !important;
+            width: 100vw !important; height: 100vh !important; z-index: 50 !important;
+            background: radial-gradient(ellipse at 50% 40%, #1a1a2e 0%, #0d0d1a 70%);
+            justify-content: center !important;
+            padding: 20px;
+            gap: 0;
+        }
+        .overlay-home > h2 { margin-top: -10px; }
+        .overlay-home .home-scrollable {
+            width: 100%; max-width: 700px;
+            display: flex; flex-direction: column; align-items: center; gap: 20px;
+            max-height: calc(100vh - 40px); overflow-y: auto;
+            padding: 10px 0;
+        }
+        .overlay-home .home-scrollable::-webkit-scrollbar { width: 3px; }
+        .overlay-home .home-scrollable::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+
+        /* Home overlay content spacing */
+        .overlay-home .stats-grid { max-width: 640px; }
+        .overlay-home .stats-section { background: rgba(0,0,0,0.35); }
+        .overlay-home #missionsContainer { max-height: calc(100vh - 200px); }
+        .overlay-home #lbHomeContent { max-height: calc(100vh - 200px); }
+        .overlay-home #shopContent { max-height: calc(100vh - 240px); }
+
         /* Smooth overlay transitions */
         .overlay { transition: opacity 0.4s ease, transform 0.4s ease; }
         .overlay.active { animation:overlay-in 0.4s ease forwards; }
@@ -29,7 +55,7 @@
 
         /* Card entrance stagger */
         .home-card { animation:card-in 0.5s ease backwards; }
-        .home-card:nth-child(1) { animation-delay:0.1s; }
+        .home-card:first-child { animation-delay:0.1s; }
         .home-card:nth-child(2) { animation-delay:0.2s; }
         .home-card:nth-child(3) { animation-delay:0.3s; }
         @keyframes card-in {
@@ -296,6 +322,47 @@
         #notificationToast .toast-btn.accept { background:#27ae60; color:white; }
         #notificationToast .toast-btn.decline { background:#e74c3c; color:white; }
         #notificationToast .toast-btn.dismiss { background:#555; color:white; }
+
+        /* Mission cards */
+        .mission-card { background:rgba(0,0,0,0.35); border:1px solid #333; border-radius:8px; padding:12px 16px; text-align:left; }
+        .mission-card.completed { border-color:#27ae60; background:rgba(39,174,96,0.08); }
+        .mission-card.claimed { border-color:#555; opacity:0.55; }
+        .mission-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+        .mission-title { color:#f39c12; font-size:13px; font-weight:700; letter-spacing:1px; }
+        .mission-rewards { color:#888; font-size:10px; letter-spacing:1px; }
+        .mission-rewards .gem { color:#ff6b9d; }
+        .mission-rewards .coin { color:#f1c40f; }
+        .mission-rewards .xp { color:#3498db; }
+        .mission-desc { color:#aaa; font-size:11px; margin-bottom:6px; letter-spacing:1px; }
+        .mission-bar-bg { width:100%; height:4px; background:rgba(255,255,255,0.06); border-radius:4px; overflow:hidden; margin-bottom:4px; }
+        .mission-bar-fill { height:100%; background:linear-gradient(90deg,#f39c12,#e94560); border-radius:4px; transition:width 0.5s ease; }
+        .mission-progress { display:flex; justify-content:space-between; align-items:center; }
+        .mission-pct { color:#666; font-size:10px; }
+        .mission-claim-btn { padding:5px 14px; border:none; border-radius:4px; cursor:pointer; font-family:'Orbitron',monospace; font-size:10px; letter-spacing:1px; transition:all 0.2s; }
+        .mission-claim-btn:hover { transform:scale(1.05); }
+        .mission-claim-btn.ready { background:#27ae60; color:#fff; }
+        .mission-claim-btn.done { background:#555; color:#888; cursor:default; }
+        .mission-claim-btn.locked { background:#333; color:#666; cursor:default; }
+
+        /* Shop items grid */
+        .shop-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(155px,1fr)); gap:10px; }
+        .shop-item { background:rgba(0,0,0,0.3); border:1px solid #333; border-radius:8px; padding:14px 10px; text-align:center; transition:all 0.25s; }
+        .shop-item:hover { border-color:#555; transform:translateY(-2px); }
+        .shop-item.owned { border-color:#27ae60; background:rgba(39,174,96,0.06); }
+        .shop-item.equipped { border-color:#3498db; background:rgba(52,152,219,0.1); box-shadow:0 0 12px rgba(52,152,219,0.15); }
+        .shop-item-icon { font-size:28px; margin-bottom:4px; }
+        .shop-item-name { color:#eaeaea; font-size:12px; font-weight:700; letter-spacing:1px; margin-bottom:2px; }
+        .shop-item-desc { color:#666; font-size:9px; letter-spacing:0.5px; margin-bottom:8px; line-height:1.3; }
+        .shop-item-btn { padding:5px 14px; border:none; border-radius:4px; cursor:pointer; font-family:'Orbitron',monospace; font-size:10px; letter-spacing:1px; transition:all 0.2s; }
+        .shop-item-btn:hover { transform:scale(1.05); }
+        .shop-item-btn.buy { background:#f39c12; color:#000; }
+        .shop-item-btn.equip { background:#3498db; color:#fff; }
+        .shop-item-btn.equipped { background:#555; color:#888; cursor:default; }
+        .shop-item-btn.owned { background:#27ae60; color:#fff; }
+        .shop-item-price { color:#888; font-size:11px; display:flex; align-items:center; justify-content:center; gap:4px; margin-bottom:6px; }
+        .shop-item-price .gem { color:#ff6b9d; }
+        .shop-item-price .coin { color:#f1c40f; }
+        .shop-item-price .free { color:#27ae60; }
     </style>
 </head>
 <body>
@@ -365,62 +432,78 @@
                 <input type="text" id="guestNameInput" placeholder="Enter your name" autocomplete="off" style="padding:10px;border-radius:6px;border:1px solid #666;background:#2a2a4a;color:#eaeaea;font-size:14px;text-align:center;width:100%;">
                 <button class="btn btn-info" onclick="signInAsGuest()">PLAY AS GUEST</button>
             </div>
-            <div id="loggedInPanel" style="display:none;flex-direction:column;align-items:center;gap:12px;">
-                <!-- Player bar: name + friend code -->
-                <div class="home-player-bar">
-                    <div class="home-avatar" id="homeAvatar">P</div>
-                    <div>
-                        <div class="home-name" id="displayName">Player</div>
-                        <div class="home-code">ID: <span id="homeFriendCode" style="color:#f39c12;">—</span></div>
+            <div id="loggedInPanel" style="display:none;width:100%;height:100%;flex-direction:column;align-items:center;justify-content:center;">
+                <div class="home-scrollable">
+                    <!-- Top row: avatar + name + rank + currency -->
+                    <div style="display:flex;align-items:center;gap:18px;width:100%;max-width:560px;background:rgba(0,0,0,0.25);border:1px solid #2a2a3e;border-radius:14px;padding:16px 22px;">
+                        <div class="home-avatar" id="homeAvatar" style="width:48px;height:48px;font-size:20px;">P</div>
+                        <div style="flex:1;min-width:0;">
+                            <div class="home-name" id="displayName" style="font-size:17px;">Player</div>
+                            <div class="home-code" style="font-size:10px;">ID: <span id="homeFriendCode" style="color:#f39c12;">—</span></div>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:12px;flex-shrink:0;">
+                            <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+                                <span id="homeRankBadge" style="font-size:22px;cursor:help;" title="Rank progress">🥉</span>
+                                <div style="width:30px;height:3px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;">
+                                    <div id="homeRankBar" style="width:0%;height:100%;background:linear-gradient(90deg,#f39c12,#e94560);border-radius:3px;"></div>
+                                </div>
+                            </div>
+                            <div style="display:flex;flex-direction:column;gap:2px;border-left:1px solid #333;padding-left:12px;">
+                                <span id="homeGems" style="color:#ff6b9d;font-size:13px;font-weight:700;">💎 0</span>
+                                <span id="homeCoins" style="color:#f1c40f;font-size:13px;font-weight:700;">🪙 0</span>
+                            </div>
+                        </div>
                     </div>
-                </div>
 
-                <!-- Game mode cards -->
-                <div class="home-cards">
-                    <div class="home-card" onclick="startSolo()">
-                        <div class="card-title">SOLO</div>
-                        <div class="card-desc">Campaign Mode</div>
-                        <div class="card-play">PLAY</div>
+                    <!-- Game mode cards -->
+                    <div class="home-cards" style="width:100%;max-width:560px;">
+                        <div class="home-card" onclick="startSolo()" style="flex:1;padding:28px 16px;">
+                            <div class="card-title" style="font-size:24px;">SOLO</div>
+                            <div class="card-desc">Campaign Mode</div>
+                            <div class="card-play">PLAY</div>
+                        </div>
+                        <div class="home-card versus" onclick="toggleVersus()" style="flex:1;padding:28px 16px;">
+                            <div class="card-title" style="font-size:24px;">VERSUS</div>
+                            <div class="card-desc">Multiplayer Battle</div>
+                            <div class="card-play">PLAY</div>
+                        </div>
+                        <div class="home-card" onclick="startVersusAI()" style="flex:1;padding:28px 16px;border-color:#9b59b6;">
+                            <div class="card-title" style="font-size:24px;">VS AI</div>
+                            <div class="card-desc">Practice Battle</div>
+                            <div class="card-play">FIGHT</div>
+                        </div>
                     </div>
-                    <div class="home-card versus" onclick="toggleVersus()">
-                        <div class="card-title">VERSUS</div>
-                        <div class="card-desc">Multiplayer Battle</div>
-                        <div class="card-play">PLAY</div>
-                    </div>
-                    <div class="home-card" onclick="startVersusAI()" style="border-color:#9b59b6;">
-                        <div class="card-title">VS AI</div>
-                        <div class="card-desc">Practice Battle</div>
-                        <div class="card-play">FIGHT</div>
-                    </div>
-                </div>
 
-                <!-- Versus sub-panel (hidden initially) -->
-                <div id="versusPanel" style="display:none;width:340px;background:rgba(0,0,0,0.4);border:1px solid #333;border-radius:8px;padding:14px;text-align:left;">
-                    <div style="display:flex;gap:6px;margin-bottom:10px;">
-                        <button class="mode-tab selected" onclick="setMode('1v1',this)" style="flex:1;">1v1</button>
-                        <button class="mode-tab" onclick="setMode('2v2',this)" style="flex:1;">2v2</button>
-                        <button class="mode-tab" onclick="setMode('3v3',this)" style="flex:1;">3v3</button>
+                    <!-- Versus sub-panel -->
+                    <div id="versusPanel" style="display:none;width:100%;max-width:400px;background:rgba(0,0,0,0.3);border:1px solid #333;border-radius:10px;padding:18px;text-align:left;">
+                        <div style="display:flex;gap:6px;margin-bottom:12px;">
+                            <button class="mode-tab selected" onclick="setMode('1v1',this)" style="flex:1;">1v1</button>
+                            <button class="mode-tab" onclick="setMode('2v2',this)" style="flex:1;">2v2</button>
+                            <button class="mode-tab" onclick="setMode('3v3',this)" style="flex:1;">3v3</button>
+                        </div>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <input type="text" id="roomCodeInput" placeholder="ROOM CODE" style="flex:1;background:rgba(0,0,0,0.5);border:1px solid #555;color:#eaeaea;padding:10px;border-radius:6px;font-size:12px;text-align:center;text-transform:uppercase;letter-spacing:2px;">
+                            <button class="btn btn-info" onclick="joinWithCode()" style="padding:10px 18px;font-size:12px;">JOIN</button>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:10px;margin:12px 0;">
+                            <div style="flex:1;height:1px;background:#444;"></div>
+                            <span style="color:#666;font-size:10px;">OR</span>
+                            <div style="flex:1;height:1px;background:#444;"></div>
+                        </div>
+                        <button class="btn btn-success" onclick="createRoom()" style="width:100%;padding:12px;font-size:13px;">CREATE ROOM</button>
                     </div>
-                    <div style="display:flex;gap:6px;align-items:center;">
-                        <input type="text" id="roomCodeInput" placeholder="ROOM CODE" style="flex:1;background:rgba(0,0,0,0.5);border:1px solid #555;color:#eaeaea;padding:8px;border-radius:4px;font-size:11px;text-align:center;text-transform:uppercase;letter-spacing:2px;">
-                        <button class="btn btn-info" onclick="joinWithCode()" style="padding:8px 14px;font-size:11px;">JOIN</button>
-                    </div>
-                    <div style="display:flex;align-items:center;gap:8px;margin:8px 0;">
-                        <div style="flex:1;height:1px;background:#444;"></div>
-                        <span style="color:#666;font-size:10px;">OR</span>
-                        <div style="flex:1;height:1px;background:#444;"></div>
-                    </div>
-                    <button class="btn btn-success" onclick="createRoom()" style="width:100%;padding:10px;font-size:12px;">CREATE ROOM</button>
-                </div>
 
-                <!-- Bottom bar: secondary actions -->
-                <div class="home-bar">
-                    <button class="bar-btn" onclick="showFriends()">FRIENDS</button>
-                    <button class="bar-btn" onclick="showStats()">STATS</button>
-                    <button class="bar-btn" onclick="showLeaderboard()">LEADERBOARD</button>
-                    <button class="bar-btn" onclick="showSettings()">SETTINGS</button>
-                    <button class="bar-btn" onclick="showAbout()">ABOUT</button>
-                    <button class="bar-btn logout" onclick="signOut()">LEAVE</button>
+                    <!-- Bottom bar: secondary actions -->
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;width:100%;max-width:560px;margin-top:4px;">
+                        <button class="bar-btn" onclick="showMissions()" style="padding:10px 20px;font-size:11px;">🎯 MISSIONS</button>
+                        <button class="bar-btn" onclick="showShop()" style="padding:10px 20px;font-size:11px;">🛒 SHOP</button>
+                        <button class="bar-btn" onclick="showFriends()" style="padding:10px 20px;font-size:11px;">👥 FRIENDS</button>
+                        <button class="bar-btn" onclick="showStats()" style="padding:10px 20px;font-size:11px;">📊 STATS</button>
+                        <button class="bar-btn" onclick="showLeaderboard()" style="padding:10px 20px;font-size:11px;">🏆 LEADERBOARD</button>
+                        <button class="bar-btn" onclick="showSettings()" style="padding:10px 20px;font-size:11px;">⚙ SETTINGS</button>
+                        <button class="bar-btn" onclick="showAbout()" style="padding:10px 20px;font-size:11px;">ℹ ABOUT</button>
+                        <button class="bar-btn logout" onclick="signOut()" style="padding:10px 20px;font-size:11px;">🚪 LEAVE</button>
+                    </div>
                 </div>
             </div>
             <div id="authError" style="color:#e74c3c;font-size:12px;margin-top:10px;display:none;"></div>
@@ -694,6 +777,33 @@
             </div>
             <p id="lbHomeInfo" style="color:#555;font-size:9px;letter-spacing:1px;margin-top:8px;">Your best scores are saved automatically</p>
             <button class="btn btn-danger" onclick="closeLeaderboard()" style="margin-top:15px;">CLOSE</button>
+        </div>
+
+        <!-- MISSION CENTER OVERLAY -->
+        <div id="missionsOverlay" class="overlay">
+            <h2 style="margin-bottom:5px;">MISSIONS</h2>
+            <p style="color:#888;font-size:11px;margin-bottom:15px;">Complete daily missions to earn gems, coins, and XP</p>
+            <div id="missionsContainer" style="width:90%;max-width:450px;max-height:55vh;overflow-y:auto;display:flex;flex-direction:column;gap:10px;">
+                <p style="color:#666;text-align:center;">Loading missions...</p>
+            </div>
+            <p style="color:#555;font-size:9px;letter-spacing:1px;margin-top:8px;">Missions reset daily — keep playing!</p>
+            <button class="btn btn-danger" onclick="closeMissions()" style="margin-top:12px;">CLOSE</button>
+        </div>
+
+        <!-- SHOP OVERLAY -->
+        <div id="shopOverlay" class="overlay">
+            <h2 style="margin-bottom:5px;">SHOP</h2>
+            <p style="color:#888;font-size:11px;margin-bottom:12px;">
+                💎 <span id="shopGems">0</span> gems &nbsp;|&nbsp; 🪙 <span id="shopCoins">0</span> coins
+            </p>
+            <div style="display:flex;gap:8px;margin-bottom:12px;">
+                <button class="mode-tab selected" id="shopTabSkins" onclick="switchShopTab('skins')" style="flex:1;">SKINS</button>
+                <button class="mode-tab" id="shopTabWeapons" onclick="switchShopTab('weapons')" style="flex:1;">WEAPONS</button>
+            </div>
+            <div id="shopContent" style="width:90%;max-width:520px;max-height:55vh;overflow-y:auto;background:rgba(0,0,0,0.25);border:1px solid #333;border-radius:8px;padding:12px;">
+                <p style="color:#666;text-align:center;">Loading shop...</p>
+            </div>
+            <button class="btn btn-danger" onclick="closeShop()" style="margin-top:12px;">CLOSE</button>
         </div>
     </div>
 

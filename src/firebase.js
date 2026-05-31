@@ -46,6 +46,8 @@ onAuthStateChanged(auth, (user) => {
         log('info','AUTH','User logged in: ' + (user.email || 'guest'));
         document.getElementById('loginForm').style.display = 'none';
         document.getElementById('loggedInPanel').style.display = 'flex';
+        document.getElementById('loginOverlay').classList.add('overlay-home');
+        import('./ui.js').then(m => m.updateCurrencyDisplay());
         const dispName = user.email || user.displayName || 'Player';
         document.getElementById('displayName').textContent = dispName;
         const avatarEl = document.getElementById('homeAvatar');
@@ -97,6 +99,7 @@ onAuthStateChanged(auth, (user) => {
         log('info','AUTH','No user signed in');
         document.getElementById('loginForm').style.display = 'flex';
         document.getElementById('loggedInPanel').style.display = 'none';
+        document.getElementById('loginOverlay').classList.remove('overlay-home');
         const poEl = document.getElementById('profileOverlay');
         poEl.style.display = 'none';
         poEl.classList.remove('active');
@@ -245,6 +248,7 @@ window.saveProfile = async function() {
         pp.style.display = 'none';
         pp.classList.remove('active');
         document.getElementById('loggedInPanel').style.display = 'flex';
+        import('./ui.js').then(m => m.updateCurrencyDisplay());
         log('info','AUTH','Profile saved successfully');
     } catch(e) {
         errorEl.textContent = 'Failed to save: ' + e.message;
