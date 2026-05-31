@@ -172,6 +172,10 @@ window.startAIGame = function(difficulty){
     import('./game.js').then(m => m.startGameFromMenu());
 };
 
+window.closeAIDifficulty = function() {
+    showOverlay('loginOverlay');
+};
+
 window.startSolo = function(){
     G.gameMode='single';
     import('./game.js').then(m => m.startGameFromMenu());
@@ -250,6 +254,44 @@ export function displayLeaderboard(entries){
     lb.innerHTML=html;
     log('info','LB','Leaderboard displayed with '+Math.min(entries.length,10)+' entries');
 }
+
+// ==================== HOME LEADERBOARD ====================
+window.showLeaderboard = function() {
+    const container = document.getElementById('lbHomeContent');
+    if (!container) return;
+    try {
+        const lb = JSON.parse(localStorage.getItem('tankBattleLeaderboard') || '[]');
+        if (lb.length === 0) {
+            container.innerHTML = '<p style="color:#666;text-align:center;">No scores yet.<br>Play a game to get on the board!</p>';
+        } else {
+            let html = '<ol style="text-align:left;padding-left:20px;">';
+            const displayCount = Math.min(lb.length, 20);
+            for (let i = 0; i < displayCount; i++) {
+                const n = lb[i].name || 'Anonymous';
+                const s = lb[i].score || 0;
+                const lvl = lb[i].level || 1;
+                const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '';
+                html += '<li style="color:#f39c12;margin-bottom:6px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;align-items:center;gap:8px;">';
+                if (medal) html += '<span style="font-size:16px;">' + medal + '</span>';
+                html += '<span style="flex:1;color:#eaeaea;">' + n.split('@')[0] + '</span>';
+                html += '<span style="color:#27ae60;font-weight:700;">' + s.toLocaleString() + '</span>';
+                html += '<span style="color:#666;font-size:10px;">Lv.' + lvl + '</span>';
+                html += '</li>';
+            }
+            html += '</ol>';
+            container.innerHTML = html;
+        }
+    } catch(e) {
+        container.innerHTML = '<p style="color:#e74c3c;text-align:center;">Could not load leaderboard</p>';
+    }
+    showOverlay('leaderboardOverlay');
+    log('info','LB','Home leaderboard opened');
+};
+
+window.closeLeaderboard = function() {
+    showOverlay('loginOverlay');
+    log('info','LB','Home leaderboard closed');
+};
 
 // ==================== FRIENDS OVERLAY ====================
 window.showFriends = function() {

@@ -284,6 +284,19 @@ document.addEventListener('keydown', (e) => {
             log('info','PAUSE','Game paused');
         } else if (G.gameState === GameState.PAUSED) {
             resumeGame();
+        } else if (G.gameState === GameState.MENU || G.gameState === GameState.LOADING || !G.gameState) {
+            // Close overlay if one is open (detect via visible non-login overlays)
+            const overlays = ['settingsOverlay','aboutOverlay','statsOverlay','friendsOverlay','leaderboardOverlay','aiDifficultyOverlay','profileOverlay'];
+            const active = overlays.find(id => {
+                const el = document.getElementById(id);
+                return el && el.classList.contains('active');
+            });
+            if (active === 'settingsOverlay') closeSettings();
+            else if (active === 'aboutOverlay') closeAbout();
+            else if (active === 'statsOverlay') closeStats();
+            else if (active === 'friendsOverlay') closeFriends();
+            else if (active === 'leaderboardOverlay') closeLeaderboard();
+            else if (active === 'aiDifficultyOverlay') closeAIDifficulty();
         }
     }
 });
@@ -325,7 +338,157 @@ window.leaveGame = function(){
     document.getElementById('loggedInPanel').style.display = 'flex';
 };
 
+// ==================== LEADERBOARD DEDUP ====================
+function deduplicateLeaderboard() {
+    try {
+        const lb = JSON.parse(localStorage.getItem('tankBattleLeaderboard') || '[]');
+        const best = new Map();
+        for (const entry of lb) {
+            const name = entry.name || 'Anonymous';
+            if (!best.has(name) || entry.score > best.get(name).score) {
+                best.set(name, entry);
+            }
+        }
+        const deduped = Array.from(best.values()).sort((a, b) => b.score - a.score);
+        localStorage.setItem('tankBattleLeaderboard', JSON.stringify(deduped));
+        if (deduped.length !== lb.length) {
+            log('info','LB','Deduplicated leaderboard: ' + lb.length + ' → ' + deduped.length + ' entries');
+        }
+    } catch(e) {}
+}
+deduplicateLeaderboard();
+
+// ==================== WELCOME ANIMATION ====================
+function startWelcomeParticles(canvas) {
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const particles = [];
+    for (let i = 0; i < 60; i++) {
+        particles.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            vx: (Math.random() - 0.5) * 0.6,
+            vy: -0.3 - Math.random() * 0.8,
+            size: 1 + Math.random() * 2.5,
+            alpha: 0.2 + Math.random() * 0.5,
+            rotation: Math.random() * 360,
+            rotSpeed: (Math.random() - 0.5) * 2
+        });
+    }
+
+    const startTime = performance.now();
+    const duration = 6000;
+
+    function frame() {
+        const elapsed = performance.now() - startTime;
+        if (elapsed > duration) { ctx.clearRect(0, 0, canvas.width, canvas.height); return; }
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const fadeOut = Math.max(0, Math.min(1, (duration - elapsed) / 400));
+
+        for (const p of particles) {
+            p.x += p.vx + Math.sin(elapsed * 0.001 + p.x * 0.01) * 0.3;
+            p.y += p.vy;
+            p.rotation += p.rotSpeed;
+
+            if (p.y < -10) { p.y = canvas.height + 10; p.x = Math.random() * canvas.width; }
+
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rotation * Math.PI / 180);
+            ctx.globalAlpha = p.alpha * fadeOut * (0.6 + 0.4 * Math.sin(elapsed * 0.002 + p.x));
+            ctx.fillStyle = p.x > canvas.width / 2 ? '#e94560' : '#f1c40f';
+            ctx.shadowColor = ctx.fillStyle;
+            ctx.shadowBlur = 6;
+
+            const s = p.size;
+            ctx.beginPath();
+            for (let i = 0; i < 4; i++) {
+                const angle = (i * Math.PI / 2) - Math.PI / 4;
+                const cx = Math.cos(angle) * s;
+                const cy = Math.sin(angle) * s;
+                const ix = Math.cos(angle + Math.PI / 4) * s * 0.3;
+                const iy = Math.sin(angle + Math.PI / 4) * s * 0.3;
+                if (i === 0) ctx.moveTo(cx, cy);
+                else ctx.lineTo(cx, cy);
+                ctx.lineTo(ix, iy);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+        requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+}
+
+// ==================== WELCOME LOADING SEQUENCE ====================
+const WELCOME_STATUSES = [
+    { maxPct: 15, label: 'INITIALIZING SYSTEMS...' },
+    { maxPct: 30, label: 'CONNECTING TO SERVER...' },
+    { maxPct: 50, label: 'LOADING ASSETS...' },
+    { maxPct: 68, label: 'CALIBRATING CONTROLS...' },
+    { maxPct: 82, label: 'PREPARING ARENA...' },
+    { maxPct: 95, label: 'OPTIMIZING PERFORMANCE...' },
+    { maxPct: 100, label: 'READY!' }
+];
+
+function startWelcomeSequence() {
+    const bar = document.getElementById('welcomeBar');
+    const pctEl = document.getElementById('welcomePercent');
+    const statusEl = document.getElementById('welcomeStatus');
+    if (!bar || !pctEl || !statusEl) return;
+
+    const duration = 5500;
+    const startTime = performance.now();
+    let currentStatusIdx = 0;
+
+    function tick() {
+        const elapsed = performance.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+        const eased = 1 - (1 - progress) * (1 - progress) * (1 - progress);
+        const pct = Math.round(eased * 100);
+
+        pctEl.textContent = pct + '%';
+        bar.style.width = pct + '%';
+
+        while (currentStatusIdx < WELCOME_STATUSES.length - 1 && pct >= WELCOME_STATUSES[currentStatusIdx].maxPct) {
+            currentStatusIdx++;
+        }
+        statusEl.textContent = WELCOME_STATUSES[currentStatusIdx].label;
+
+        if (progress < 1) {
+            requestAnimationFrame(tick);
+        } else {
+            statusEl.textContent = 'READY!';
+            pctEl.style.color = '#27ae60';
+            setTimeout(() => {
+                const wo = document.getElementById('welcomeOverlay');
+                wo.style.transition = 'opacity 0.6s ease';
+                wo.style.opacity = '0';
+                setTimeout(() => {
+                    wo.style.display = 'none';
+                    wo.classList.remove('active');
+                    showOverlay('loginOverlay');
+                }, 600);
+            }, 400);
+        }
+    }
+    requestAnimationFrame(tick);
+}
+
+// Start initialization: welcome animation → then show login/home
 document.getElementById('loadingScreen').style.display = 'none';
-if (!G.currentUser) showOverlay('loginOverlay');
+
+const welcomeCanvas = document.getElementById('welcomeCanvas');
+if (welcomeCanvas) startWelcomeParticles(welcomeCanvas);
+
+// Hide initial flash: login overlay starts inactive, welcome shows
+document.getElementById('welcomeOverlay').style.display = 'flex';
+document.getElementById('welcomeOverlay').classList.add('active');
+startWelcomeSequence();
+
 requestAnimationFrame(gameLoop);
 log('info', 'INIT', 'Game engine initialized and running');

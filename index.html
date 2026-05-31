@@ -19,6 +19,31 @@
             overflow: hidden;
         }
 
+        /* Smooth overlay transitions */
+        .overlay { transition: opacity 0.4s ease, transform 0.4s ease; }
+        .overlay.active { animation:overlay-in 0.4s ease forwards; }
+        @keyframes overlay-in {
+            0% { opacity:0; transform:translateY(12px) scale(0.97); }
+            100% { opacity:1; transform:translateY(0) scale(1); }
+        }
+
+        /* Card entrance stagger */
+        .home-card { animation:card-in 0.5s ease backwards; }
+        .home-card:nth-child(1) { animation-delay:0.1s; }
+        .home-card:nth-child(2) { animation-delay:0.2s; }
+        .home-card:nth-child(3) { animation-delay:0.3s; }
+        @keyframes card-in {
+            0% { opacity:0; transform:translateY(24px) scale(0.95); }
+            100% { opacity:1; transform:translateY(0) scale(1); }
+        }
+
+        /* Button glow on hover */
+        .btn:hover { box-shadow:0 0 20px rgba(255,255,255,0.1); transform:translateY(-2px); }
+        .btn-danger:hover { box-shadow:0 0 25px rgba(233,69,96,0.4); }
+        .btn-success:hover { box-shadow:0 0 25px rgba(39,174,96,0.4); }
+        .btn-warning:hover { box-shadow:0 0 25px rgba(243,156,18,0.4); }
+        .btn-info:hover { box-shadow:0 0 25px rgba(52,152,219,0.4); }
+
         #gameContainer { position: relative; border: 3px solid #e94560; box-shadow: 0 0 30px rgba(233,69,96,0.4), inset 0 0 60px rgba(0,0,0,0.5); border-radius: 4px; }
         #gameCanvas { display: block; background: #1a1a2e; }
 
@@ -76,6 +101,73 @@
         @keyframes go-fadeSlideUp { 0% { opacity:0; transform:translateY(24px); } 100% { opacity:1; transform:translateY(0); } }
         @keyframes go-confettiFall { 0% { transform:translateY(-10vh) rotate(0deg); opacity:1; } 100% { transform:translateY(110vh) rotate(720deg); opacity:0; } }
         @keyframes go-titleGlow { 0%,100% { text-shadow:0 0 20px #e94560,0 0 40px #e94560; } 50% { text-shadow:0 0 35px #e94560,0 0 70px #e94560,0 0 100px #e94560; } }
+
+        /* Personal record animation */
+        @keyframes rec-screenShake {
+            0%,100% { transform:translate(0,0); }
+            10% { transform:translate(-10px,5px); }
+            20% { transform:translate(8px,-6px); }
+            30% { transform:translate(-5px,8px); }
+            40% { transform:translate(6px,-4px); }
+            50% { transform:translate(-4px,3px); }
+            60% { transform:translate(3px,-6px); }
+            70% { transform:translate(-6px,4px); }
+            80% { transform:translate(4px,-3px); }
+            90% { transform:translate(-3px,2px); }
+        }
+        @keyframes rec-bounceIn {
+            0% { transform:scale(0) rotate(-30deg); opacity:0; }
+            45% { transform:scale(1.25) rotate(5deg); opacity:1; }
+            70% { transform:scale(0.92) rotate(-2deg); }
+            100% { transform:scale(1) rotate(0deg); opacity:1; }
+        }
+        @keyframes rec-slideUp {
+            0% { opacity:0; transform:translateY(36px); }
+            100% { opacity:1; transform:translateY(0); }
+        }
+        @keyframes rec-explodeIn {
+            0% { opacity:0; transform:scale(0.2); filter:blur(12px); }
+            50% { opacity:1; transform:scale(1.08); filter:blur(0); }
+            100% { opacity:1; transform:scale(1); filter:blur(0); }
+        }
+        @keyframes rec-fadeIn {
+            0% { opacity:0; }
+            100% { opacity:1; }
+        }
+        @keyframes rec-textGlow {
+            0%,100% { text-shadow:0 0 20px rgba(241,196,15,0.4),0 0 50px rgba(241,196,15,0.2); }
+            50% { text-shadow:0 0 35px rgba(241,196,15,0.9),0 0 70px rgba(241,196,15,0.5),0 0 120px rgba(241,196,15,0.2); }
+        }
+        @keyframes rec-pulse {
+            0%,100% { opacity:0.6; transform:scale(1); }
+            50% { opacity:1; transform:scale(1.04); }
+        }
+
+        /* Welcome animation */
+        @keyframes welcome-emblem {
+            0% { opacity:0; transform:scale(0) rotate(-20deg); }
+            60% { opacity:1; transform:scale(1.25) rotate(5deg); }
+            100% { opacity:1; transform:scale(1) rotate(0deg); }
+        }
+        @keyframes welcome-slideDown {
+            0% { opacity:0; transform:translateY(-30px); }
+            100% { opacity:1; transform:translateY(0); }
+        }
+        @keyframes welcome-explode {
+            0% { opacity:0; transform:scale(0.4); filter:blur(8px); }
+            60% { opacity:1; transform:scale(1.05); filter:blur(0); }
+            100% { opacity:1; transform:scale(1); filter:blur(0); }
+        }
+        @keyframes welcome-fade {
+            0% { opacity:0; transform:translateY(10px); }
+            100% { opacity:1; transform:translateY(0); }
+        }
+        @keyframes welcome-tankRoll {
+            0% { transform:translateX(-120px) rotate(-5deg); opacity:0; }
+            20% { opacity:1; }
+            80% { opacity:1; }
+            100% { transform:translateX(calc(100vw + 120px)) rotate(5deg); opacity:0; }
+        }
 
         .go-title { font-size:48px; color:#e94560; margin:0; animation:go-titleGlow 2s ease-in-out infinite; letter-spacing:6px; }
         .go-stars { display:flex; gap:10px; margin:6px 0; }
@@ -225,13 +317,35 @@
             <div id="loadingStatus" style="margin-top:10px;color:#666;font-size:12px;"></div>
         </div>
 
+        <!-- WELCOME ANIMATION -->
+        <div id="welcomeOverlay" class="overlay" style="z-index:100;background:radial-gradient(ellipse at 50% 40%,#1a0f0a 0%,#0d0d1a 70%);overflow:hidden;">
+            <canvas id="welcomeCanvas" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;"></canvas>
+            <div style="position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:6px;max-width:90%;">
+                <div id="welcomeEmblem" style="font-size:56px;opacity:0;transform:scale(0) rotate(-20deg);animation:welcome-emblem 0.8s ease-out 0.3s forwards;">🎖️</div>
+                <h1 id="welcomeTitle1" style="font-size:32px;color:#e94560;text-shadow:0 0 25px rgba(233,69,96,0.5);letter-spacing:8px;opacity:0;transform:translateY(-20px);animation:welcome-slideDown 0.6s ease-out 0.5s forwards;">TANK BATTLE</h1>
+                <h2 id="welcomeTitle2" style="font-size:46px;color:#f1c40f;text-shadow:0 0 35px rgba(241,196,15,0.4);letter-spacing:12px;opacity:0;transform:scale(0.6);animation:welcome-explode 0.7s ease-out 0.9s forwards;">ARENA</h2>
+                <div id="welcomeTagline" style="color:#888;font-size:11px;letter-spacing:4px;opacity:0;animation:welcome-fade 0.8s ease-out 1.4s forwards;">WHERE LEGENDS ARE FORGED</div>
+
+                <!-- Loading bar + percentage + status -->
+                <div id="welcomeProgressArea" style="width:280px;margin-top:30px;opacity:0;animation:welcome-fade 0.6s ease-out 1.8s forwards;">
+                    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
+                        <span id="welcomeStatus" style="color:#888;font-size:10px;letter-spacing:2px;">INITIALIZING...</span>
+                        <span id="welcomePercent" style="color:#f1c40f;font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;">0%</span>
+                    </div>
+                    <div style="width:100%;height:3px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;">
+                        <div id="welcomeBar" style="height:100%;width:0%;background:linear-gradient(90deg,#e94560,#f1c40f);border-radius:3px;transition:width 0.08s linear;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- LOGIN OVERLAY -->
-        <div id="loginOverlay" class="overlay active">
+        <div id="loginOverlay" class="overlay">
             <h1>TANK BATTLE</h1>
             <h2>ARENA</h2>
             <div id="loginForm" style="display:flex;flex-direction:column;align-items:center;gap:10px;">
-                <input type="email" id="emailInput" placeholder="Email" autocomplete="email">
-                <input type="password" id="passwordInput" placeholder="Password" autocomplete="current-password">
+                <input type="email" id="emailInput" placeholder="Email" autocomplete="email" onkeydown="if(event.key==='Enter') signIn()">
+                <input type="password" id="passwordInput" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter') signIn()">
                 <button class="btn btn-danger" onclick="signIn()">LOGIN</button>
                 <button class="btn btn-info" onclick="signUp()">SIGN UP</button>
                 <div style="display:flex;align-items:center;gap:10px;margin:5px 0;width:100%;">
@@ -303,6 +417,7 @@
                 <div class="home-bar">
                     <button class="bar-btn" onclick="showFriends()">FRIENDS</button>
                     <button class="bar-btn" onclick="showStats()">STATS</button>
+                    <button class="bar-btn" onclick="showLeaderboard()">LEADERBOARD</button>
                     <button class="bar-btn" onclick="showSettings()">SETTINGS</button>
                     <button class="bar-btn" onclick="showAbout()">ABOUT</button>
                     <button class="bar-btn logout" onclick="signOut()">LEAVE</button>
@@ -319,7 +434,7 @@
                 <button class="btn" onclick="startAIGame(1)" style="background:#27ae60;padding:14px;font-size:16px;">EASY</button>
                 <button class="btn" onclick="startAIGame(2)" style="background:#f39c12;padding:14px;font-size:16px;">MEDIUM</button>
                 <button class="btn" onclick="startAIGame(3)" style="background:#e74c3c;padding:14px;font-size:16px;">HARD</button>
-                <button onclick="document.getElementById('aiDifficultyOverlay').style.display='none';document.getElementById('aiDifficultyOverlay').classList.remove('active');showOverlay('loginOverlay');" style="background:transparent;border:1px solid #555;color:#888;padding:10px;border-radius:6px;cursor:pointer;font-size:12px;margin-top:4px;">CANCEL</button>
+                <button onclick="closeAIDifficulty()" style="background:transparent;border:1px solid #555;color:#888;padding:10px;border-radius:6px;cursor:pointer;font-size:12px;margin-top:4px;">CANCEL</button>
             </div>
         </div>
 
@@ -395,7 +510,10 @@
             <h2>LEVEL COMPLETE</h2>
             <p id="levelCompleteScore" class="score-display"></p>
             <p id="levelCompleteTime"></p>
-            <button class="btn btn-warning" id="nextLevelButton">NEXT LEVEL</button>
+            <div style="display:flex;gap:12px;justify-content:center;">
+                <button class="btn btn-warning" id="nextLevelButton">NEXT LEVEL</button>
+                <button class="btn btn-info" onclick="leaveGame()" style="padding:12px 20px;font-size:13px;">BACK TO MENU</button>
+            </div>
         </div>
 
         <!-- GAME OVER -->
@@ -427,10 +545,12 @@
                     <div id="leaderboardEntries" style="background:rgba(0,0,0,0.3);border-radius:4px;padding:10px;">
                         <p style="color:#666;">Loading...</p>
                     </div>
-                    <button class="btn btn-info" onclick="submitOnlineScore()" style="margin-top:12px;font-size:11px;">SUBMIT SCORE</button>
                 </div>
 
-                <button class="btn btn-danger go-restart-btn" id="restartButton" onclick="handleRestart()">PLAY AGAIN</button>
+                <div style="display:flex;gap:12px;justify-content:center;margin-top:6px;">
+                    <button class="btn btn-danger go-restart-btn" id="restartButton" onclick="handleRestart()">PLAY AGAIN</button>
+                    <button class="btn btn-info go-restart-btn" id="soloMenuButton" onclick="leaveGame()" style="padding:14px 25px !important;font-size:13px !important;">BACK TO MENU</button>
+                </div>
                 <p id="restartStatus" style="font-size:11px;color:#666;margin-top:4px;"></p>
             </div>
         </div>
@@ -564,6 +684,16 @@
             </div>
 
             <button class="btn btn-danger" onclick="closeFriends()" style="margin-top:15px;">CLOSE</button>
+        </div>
+
+        <!-- LEADERBOARD OVERLAY -->
+        <div id="leaderboardOverlay" class="overlay">
+            <h2 style="margin-bottom:20px;">LEADERBOARD</h2>
+            <div id="lbHomeContent" style="width:80%;max-width:400px;max-height:50vh;overflow-y:auto;background:rgba(0,0,0,0.3);border:1px solid #333;border-radius:8px;padding:15px;">
+                <p style="color:#666;text-align:center;">Loading...</p>
+            </div>
+            <p id="lbHomeInfo" style="color:#555;font-size:9px;letter-spacing:1px;margin-top:8px;">Your best scores are saved automatically</p>
+            <button class="btn btn-danger" onclick="closeLeaderboard()" style="margin-top:15px;">CLOSE</button>
         </div>
     </div>
 
