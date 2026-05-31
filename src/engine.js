@@ -178,6 +178,7 @@ export class Player extends Tank {
                 b._isPlayerBullet = true;
                 G.bullets.push(b);
                 import('./stats.js').then(m => m.recordShot());
+                if(G.aiTracker) G.aiTracker.recordShot();
             }
         }
         if((G.keys['c']||G.keys['KeyC'])&&now-this.lastMine>=1000&&G.mines.length<3){
@@ -185,6 +186,7 @@ export class Player extends Tank {
             this.lastMine=now;
             window.log('info','MINE','Mine placed at '+Math.round(this.pos.x)+','+Math.round(this.pos.y));
             import('./stats.js').then(m => m.recordMinePlaced());
+            if(G.aiTracker) G.aiTracker.recordMinePlaced();
         }
     }
     collidesWithWall(wall){
@@ -203,12 +205,26 @@ export function resolveWallCollision(tank,wall){
 }
 
 export class Enemy extends Tank {
-    constructor(x,y,tier){
+    constructor(x,y,tier,strategy=null){
         super(x,y,COLORS.enemies[Math.min(tier-1,3)]);
         this.tier=tier; this.speed=80+tier*20; this.fireRate=1+tier*0.3;
         this.accuracy=0.4+tier*0.15; this.health=1+Math.floor(tier/2); this.maxHealth=this.health;
         this.aiTimer=0; this.aiState='wander'; this.targetPos=new Vector2(x,y);
         this.stuckTimer=0; this.lastPos=this.pos.clone();
+        this.applyStrategy(strategy);
+    }
+    applyStrategy(strategy){
+        this._erratic=strategy?strategy.erraticMovement||0.3:0.3;
+        this._flankPref=strategy?strategy.flanking||0.3:0.3;
+        this._coverPref=strategy?strategy.coverUsage||0.3:0.3;
+        this._mineAvoid=strategy?strategy.mineAvoidance||0.3:0.3;
+        this._predictiveAim=strategy?strategy.predictiveAim||0.3:0.3;
+        this._prefRange=strategy?strategy.preferredRange||400:400;
+        this._aggression=strategy?strategy.aggression||0.5:0.5;
+        if(strategy){
+            this.speed*=(0.8+this._aggression*0.4);
+            this.accuracy=Math.min(0.9,this.accuracy+this._predictiveAim*0.2);
+        }
     }
     update(dt,now){
         if(!G.player||!G.player.alive) return;
@@ -216,32 +232,137 @@ export class Enemy extends Tank {
         if(this.aiTimer>0.5){ this.aiTimer=0; this.updateAI(); }
         const tp=G.player.pos.sub(this.pos), dist=tp.length();
         if(dist<500&&this.hasLineOfSight()){
-            this.turretAngle=Math.atan2(tp.y,tp.x);
+            if(G.player.vel.length()>5&&this._predictiveAim>0.2){
+                const travelTime=dist/(300+this.tier*50);
+                const predicted=G.player.pos.add(G.player.vel.mul(travelTime*this._predictiveAim));
+                this.turretAngle=Math.atan2(predicted.y-this.pos.y,predicted.x-this.pos.x);
+            } else {
+                this.turretAngle=Math.atan2(tp.y,tp.x);
+            }
             if(this.canFire(now)){
                 this.turretAngle+=(Math.random()-0.5)*(1-this.accuracy)*0.5;
                 const b=this.fire(now,300+this.tier*50); if(b) G.bullets.push(b);
             }
         }
         this.vel=this.targetPos.sub(this.pos).normalize().mul(this.speed);
+        this._steerAwayFromWalls();
+        if(this._mineAvoid>0.3) this._avoidMines();
         super.update(dt);
         for(let w of G.walls){ if(this.collidesWithWall(w)) resolveWallCollision(this,w); }
-        if(this.pos.distanceTo(this.lastPos)<2){ this.stuckTimer+=dt; if(this.stuckTimer>1){ this.stuckTimer=0; this.targetPos=this.randomPos(); } }
+        if(this.pos.distanceTo(this.lastPos)<2){ this.stuckTimer+=dt; if(this.stuckTimer>0.8){ this.stuckTimer=0; this.targetPos=this._findOpenPosition(); this.aiState='wander'; } }
         else { this.stuckTimer=0; }
         this.lastPos=this.pos.clone();
+    }
+    _steerAwayFromWalls(){
+        const la=60;
+        const tp=this.vel.normalize().mul(la);
+        const tx=this.pos.x+tp.x, ty=this.pos.y+tp.y;
+        for(let w of G.walls){
+            if(tx>w.x&&tx<w.x+w.w&&ty>w.y&&ty<w.y+w.h){
+                const sc=new Vector2(-(w.y+w.h/2-this.pos.y),w.x+w.w/2-this.pos.x).normalize();
+                this.vel=sc.mul(this.speed);
+                break;
+            }
+        }
+    }
+    _avoidMines(){
+        for(let m of G.mines){
+            if(m.exploded) continue;
+            if(this.pos.distanceTo(m.pos)<100){
+                const away=this.pos.sub(m.pos).normalize();
+                this.vel=this.vel.add(away.mul(this.speed*2)).normalize().mul(this.speed);
+                break;
+            }
+        }
+    }
+    _findOpenPosition(){
+        for(let a=0;a<20;a++){
+            const nx=100+Math.random()*(CANVAS_WIDTH-200);
+            const ny=100+Math.random()*(CANVAS_HEIGHT-200);
+            let valid=true;
+            for(let w of G.walls){ if(nx>w.x&&nx<w.x+w.w&&ny>w.y&&ny<w.y+w.h){ valid=false; break; } }
+            if(valid) return new Vector2(nx,ny);
+        }
+        return new Vector2(100+Math.random()*(CANVAS_WIDTH-200),100+Math.random()*(CANVAS_HEIGHT-200));
     }
     collidesWithWall(wall){ return this.pos.x-18<wall.x+wall.w&&this.pos.x+18>wall.x&&this.pos.y-18<wall.y+wall.h&&this.pos.y+18>wall.y; }
     updateAI(){
         if(!G.player||!G.player.alive) return;
         const d=this.pos.distanceTo(G.player.pos);
-        if(d<300&&Math.random()<0.7) this.aiState='retreat';
-        else if(d<400) this.aiState=Math.random()<0.6?'strafe':'wander';
-        else this.aiState=Math.random()<0.5?'approach':'wander';
+        const roll=Math.random();
+        if(d<this._prefRange*0.6){
+            if(roll<this._flankPref) this.aiState='flank';
+            else if(roll<this._flankPref+0.3) this.aiState='retreat';
+            else this.aiState=this._erratic>0.5?'erratic':'strafe';
+        } else if(d<this._prefRange*1.4){
+            if(roll<this._aggression*0.6) this.aiState='strafe';
+            else if(roll<this._aggression) this.aiState='approach';
+            else if(roll<this._aggression+this._flankPref*0.5) this.aiState='flank';
+            else this.aiState=this._erratic>0.5?'erratic':'wander';
+        } else {
+            if(roll<this._flankPref*0.5) this.aiState='flank';
+            else if(this._coverPref>0.5&&this._hasNearbyCover()) this.aiState='approach_cover';
+            else this.aiState='approach';
+        }
         switch(this.aiState){
             case 'approach': this.targetPos=G.player.pos.clone(); break;
-            case 'retreat': this.targetPos=this.pos.add(this.pos.sub(G.player.pos).normalize().mul(200)); break;
-            case 'strafe': this.targetPos=this.pos.add(new Vector2(-(G.player.pos.y-this.pos.y),G.player.pos.x-this.pos.x).normalize().mul(150*(Math.random()<0.5?1:-1))); break;
-            default: if(Math.random()<0.3) this.targetPos=this.randomPos(); break;
+            case 'approach_cover': this.targetPos=this._findCoverPosition(G.player.pos); break;
+            case 'retreat':{
+                let rp=this.pos.add(this.pos.sub(G.player.pos).normalize().mul(200));
+                if(this._erratic>0.3) rp=rp.add(new Vector2((Math.random()-0.5)*100*this._erratic,(Math.random()-0.5)*100*this._erratic));
+                this.targetPos=rp;
+                break;
+            }
+            case 'flank':{
+                const tp=G.player.pos.sub(this.pos).normalize();
+                const fd=new Vector2(-tp.y,tp.x);
+                const lp=this.pos.add(fd.mul(150)), rp=this.pos.add(fd.mul(-150));
+                this.targetPos=this._countWallsNear(lp)<this._countWallsNear(rp)?lp:rp;
+                this.targetPos=this.targetPos.add(tp.mul(50));
+                break;
+            }
+            case 'erratic':{
+                this.targetPos=new Vector2(
+                    Math.max(60,Math.min(CANVAS_WIDTH-60,this.pos.x+(Math.random()-0.5)*300)),
+                    Math.max(60,Math.min(CANVAS_HEIGHT-60,this.pos.y+(Math.random()-0.5)*300))
+                );
+                break;
+            }
+            case 'strafe':{
+                const sd=new Vector2(-(G.player.pos.y-this.pos.y),G.player.pos.x-this.pos.x).normalize();
+                this.targetPos=this.pos.add(sd.mul(150*(Math.random()<0.5?1:-1)));
+                break;
+            }
+            default: if(Math.random()<0.3) this.targetPos=this._findOpenPosition(); break;
         }
+        for(let w of G.walls){
+            if(this.targetPos.x>w.x&&this.targetPos.x<w.x+w.w&&this.targetPos.y>w.y&&this.targetPos.y<w.y+w.h){
+                this.targetPos=this._findOpenPosition();
+                break;
+            }
+        }
+    }
+    _countWallsNear(pos){
+        let c=0;
+        for(let w of G.walls){ if(Math.abs(pos.x-(w.x+w.w/2))<100&&Math.abs(pos.y-(w.y+w.h/2))<100) c++; }
+        return c;
+    }
+    _hasNearbyCover(){
+        let c=0;
+        for(let w of G.walls){ if(Math.abs(this.pos.x-(w.x+w.w/2))<200&&Math.abs(this.pos.y-(w.y+w.h/2))<200) c++; }
+        return c>=2;
+    }
+    _findCoverPosition(target){
+        let best=this.pos.clone(), bestScore=-Infinity;
+        for(let w of G.walls){
+            const cx=w.x+w.w/2, cy=w.y+w.h/2;
+            if(this.pos.distanceTo({x:cx,y:cy})>300) continue;
+            const wt=new Vector2(target.x-cx,target.y-cy).normalize();
+            const behind=new Vector2(cx-wt.x*50,cy-wt.y*50);
+            const s=-this.pos.distanceTo(behind);
+            if(s>bestScore){ bestScore=s; best=behind; }
+        }
+        return best;
     }
     randomPos(){ return new Vector2(100+Math.random()*(CANVAS_WIDTH-200),100+Math.random()*(CANVAS_HEIGHT-200)); }
     hasLineOfSight(){

@@ -27,6 +27,16 @@ export function startGameFromMenu(){
         document.getElementById('loadingScreen').style.display='flex';
         document.getElementById('loadingTitle').textContent='GENERATING LEVEL...';
         setTimeout(()=>generateLevel(G.level),100);
+    } else if(G.gameMode==='ai1v1'){
+        log('info','START','Starting 1v1 AI game, difficulty: '+G.aiDifficulty);
+        G.level=1; G.score=0; initStats();
+        G.aiMatch = { myScore: 0, aiScore: 0, round: 1, maxRounds: 9, state: 'playing' };
+        document.getElementById('loadingScreen').style.display='flex';
+        document.getElementById('loadingTitle').textContent='ROUND 1';
+        import('./adaptive-ai.js').then(m => {
+            G.aiTracker = new m.PlayerBehaviorTracker();
+            setTimeout(() => generateLevel(1), 100);
+        });
     } else {
         log('info','START','Starting multiplayer: '+G.gameMode);
         import('./multiplayer.js').then(m => m.createOrJoinLobby());
@@ -176,9 +186,81 @@ function animateScoreCounter(el, target, duration) {
 }
 
 export function multiplayerGameOver(isWinner){
-    if (G.gameState !== GameState.PLAYING) return; // prevent overwriting an already-decided game
+    if (G.gameState !== GameState.PLAYING) return;
     G.gameState=GameState.GAME_OVER;
     finalizeStats(isWinner);
+
+    if (G.gameMode === 'ai1v1') {
+        if (G.aiTracker) G.aiTracker.roundEnded(isWinner);
+        if (isWinner) G.aiMatch.myScore++;
+        else G.aiMatch.aiScore++;
+        G.aiMatch.round++;
+        log('info','SCORE','aiMatch updated: myScore='+G.aiMatch.myScore+' aiScore='+G.aiMatch.aiScore+' round='+G.aiMatch.round);
+        const myWins = G.aiMatch.myScore;
+        const aiWins = G.aiMatch.aiScore;
+        const roundsPlayed = G.aiMatch.round - 1;
+        const matchOver = myWins >= 5 || aiWins >= 5 || roundsPlayed >= G.aiMatch.maxRounds;
+        const playerWonMatch = matchOver && myWins > aiWins;
+
+        if (matchOver) {
+            G.aiMatch.state = 'matchOver';
+            const mt = playerWonMatch ? 'VICTORY!' : 'DEFEAT!';
+            const mc = playerWonMatch ? '#27ae60' : '#e74c3c';
+            const sub = playerWonMatch ? 'You won the match!' : 'You lost the match!';
+            const overlay=document.getElementById('gameOverOverlay');
+            overlay.innerHTML=`
+                <h1 style="color:${mc};font-size:56px;margin:0 0 5px;text-shadow:0 0 30px ${mc};">${mt}</h1>
+                <p style="color:#eaeaea;font-size:16px;margin:0 0 5px;">${sub}</p>
+                <p style="color:#f39c12;font-size:22px;margin:0 0 20px;">YOU ${myWins} — ${aiWins} AI</p>
+                <p style="color:#888;font-size:12px;margin:0 0 15px;">Best of ${G.aiMatch.maxRounds}</p>
+                <div id="mpGameOverStats" style="margin:10px 0;width:80%;max-width:400px;background:rgba(0,0,0,0.3);border-radius:4px;padding:10px;display:none;">
+                    <h3 style="color:#f39c12;font-size:11px;margin-bottom:8px;letter-spacing:2px;">MATCH STATS</h3>
+                    <div id="mpGameOverStatsContent"></div>
+                </div>
+                <div style="display:flex;gap:15px;justify-content:center;">
+                    <button onclick="startAIGame(${G.aiDifficulty})" style="padding:15px 40px;font-size:18px;cursor:pointer;background:#27ae60;border:none;border-radius:8px;color:white;">PLAY AGAIN</button>
+                    <button onclick="leaveGame()" style="padding:15px 40px;font-size:18px;cursor:pointer;background:#3498db;border:none;border-radius:8px;color:white;">BACK TO MENU</button>
+                </div>
+            `;
+            showOverlay('gameOverOverlay');
+            showGameOverStats();
+            if (playerWonMatch) {
+                const ci = setInterval(() => { spawnConfettiBurst(6); }, 200);
+                setTimeout(() => clearInterval(ci), 3500);
+            }
+            log('info','MATCH','Match over. Result: '+(playerWonMatch?'WIN':'LOSE')+' ('+myWins+'-'+aiWins+')');
+        } else {
+            G.aiMatch.state = 'roundOver';
+            const rt = isWinner ? 'ROUND WON!' : 'ROUND LOST!';
+            const rc = isWinner ? '#27ae60' : '#e74c3c';
+            const overlay=document.getElementById('gameOverOverlay');
+            overlay.innerHTML=`
+                <h1 style="color:${rc};font-size:52px;margin:0 0 5px;text-shadow:0 0 25px ${rc};">${rt}</h1>
+                <p style="color:#eaeaea;font-size:16px;margin:0 0 3px;">Round ${roundsPlayed} of ${G.aiMatch.maxRounds}</p>
+                <p style="color:#f39c12;font-size:26px;margin:0 0 10px;">YOU ${myWins} — ${aiWins} AI</p>
+                <div id="mpGameOverStats" style="margin:6px 0;width:75%;max-width:360px;background:rgba(0,0,0,0.3);border-radius:4px;padding:8px;display:none;"></div>
+                <div id="mpGameOverStatsContent" style="display:none;"></div>
+                <p id="autoNextCountdown" style="color:#888;font-size:14px;margin:12px 0 6px;letter-spacing:2px;">NEXT ROUND IN 3...</p>
+                <button onclick="leaveGame()" style="padding:10px 30px;font-size:14px;cursor:pointer;background:#555;border:none;border-radius:6px;color:#ccc;">QUIT MATCH</button>
+            `;
+            showOverlay('gameOverOverlay');
+            showGameOverStats();
+            log('info','ROUND','Round '+roundsPlayed+' complete. Score: '+myWins+'-'+aiWins+'. Auto-next in 3s');
+
+            let countdown = 3;
+            const cdEl = document.getElementById('autoNextCountdown');
+            const timer = setInterval(() => {
+                countdown--;
+                if (cdEl) cdEl.textContent = 'NEXT ROUND IN ' + countdown + '...';
+                if (countdown <= 0) {
+                    clearInterval(timer);
+                    startNextRound();
+                }
+            }, 1000);
+        }
+        return;
+    }
+
     const resultText=isWinner?'VICTORY!':'DEFEAT!';
     const resultColor=isWinner?'#27ae60':'#e74c3c';
     const resultOverlay=document.getElementById('gameOverOverlay');
@@ -190,8 +272,8 @@ export function multiplayerGameOver(isWinner){
             <div id="mpGameOverStatsContent"></div>
         </div>
         <div style="display:flex;gap:15px;justify-content:center;">
-            <button onclick="rematch()" style="padding:15px 40px;font-size:18px;cursor:pointer;background:#27ae60;border:none;border-radius:8px;color:white;">PLAY AGAIN</button>
-            <button onclick="leaveLobby()" style="padding:15px 40px;font-size:18px;cursor:pointer;background:#3498db;border:none;border-radius:8px;color:white;">BACK TO MENU</button>
+            <button onclick="${G.lobbyId ? 'rematch()' : 'startAIGame(' + G.aiDifficulty + ')'}" style="padding:15px 40px;font-size:18px;cursor:pointer;background:#27ae60;border:none;border-radius:8px;color:white;">PLAY AGAIN</button>
+            <button onclick="leaveGame()" style="padding:15px 40px;font-size:18px;cursor:pointer;background:#3498db;border:none;border-radius:8px;color:white;">BACK TO MENU</button>
         </div>
     `;
     showOverlay('gameOverOverlay');
@@ -200,18 +282,48 @@ export function multiplayerGameOver(isWinner){
         const confettiInterval2 = setInterval(() => { spawnConfettiBurst(6); }, 200);
         setTimeout(() => clearInterval(confettiInterval2), 3500);
     }
-    import('./firebase.js').then(({ ref, update, db }) => {
-        const lobbyRef=ref(db, 'lobbies/'+G.lobbyId);
-        const remoteUids = Object.keys(G.remoteTanks);
-        const winnerUid = isWinner ? G.currentUser.uid : (remoteUids.length > 0 ? remoteUids[0] : null);
-        update(lobbyRef, {
-            status: 'gameOver',
-            winner: winnerUid,
-            gameResult: isWinner ? 'win' : 'lose'
+    if (G.lobbyId) {
+        import('./firebase.js').then(({ ref, update, db }) => {
+            const lobbyRef=ref(db, 'lobbies/'+G.lobbyId);
+            const remoteUids = Object.keys(G.remoteTanks);
+            const winnerUid = isWinner ? G.currentUser.uid : (remoteUids.length > 0 ? remoteUids[0] : null);
+            update(lobbyRef, {
+                status: 'gameOver',
+                winner: winnerUid,
+                gameResult: isWinner ? 'win' : 'lose'
+            });
         });
-    });
+    }
     log('info','MP','Game over. Result: '+(isWinner?'WIN':'LOSE'));
 }
+
+export function startNextRound(){
+    if (G.gameState !== GameState.GAME_OVER) { log('warn','ROUND','startNextRound blocked: state='+G.gameState); return; }
+    if (G.aiMatch.state !== 'roundOver') { log('warn','ROUND','startNextRound blocked: aiMatch.state='+G.aiMatch.state); return; }
+    G.aiMatch.state = 'playing';
+    G.gameState = GameState.LOADING;
+    G.mouseDown = false;
+    showOverlay(null);
+    initStats();
+    const ls = document.getElementById('loadingScreen');
+    const lt = document.getElementById('loadingTitle');
+    const lsub = document.getElementById('loadingSubtitle');
+    ls.style.display='flex';
+    lt.textContent='ROUND '+G.aiMatch.round;
+    lsub.textContent='';
+    setTimeout(() => {
+        if (G.gameState === GameState.LOADING) {
+            lsub.textContent='FIGHT!';
+            lsub.style.animation='none';
+            void lsub.offsetWidth;
+            lsub.style.animation='pulse 0.8s ease 3';
+        }
+    }, 400);
+    setTimeout(() => generateLevel(1), 700);
+    log('info','ROUND','Starting round '+G.aiMatch.round);
+}
+
+window.nextRound = startNextRound;
 
 // ==================== STATS DISPLAY ====================
 function showGameOverStats() {

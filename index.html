@@ -273,6 +273,11 @@
                         <div class="card-desc">Multiplayer Battle</div>
                         <div class="card-play">PLAY</div>
                     </div>
+                    <div class="home-card" onclick="startVersusAI()" style="border-color:#9b59b6;">
+                        <div class="card-title">VS AI</div>
+                        <div class="card-desc">Practice Battle</div>
+                        <div class="card-play">FIGHT</div>
+                    </div>
                 </div>
 
                 <!-- Versus sub-panel (hidden initially) -->
@@ -304,6 +309,18 @@
                 </div>
             </div>
             <div id="authError" style="color:#e74c3c;font-size:12px;margin-top:10px;display:none;"></div>
+        </div>
+
+        <!-- AI DIFFICULTY SELECTOR -->
+        <div id="aiDifficultyOverlay" class="overlay" style="display:none;">
+            <h2 style="font-size:32px;margin-bottom:5px;">SELECT DIFFICULTY</h2>
+            <p style="color:#888;font-size:12px;margin-bottom:20px;">Choose your opponent's skill level</p>
+            <div style="display:flex;flex-direction:column;gap:10px;width:300px;">
+                <button class="btn" onclick="startAIGame(1)" style="background:#27ae60;padding:14px;font-size:16px;">EASY</button>
+                <button class="btn" onclick="startAIGame(2)" style="background:#f39c12;padding:14px;font-size:16px;">MEDIUM</button>
+                <button class="btn" onclick="startAIGame(3)" style="background:#e74c3c;padding:14px;font-size:16px;">HARD</button>
+                <button onclick="document.getElementById('aiDifficultyOverlay').style.display='none';document.getElementById('aiDifficultyOverlay').classList.remove('active');showOverlay('loginOverlay');" style="background:transparent;border:1px solid #555;color:#888;padding:10px;border-radius:6px;cursor:pointer;font-size:12px;margin-top:4px;">CANCEL</button>
+            </div>
         </div>
 
         <!-- PROFILE SETUP -->

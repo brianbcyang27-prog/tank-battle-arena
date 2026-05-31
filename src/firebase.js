@@ -37,6 +37,9 @@ try {
 export { auth, db };
 
 // ==================== AUTH ====================
+// Track whether the login was from an explicit user action vs session restore
+let _explicitSignIn = false;
+
 onAuthStateChanged(auth, (user) => {
     G.currentUser = user;
     if (user) {
@@ -64,13 +67,19 @@ onAuthStateChanged(auth, (user) => {
 
         get(ref(db, 'users/' + user.uid + '/profile')).then(snapshot => {
             if (!snapshot.exists()) {
-                document.getElementById('loggedInPanel').style.display = 'none';
-                const po = document.getElementById('profileOverlay');
-                po.style.display = 'flex';
-                po.classList.add('active');
-                log('info','AUTH','New user — showing profile setup');
+                if (_explicitSignIn) {
+                    document.getElementById('loggedInPanel').style.display = 'none';
+                    const po = document.getElementById('profileOverlay');
+                    po.style.display = 'flex';
+                    po.classList.add('active');
+                    log('info','AUTH','New user — showing profile setup');
+                } else {
+                    log('info','AUTH','Session restored — user has no profile, skipping overlay');
+                }
+                _explicitSignIn = false;
             } else {
                 G.userProfile = snapshot.val();
+                _explicitSignIn = false;
             }
         });
 
@@ -115,6 +124,7 @@ window.signUp = async function() {
     log('info','AUTH','Attempting sign up: ' + email);
 
     try {
+        _explicitSignIn = true;
         await createUserWithEmailAndPassword(auth, email, password);
         log('info','AUTH','Sign up successful: ' + email);
     } catch(e) {
@@ -140,6 +150,7 @@ window.signIn = async function() {
     log('info','AUTH','Attempting login: ' + email);
 
     try {
+        _explicitSignIn = true;
         await signInWithEmailAndPassword(auth, email, password);
         log('info','AUTH','Login successful: ' + email);
     } catch(e) {
@@ -175,6 +186,7 @@ window.signInAsGuest = async function(){
     if(!name) { errorDiv.textContent = 'Please enter a name'; errorDiv.style.display = 'block'; _guestSigningIn = false; if(btn) btn.disabled = false; return; }
     log('info','AUTH','Attempting guest sign-in with name: '+name);
     try {
+        _explicitSignIn = true;
         const result = await signInAnonymously(auth);
         const userRef = ref(db, 'users/'+result.user.uid);
         await set(userRef, { name: name, email: name+'@guest.local', createdAt: serverTimestamp() });
@@ -196,6 +208,7 @@ window.signInWithGoogle = async function() {
     errorDiv.style.display = 'none';
     log('info','AUTH','Attempting Google sign-in');
     try {
+        _explicitSignIn = true;
         const result = await signInWithPopup(auth, provider);
         log('info','AUTH','Google sign-in successful: ' + result.user.email);
     } catch(e) {

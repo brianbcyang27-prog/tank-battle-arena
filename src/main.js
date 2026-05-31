@@ -58,7 +58,8 @@ function gameLoop(ct) {
             G.player.update(dt, ct);
             // Track distance traveled
             const speed = G.player.vel.length();
-            if (speed > 0) recordDistance(speed * dt);
+            if (speed > 0) { recordDistance(speed * dt); if (G.aiTracker) G.aiTracker.recordDistance(speed * dt); }
+            if (G.aiTracker) G.aiTracker.tick(dt);
         }
 
         // Sync newly fired player bullets to Firebase
@@ -95,7 +96,9 @@ function gameLoop(ct) {
                 if (G.player && G.player.alive && m.checkCollision(G.player)) {
                     m.explode();
                     if (!G.player.alive) {
+                        if (G.aiTracker) G.aiTracker.recordDeath();
                         if (G.isMultiplayerGame) multiplayerGameOver(false);
+                        else if (G.gameMode === 'ai1v1') multiplayerGameOver(false);
                         else gameOver();
                     }
                 }
@@ -127,7 +130,9 @@ function gameLoop(ct) {
         // Catch player death from mine auto-explosion or bullet-triggered explosion
         if (G.player && !G.player.alive && G.gameState === GameState.PLAYING) {
             recordDeath();
+            if (G.aiTracker) G.aiTracker.recordDeath();
             if (G.isMultiplayerGame) multiplayerGameOver(false);
+            else if (G.gameMode === 'ai1v1') multiplayerGameOver(false);
             else gameOver();
         }
 
@@ -153,7 +158,9 @@ function gameLoop(ct) {
                     log('info', 'DAMAGE', 'Player hit! HP: ' + G.player.health);
                     if (!G.player.alive) {
                         recordDeath();
+                        if (G.aiTracker) G.aiTracker.recordDeath();
                         if (G.isMultiplayerGame) multiplayerGameOver(false);
+                        else if (G.gameMode === 'ai1v1') multiplayerGameOver(false);
                         else gameOver();
                     }
                 }
@@ -163,8 +170,8 @@ function gameLoop(ct) {
                         if (!G.settings.friendlyFire && isEnemyBullet) break;
                         b.alive = false;
                         e.takeDamage();
-                        recordHit();
-                        if (!e.alive) { recordKill(); G.score += 100 * G.level; log('info', 'KILL', 'Enemy killed! Score: ' + G.score); }
+                        recordHit(); if (G.aiTracker) G.aiTracker.recordHit();
+                        if (!e.alive) { recordKill(); if (G.aiTracker) G.aiTracker.recordKill(); G.score += 100 * G.level; log('info', 'KILL', 'Enemy killed! Score: ' + G.score); }
                         break;
                     }
                 }
@@ -216,7 +223,12 @@ function gameLoop(ct) {
         }
 
         if (!G.isMultiplayerGame && G.enemies.filter(e => e.alive).length === 0 && G.player.alive) {
-            levelComplete();
+            if (G.gameMode === 'ai1v1') {
+                recordKill(); if (G.aiTracker) G.aiTracker.recordKill();
+                multiplayerGameOver(true);
+            } else {
+                levelComplete();
+            }
         }
     }
 
@@ -233,12 +245,21 @@ function gameLoop(ct) {
     if (G.gameState === GameState.PLAYING) {
         ctx.fillStyle = COLORS.text;
         ctx.font = '18px Orbitron';
-        ctx.textAlign = 'left';
-        ctx.fillText('LEVEL ' + G.level, 20, 35);
-        ctx.fillText('SCORE: ' + G.score, 20, 60);
-        ctx.textAlign = 'right';
-        ctx.fillText('TIME: ' + G.levelTime.toFixed(1) + 's', CANVAS_WIDTH - 20, 35);
-        ctx.fillText('MINES: ' + (3 - G.mines.length) + '/3', CANVAS_WIDTH - 20, 60);
+        if (G.gameMode === 'ai1v1') {
+            ctx.textAlign = 'left';
+            ctx.fillText('ROUND ' + G.aiMatch.round + '/' + G.aiMatch.maxRounds, 20, 35);
+            ctx.fillText('YOU ' + G.aiMatch.myScore + ' - ' + G.aiMatch.aiScore + ' AI', 20, 60);
+            ctx.textAlign = 'right';
+            ctx.fillText('TIME: ' + G.levelTime.toFixed(1) + 's', CANVAS_WIDTH - 20, 35);
+            ctx.fillText('MINES: ' + (3 - G.mines.length) + '/3', CANVAS_WIDTH - 20, 60);
+        } else {
+            ctx.textAlign = 'left';
+            ctx.fillText('LEVEL ' + G.level, 20, 35);
+            ctx.fillText('SCORE: ' + G.score, 20, 60);
+            ctx.textAlign = 'right';
+            ctx.fillText('TIME: ' + G.levelTime.toFixed(1) + 's', CANVAS_WIDTH - 20, 35);
+            ctx.fillText('MINES: ' + (3 - G.mines.length) + '/3', CANVAS_WIDTH - 20, 60);
+        }
     }
 
     requestAnimationFrame(gameLoop);

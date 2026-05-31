@@ -31,6 +31,7 @@ export const G = {
     isMultiplayerGame: false,
     lobbyId: null,
     gameMode: 'single',
+    aiDifficulty: 2, // 1=easy, 2=medium, 3=hard (for vs AI mode)
     currentUser: null,
     remoteTanks: {},
     remoteBullets: {},
@@ -44,6 +45,16 @@ export const G = {
 
     // Log helper flag
     _log: true,
+
+    // AI Match (best-of-9, first to 5 wins)
+    aiMatch: {
+        myScore: 0,
+        aiScore: 0,
+        round: 1,
+        maxRounds: 9,
+        state: 'playing'  // 'playing' | 'roundOver' | 'matchOver'
+    },
+    aiTracker: null,      // PlayerBehaviorTracker instance
 
     // Friends
     friendCode: null,

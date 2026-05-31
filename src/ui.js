@@ -146,10 +146,11 @@ export function showOverlay(id){
 }
 
 export function updateUI(){
-    document.getElementById('levelCompleteScore').textContent='SCORE: '+G.score;
-    document.getElementById('levelCompleteTime').textContent='TIME: '+G.levelTime.toFixed(1)+'s';
-    document.getElementById('finalScore').textContent='FINAL SCORE: '+G.score;
-    document.getElementById('finalLevel').textContent='REACHED LEVEL '+G.level;
+    const el = id => document.getElementById(id);
+    if(el('levelCompleteScore')) el('levelCompleteScore').textContent='SCORE: '+G.score;
+    if(el('levelCompleteTime')) el('levelCompleteTime').textContent='TIME: '+G.levelTime.toFixed(1)+'s';
+    if(el('finalScore')) el('finalScore').textContent='FINAL SCORE: '+G.score;
+    if(el('finalLevel')) el('finalLevel').textContent='REACHED LEVEL '+G.level;
 }
 
 window.setMode = function(m,btn){
@@ -157,6 +158,18 @@ window.setMode = function(m,btn){
     document.querySelectorAll('.mode-tab').forEach(b=>b.classList.remove('selected'));
     btn.classList.add('selected');
     log('info','MODE','Game mode set to: '+m);
+};
+
+window.startVersusAI = function(){
+    G.gameMode = 'ai1v1';
+    showOverlay('aiDifficultyOverlay');
+    log('info','MODE','VS AI mode — showing difficulty selector');
+};
+
+window.startAIGame = function(difficulty){
+    G.aiDifficulty = difficulty;
+    log('info','MODE','Starting VS AI game with difficulty: '+difficulty);
+    import('./game.js').then(m => m.startGameFromMenu());
 };
 
 window.startSolo = function(){

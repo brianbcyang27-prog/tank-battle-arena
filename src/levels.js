@@ -22,14 +22,21 @@ export function generateLevel(lvl){
     G.player=new Player(CELL_SIZE*2.5,CANVAS_HEIGHT-CELL_SIZE*2.5);
 
     if(!G.isMultiplayerGame){
-        const ne=Math.min(2+Math.floor(lvl*1.2),10), tier=Math.min(Math.ceil(lvl/2),4);
-        for(let i=0;i<ne;i++){
-            for(let a=0;a<50;a++){
-                const ex=CELL_SIZE*2+Math.random()*(CANVAS_WIDTH-CELL_SIZE*4), ey=CELL_SIZE*2+Math.random()*(CANVAS_HEIGHT-CELL_SIZE*4);
-                if(Math.abs(ex-G.player.pos.x)<100||Math.abs(ey-G.player.pos.y)<100) continue;
-                const et=Math.max(1,tier-(i%2));
-                G.enemies.push(new Enemy(ex,ey,et));
-                break;
+        if (G.gameMode === 'ai1v1') {
+            const ex = CANVAS_WIDTH - CELL_SIZE * 2.5;
+            const ey = CELL_SIZE * 2.5;
+            const strategy = G.aiTracker ? G.aiTracker.getStrategy() : null;
+            G.enemies.push(new Enemy(ex, ey, G.aiDifficulty || 2, strategy));
+        } else {
+            const ne=Math.min(2+Math.floor(lvl*1.2),10), tier=Math.min(Math.ceil(lvl/2),4);
+            for(let i=0;i<ne;i++){
+                for(let a=0;a<50;a++){
+                    const ex=CELL_SIZE*2+Math.random()*(CANVAS_WIDTH-CELL_SIZE*4), ey=CELL_SIZE*2+Math.random()*(CANVAS_HEIGHT-CELL_SIZE*4);
+                    if(Math.abs(ex-G.player.pos.x)<100||Math.abs(ey-G.player.pos.y)<100) continue;
+                    const et=Math.max(1,tier-(i%2));
+                    G.enemies.push(new Enemy(ex,ey,et));
+                    break;
+                }
             }
         }
     }
