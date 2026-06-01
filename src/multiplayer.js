@@ -34,8 +34,8 @@ export function createOrJoinLobby() {
         log('error', 'LOBBY', 'Lobby search failed: ' + e.message);
         alert('Failed to create/join lobby. Please try again.');
         document.getElementById('loadingScreen').style.display = 'none';
-        showOverlay('loginOverlay');
         document.getElementById('loggedInPanel').style.display = 'flex';
+        showOverlay('loginOverlay');
     });
 }
 
@@ -146,24 +146,31 @@ function joinLobbyByCode(code) {
             log('warn', 'JOIN', 'Room not found or full: ' + code);
             alert('Room not found or already full!');
             document.getElementById('loadingScreen').style.display = 'none';
-            showOverlay('loginOverlay');
             document.getElementById('loggedInPanel').style.display = 'flex';
+            showOverlay('loginOverlay');
         }
     }).catch(e => {
         log('error', 'JOIN', 'Failed to join room: ' + e.message);
         alert('Failed to join room. Please try again.');
         document.getElementById('loadingScreen').style.display = 'none';
-        showOverlay('loginOverlay');
         document.getElementById('loggedInPanel').style.display = 'flex';
+        showOverlay('loginOverlay');
     });
 }
 
 // ==================== LOBBY LISTENER ====================
 export function listenToLobby(lobbyRef) {
+    if (typeof G._lobbyCleanup === 'function') {
+        G._lobbyCleanup();
+        G._lobbyCleanup = null;
+    }
+
+    const _cleanups = [];
+
     let isHost = false;
 
     // Fetch friend UIDs for friend badges in player list
-    import('./firebase.js').then(({ ref: fbRef, get: fbGet, db: fbDb }) => {
+    import('/src/firebase.js').then(({ ref: fbRef, get: fbGet, db: fbDb }) => {
         fbGet(fbRef(fbDb, 'friends/' + G.currentUser.uid)).then(snap => {
             G.friendUids = new Set();
             if (snap.exists()) {
@@ -172,7 +179,7 @@ export function listenToLobby(lobbyRef) {
         }).catch(() => {});
     });
 
-    onValue(lobbyRef, snapshot => {
+    _cleanups.push(onValue(lobbyRef, snapshot => {
         const l = snapshot.val();
         if (!l) return;
 
@@ -193,8 +200,10 @@ export function listenToLobby(lobbyRef) {
                 if (uid === G.currentUser.uid) continue;
 
                 if (!G.remoteTanks[uid]) {
+                    const initPos = new Vector2(p.x || CANVAS_WIDTH / 2, p.y || CANVAS_HEIGHT / 2);
                     G.remoteTanks[uid] = {
-                        tank: new Tank(p.x || CANVAS_WIDTH / 2, p.y || CANVAS_HEIGHT / 2, COLORS.player2),
+                        tank: new Tank(initPos.x, initPos.y, COLORS.player2),
+                        targetPos: initPos.clone(),
                         lastUpdate: Date.now()
                     };
                     G.remoteTanks[uid].tank.health = p.health || 3;
@@ -203,8 +212,8 @@ export function listenToLobby(lobbyRef) {
                 }
 
                 if (p.x !== undefined && p.y !== undefined) {
-                    G.remoteTanks[uid].tank.pos.x = p.x;
-                    G.remoteTanks[uid].tank.pos.y = p.y;
+                    G.remoteTanks[uid].targetPos.x = p.x;
+                    G.remoteTanks[uid].targetPos.y = p.y;
                     G.remoteTanks[uid].tank.turretAngle = p.angle || 0;
                     // Use Math.min: local damage predictions (lower) are NOT overwritten
                     // by stale Firebase values (higher). Only Firebase-confirmed hits go lower.
@@ -254,23 +263,23 @@ export function listenToLobby(lobbyRef) {
         } else {
             document.getElementById('lobbyStatus').textContent = 'Waiting for players: ' + currentPlayers + '/' + playerCount;
         }
-    });
+    }));
 
     // Listen for status changes (playing = game started)
-    onValue(child(lobbyRef, 'status'), snapshot => {
+    _cleanups.push(onValue(child(lobbyRef, 'status'), snapshot => {
         const status = snapshot.val();
         if (status === 'playing' && !G._multiplayerStarting && G.gameState !== GameState.LOADING && G.gameState !== GameState.PLAYING) {
             log('info', 'MP', 'Received status=playing, starting game...');
             window.startMultiplayerGame();
         }
-    });
+    }));
 
     // Listen for game result (uses `winner` UID to determine VICTORY/DEFEAT).
     // Only fires if the game is still locally PLAYING (no local kill/death detected yet).
     // The guard prevents the Firebase result from overwriting a correct local result
     // in the simultaneous-death race. If BOTH players detect a kill locally, each trusts
     // their own result; the player who didn't detect anything gets the Firebase result.
-    onValue(child(lobbyRef, 'winner'), snapshot => {
+    _cleanups.push(onValue(child(lobbyRef, 'winner'), snapshot => {
         const winner = snapshot.val();
         if (winner && G.gameState === GameState.PLAYING) {
             const isWinner = winner === G.currentUser.uid;
@@ -289,7 +298,9 @@ export function listenToLobby(lobbyRef) {
             showOverlay('gameOverOverlay');
             log('info', 'MP', 'Received game result: ' + (isWinner ? 'WIN' : 'LOSE'));
         }
-    });
+    }));
+
+    G._lobbyCleanup = () => _cleanups.forEach(fn => fn());
 }
 
 function updatePlayerList(players) {
@@ -332,6 +343,10 @@ window.toggleReady = function() {
 };
 
 export function cleanupMultiplayer() {
+    if (typeof G._lobbyCleanup === 'function') {
+        G._lobbyCleanup();
+        G._lobbyCleanup = null;
+    }
     if (G.bulletListenerRef) {
         if (typeof G.bulletListenerRef === 'function') G.bulletListenerRef();
         G.bulletListenerRef = null;
@@ -450,8 +465,8 @@ window.leaveLobby = function() {
     remove(child(lobbyRef, 'players/' + G.currentUser.uid)).then(() => {
         log('info', 'LOBBY', 'Left lobby: ' + G.lobbyId);
         G.lobbyId = null;
-        showOverlay('loginOverlay');
         document.getElementById('loggedInPanel').style.display = 'flex';
+        showOverlay('loginOverlay');
     });
 };
 
@@ -631,8 +646,9 @@ function loadMapFromData(wallData, hostStart, joinerStart) {
     G.player.color = COLORS.player2;
     G.player.pos = new Vector2(myStart.x, myStart.y);
 
-    G.levelStartTime = performance.now();
     initStats();
-    G.gameState = GameState.PLAYING;
+    G.gameState = GameState.READY;
+    G._readyAt = performance.now();
     log('info', 'LEVEL', 'Map loaded - walls: ' + G.walls.length);
+    log('info', 'LEVEL', 'Joiner countdown started');
 }

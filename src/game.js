@@ -5,7 +5,7 @@ import { generateLevel } from './levels.js';
 import { showOverlay, updateUI, updateCurrencyDisplay } from './ui.js';
 import { log } from './log.js';
 import { initStats, finalizeStats } from './stats.js';
-import { awardLevelComplete, awardGameOver, awardAiWin, awardAiRoundWin } from './progression.js';
+import { awardLevelComplete, awardGameOver, awardAiWin, awardAiRoundWin, getCampaignLevel, saveCampaignLevel } from './progression.js';
 
 // ==================== GAME FLOW ====================
 export function startGame(){
@@ -20,13 +20,21 @@ export function startGame(){
 }
 
 export function startGameFromMenu(){
-    if(!G.currentUser){ log('warn','START','Cannot start: no user'); return; }
     showOverlay(null);
     if(G.gameMode==='single'){
         log('info','START','Starting single player game');
         G.level=1; G.score=0; initStats();
         document.getElementById('loadingScreen').style.display='flex';
         document.getElementById('loadingTitle').textContent='GENERATING LEVEL...';
+        setTimeout(()=>generateLevel(G.level),100);
+    } else if(G.gameMode==='campaign'){
+        const savedLevel = getCampaignLevel();
+        G.level = savedLevel;
+        G.score = 0;
+        initStats();
+        log('info','START','Starting campaign from level '+savedLevel);
+        document.getElementById('loadingScreen').style.display='flex';
+        document.getElementById('loadingTitle').textContent='CAMPAIGN — LEVEL '+savedLevel;
         setTimeout(()=>generateLevel(G.level),100);
     } else if(G.gameMode==='ai1v1'){
         log('info','START','Starting 1v1 AI game, difficulty: '+G.aiDifficulty);
@@ -39,6 +47,12 @@ export function startGameFromMenu(){
             setTimeout(() => generateLevel(1), 100);
         });
     } else {
+        if(!G.currentUser){
+            log('warn','START','Multiplayer requires login');
+            alert('Please sign in to play multiplayer.');
+            showOverlay('loginOverlay');
+            return;
+        }
         log('info','START','Starting multiplayer: '+G.gameMode);
         import('./multiplayer.js').then(m => m.createOrJoinLobby());
     }
@@ -58,6 +72,10 @@ export function levelComplete(){
     showOverlay('levelCompleteOverlay');
     document.getElementById('nextLevelButton').onclick=nextLevel;
     updateCurrencyDisplay();
+    if (G.gameMode === 'campaign') {
+        saveCampaignLevel(G.level + 1);
+        log('info','CAMPAIGN','Campaign progress saved — next: level ' + (G.level + 1));
+    }
     log('info','LEVEL','Level complete! Score: '+G.score);
 }
 
@@ -92,7 +110,7 @@ function savePersonalBest(score) {
 export function gameOver(){
     G.gameState=GameState.GAME_OVER;
     finalizeStats(false);
-    saveToLeaderboard();
+    if (G.currentUser) saveToLeaderboard();
     awardGameOver(G.score);
     updateCurrencyDisplay();
 
@@ -121,6 +139,31 @@ function saveToLeaderboard() {
         }
         lb.sort((a, b) => b.score - a.score);
         localStorage.setItem('tankBattleLeaderboard', JSON.stringify(lb));
+
+        const fbScore = G.score;
+        const fbLevel = G.level;
+        import('/src/firebase.js').then(({ ref, get, set, db, serverTimestamp }) => {
+            if (!G.currentUser) return;
+            const userRef = ref(db, 'leaderboard/' + G.currentUser.uid);
+            get(userRef).then(snap => {
+                const existing = snap.val();
+                if (!existing || fbScore > (existing.score || 0)) {
+                    set(userRef, {
+                        name: G.currentUser.displayName || G.currentUser.email?.split('@')[0] || 'Anonymous',
+                        score: fbScore,
+                        level: fbLevel,
+                        timestamp: serverTimestamp()
+                    }).catch(() => {});
+                }
+            }).catch(() => {
+                set(userRef, {
+                    name: G.currentUser.displayName || G.currentUser.email?.split('@')[0] || 'Anonymous',
+                    score: fbScore,
+                    level: fbLevel,
+                    timestamp: serverTimestamp()
+                }).catch(() => {});
+            });
+        }).catch(() => {});
     } catch(e) {}
 }
 
@@ -129,11 +172,48 @@ function showNormalGameOver() {
     showOverlay('gameOverOverlay');
     showGameOverStats();
     document.getElementById('restartButton').onclick = startGame;
+
+    const submitBar = document.getElementById('scoreSubmitBar');
+    const submitMsg = document.getElementById('scoreSubmittedMsg');
+    if (submitBar) {
+        submitBar.style.display = G.currentUser ? 'none' : 'block';
+        document.getElementById('scoreNameInput').value = '';
+    }
+    if (submitMsg) submitMsg.style.display = 'none';
+
     const lb = JSON.parse(localStorage.getItem('tankBattleLeaderboard') || '[]');
     import('./ui.js').then(m => m.displayLeaderboard(lb));
     startGameOverAnimation(G.score, G.level);
     log('info','GAME','Game over. Final score: '+G.score+', Level: '+G.level);
 }
+
+window.submitScore = function() {
+    const input = document.getElementById('scoreNameInput');
+    const entered = input.value.trim();
+    if (!entered) { input.focus(); return; }
+
+    try {
+        const lb = JSON.parse(localStorage.getItem('tankBattleLeaderboard') || '[]');
+        const prev = lb.findIndex(e => e.name === entered);
+        if (prev >= 0) {
+            if (G.score > lb[prev].score) {
+                lb[prev] = { name: entered, score: G.score, level: G.level, date: new Date().toISOString() };
+            }
+        } else {
+            lb.push({ name: entered, score: G.score, level: G.level, date: new Date().toISOString() });
+        }
+        lb.sort((a, b) => b.score - a.score);
+        localStorage.setItem('tankBattleLeaderboard', JSON.stringify(lb));
+
+        import('./ui.js').then(m => m.displayLeaderboard(lb));
+
+        document.getElementById('scoreSubmitBar').style.display = 'none';
+        document.getElementById('scoreSubmittedMsg').style.display = 'block';
+        log('info','GAME','Score submitted: ' + entered + ' = ' + G.score);
+    } catch(e) {
+        log('warn','GAME','Failed to submit score: ' + e.message);
+    }
+};
 
 function showNewRecordAnimation(score, prevBest, level) {
     const overlay = document.createElement('div');
@@ -548,7 +628,7 @@ export function multiplayerGameOver(isWinner){
         setTimeout(() => clearInterval(confettiInterval2), 3500);
     }
     if (G.lobbyId) {
-        import('./firebase.js').then(({ ref, update, db }) => {
+        import('/src/firebase.js').then(({ ref, update, db }) => {
             const lobbyRef=ref(db, 'lobbies/'+G.lobbyId);
             const remoteUids = Object.keys(G.remoteTanks);
             const winnerUid = isWinner ? G.currentUser.uid : (remoteUids.length > 0 ? remoteUids[0] : null);

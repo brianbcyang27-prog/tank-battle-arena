@@ -27,13 +27,21 @@ export class Bullet {
     constructor(x,y,vel,owner){
         this.pos=new Vector2(x,y); this.vel=vel; this.owner=owner;
         this.radius=5; this.alive=true; this.trail=[]; this.fbId=null;
-        this.bounces = G.settings ? (G.settings.bulletBounce || 0) : 0;
+        this.bounces = 0;
         this.damage=1; this.pierceCount=0; this._trailColor=null;
+        // Weapon visual overrides (set by Player after construction)
+        this.bulletColor = null;     // hex color override
+        this.bulletSize = 1;         // radius multiplier
+        this.trailEffect = 'normal';
+        this.impactEffect = 'normal';
     }
     update(dt){
         if(!this.alive) return;
-        this.trail.push({x:this.pos.x,y:this.pos.y,a:1}); if(this.trail.length>8) this.trail.shift();
-        for(let t of this.trail) t.a-=dt*3;
+        const trLen = this.trailEffect === 'beam' ? 4 : this.trailEffect === 'scatter' ? 10 : 8;
+        this.trail.push({x:this.pos.x,y:this.pos.y,a:1});
+        if(this.trail.length>trLen) this.trail.shift();
+        const fadeRate = this.trailEffect === 'beam' ? dt*5 : this.trailEffect === 'scatter' ? dt*2 : dt*3;
+        for(let t of this.trail) t.a-=fadeRate;
         this.pos=this.pos.add(this.vel.mul(dt));
         if(isNaN(this.pos.x)||isNaN(this.pos.y)){ this.alive=false; return; }
         if(this.pos.x+this.radius<0||this.pos.x-this.radius>CANVAS_WIDTH||this.pos.y+this.radius<0||this.pos.y-this.radius>CANVAS_HEIGHT){ this.alive=false; return; }
@@ -69,24 +77,76 @@ export class Bullet {
         }
         if(isNaN(this.pos.x)||isNaN(this.pos.y)) this.alive=false;
     }
-    impact(){ for(let i=0;i<5;i++){ const a=Math.random()*Math.PI*2; G.particles.push(new Particle(this.pos.x,this.pos.y,Math.cos(a)*(30+Math.random()*60),Math.sin(a)*(30+Math.random()*60),this._trailColor||'#ffffff',0.2+Math.random()*0.2)); } }
+    _getColor(){
+        return this.bulletColor || this._trailColor || COLORS.bullet;
+    }
+    impact(){
+        const c = this._getColor();
+        const count = this.impactEffect === 'explosion' ? 14 : this.impactEffect === 'electric' ? 10 : this.impactEffect === 'spark' ? 8 : 5;
+        const speedBase = this.impactEffect === 'explosion' ? 80 : this.impactEffect === 'electric' ? 100 : 45;
+        const lifeBase = this.impactEffect === 'explosion' ? 0.5 : this.impactEffect === 'electric' ? 0.35 : 0.25;
+        const sizeScale = this.impactEffect === 'explosion' ? 2 : 1;
+        for(let i=0;i<count;i++){
+            const a=Math.random()*Math.PI*2;
+            const spd = speedBase + Math.random() * (this.impactEffect === 'electric' ? 150 : 60);
+            const p = new Particle(this.pos.x,this.pos.y,Math.cos(a)*spd,Math.sin(a)*spd,c,lifeBase+Math.random()*lifeBase);
+            p.size *= sizeScale;
+            G.particles.push(p);
+        }
+        if(this.impactEffect === 'explosion'){
+            for(let i=0;i<6;i++){
+                const a=Math.random()*Math.PI*2;
+                G.particles.push(new Particle(this.pos.x,this.pos.y,Math.cos(a)*(20+Math.random()*40),Math.sin(a)*(20+Math.random()*40),'#ff8c00',0.8+Math.random()*0.4));
+            }
+        }
+    }
     checkCollision(tank){ if(tank===this.owner) return false; const d=this.pos.distanceTo(tank.pos); return d<this.radius+18; }
     draw(){
         if(!this.alive||isNaN(this.pos.x)||isNaN(this.pos.y)) return;
-        const tc=this._trailColor;
-        for(let i=0;i<this.trail.length;i++){ if(this.trail[i].a>0){
-            if(tc){
-                const r=parseInt(tc.slice(1,3),16), g=parseInt(tc.slice(3,5),16), b=parseInt(tc.slice(5,7),16);
-                G.ctx.fillStyle='rgba('+r+','+g+','+b+','+(this.trail[i].a*0.5)+')';
-            } else {
-                G.ctx.fillStyle='rgba(255,255,255,'+(this.trail[i].a*0.5)+')';
+        const tc=this.bulletColor || this._trailColor;
+        const ctx=G.ctx;
+        // Trail
+        for(let i=0;i<this.trail.length;i++){
+            if(this.trail[i].a>0){
+                const alpha = this.trailEffect === 'spark' ? this.trail[i].a*0.7 : this.trail[i].a*0.5;
+                if(tc){
+                    const r=parseInt(tc.slice(1,3),16), g=parseInt(tc.slice(3,5),16), b=parseInt(tc.slice(5,7),16);
+                    ctx.fillStyle='rgba('+r+','+g+','+b+','+alpha+')';
+                } else {
+                    ctx.fillStyle='rgba(255,255,255,'+alpha+')';
+                }
+                const tr = this.trailEffect === 'spark' ? this.radius * 0.5 * (i/this.trail.length) :
+                           this.trailEffect === 'beam' ? this.radius * 0.9 :
+                           this.radius * (i/this.trail.length);
+                if(this.trailEffect === 'beam' && i === this.trail.length-1){
+                    // Beam: draw line from pos to trail point
+                    const prev = this.trail[i-1] || this.trail[i];
+                    ctx.strokeStyle = tc || COLORS.bullet;
+                    ctx.lineWidth = this.radius * 1.2;
+                    ctx.globalAlpha = this.trail[i].a * 0.6;
+                    ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(this.trail[i].x,this.trail[i].y); ctx.stroke();
+                    ctx.globalAlpha = 1;
+                } else {
+                    ctx.beginPath(); ctx.arc(this.trail[i].x,this.trail[i].y,tr,0,Math.PI*2); ctx.fill();
+                }
             }
-            G.ctx.beginPath(); G.ctx.arc(this.trail[i].x,this.trail[i].y,this.radius*(i/this.trail.length),0,Math.PI*2); G.ctx.fill();
-        } }
-        G.ctx.fillStyle=tc||COLORS.bullet;
-        if(tc){ G.ctx.shadowColor=tc; G.ctx.shadowBlur=12; }
-        G.ctx.beginPath(); G.ctx.arc(this.pos.x,this.pos.y,this.radius,0,Math.PI*2); G.ctx.fill();
-        G.ctx.shadowBlur=0;
+        }
+        // Bullet body
+        const color = this._getColor();
+        ctx.fillStyle = color;
+        const glowColor = this.impactEffect === 'electric' ? '#bb86fc' : this.impactEffect === 'explosion' ? '#ff6b35' : color;
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur = this.impactEffect === 'explosion' ? 18 : this.impactEffect === 'electric' ? 20 : 12;
+        ctx.beginPath(); ctx.arc(this.pos.x,this.pos.y,this.radius,0,Math.PI*2); ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Railgun/electric inner glow
+        if(this.impactEffect === 'electric'){
+            ctx.fillStyle = '#ffffff';
+            ctx.globalAlpha = 0.6;
+            ctx.beginPath(); ctx.arc(this.pos.x,this.pos.y,this.radius*0.4,0,Math.PI*2); ctx.fill();
+            ctx.globalAlpha = 1;
+        }
     }
 }
 
@@ -174,6 +234,9 @@ export class Tank {
             ctx.restore();
         }
     }
+    collidesWithWall(wall){
+        return this.pos.x-18<wall.x+wall.w&&this.pos.x+18>wall.x&&this.pos.y-18<wall.y+wall.h&&this.pos.y+18>wall.y;
+    }
 }
 
 export class Player extends Tank {
@@ -190,6 +253,20 @@ export class Player extends Tank {
         this.reloading = false;
         this.reloadStart = 0;
         this.reloadDuration = 1200; // ms
+        // Weapon visual properties (set by progression)
+        this.weaponId = 'standard';
+        this.bulletColor = null;
+        this.bulletSize = 1;
+        this.bulletBounce = 0;
+        this.bulletTrailEffect = 'normal';
+        this.bulletImpactEffect = 'normal';
+        this.fuel = 100;
+        this.maxFuel = 100;
+        this.fuelConsumption = 20;
+        this.fuelRegen = 30;
+        this.mineRadius = 120;
+        this.boostEnergy = 100;
+        this.maxBoostEnergy = 100;
     }
     update(dt,now){
         let mx=0,my=0;
@@ -197,7 +274,22 @@ export class Player extends Tank {
         if(G.keys['s']||G.keys['KeyS']) my+=1;
         if(G.keys['a']||G.keys['KeyA']) mx-=1;
         if(G.keys['d']||G.keys['KeyD']) mx+=1;
-        this.vel=new Vector2(mx,my).normalize().mul(this.speed);
+        let isMoving = mx!==0 || my!==0;
+        this.vel = new Vector2(mx,my).normalize().mul(this.speed);
+        if (isMoving) {
+            // Shift boost: drain boostEnergy for burst speed
+            const shiftHeld = G.keys['ShiftLeft'] || G.keys['ShiftRight'];
+            if (shiftHeld && this.boostEnergy > 0) {
+                const BOOST_MULT = 1.8;
+                const BOOST_DRAIN = 40; // per second
+                this.vel = this.vel.mul(BOOST_MULT);
+                this.boostEnergy = Math.max(0, this.boostEnergy - BOOST_DRAIN * dt);
+            }
+            this.fuel=Math.max(0,this.fuel-this.fuelConsumption*dt);
+            if(this.fuel<=0) this.vel=this.vel.mul(0.4);
+        } else {
+            this.fuel=Math.min(this.maxFuel,this.fuel+this.fuelRegen*dt);
+        }
         this.turretAngle=Math.atan2(G.mouseY-this.pos.y,G.mouseX-this.pos.x);
         super.update(dt);
         for(let w of G.walls){ if(this.collidesWithWall(w)) resolveWallCollision(this,w); }
@@ -220,6 +312,12 @@ export class Player extends Tank {
                     b.pierceCount=this.bulletPiercing?999:0;
                     b._trailColor=this.bulletTrailColor;
                     b._isPlayerBullet=true;
+                    // Weapon-specific visuals & bounce
+                    b.bulletColor = this.bulletColor;
+                    b.radius *= this.bulletSize;
+                    b.bounces += this.bulletBounce || 0;
+                    b.trailEffect = this.bulletTrailEffect || 'normal';
+                    b.impactEffect = this.bulletImpactEffect || 'normal';
                     G.bullets.push(b);
                 }
                 import('./stats.js').then(m => m.recordShot());
@@ -244,9 +342,6 @@ export class Player extends Tank {
     startReload(now){
         this.reloading = true;
         this.reloadStart = now;
-    }
-    collidesWithWall(wall){
-        return this.pos.x-18<wall.x+wall.w&&this.pos.x+18>wall.x&&this.pos.y-18<wall.y+wall.h&&this.pos.y+18>wall.y;
     }
 }
 
@@ -341,7 +436,6 @@ export class Enemy extends Tank {
         }
         return new Vector2(100+Math.random()*(CANVAS_WIDTH-200),100+Math.random()*(CANVAS_HEIGHT-200));
     }
-    collidesWithWall(wall){ return this.pos.x-18<wall.x+wall.w&&this.pos.x+18>wall.x&&this.pos.y-18<wall.y+wall.h&&this.pos.y+18>wall.y; }
     updateAI(){
         if(!G.player||!G.player.alive) return;
         const d=this.pos.distanceTo(G.player.pos);
@@ -436,7 +530,8 @@ export class LandMine {
     constructor(x,y,placer=null){
         this.pos=new Vector2(x,y); this.radius=12;
         this.lifeTimer=0; this.blinkTimer=0; this.blinkState=false;
-        this.exploded=false; this.explosionRadius=120;
+        this.exploded=false;
+        this.explosionRadius = (placer && placer.mineRadius) ? placer.mineRadius : 120;
         this.armed=true;
         this.placer=placer;
     }

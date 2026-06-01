@@ -4,10 +4,12 @@ import { COLORS, CANVAS_WIDTH, CANVAS_HEIGHT, GameState, WEAPONS } from './confi
 import { loadSettings, showOverlay } from './ui.js';
 import { startGame, startGameFromMenu, levelComplete, nextLevel, gameOver, multiplayerGameOver } from './game.js';
 import { generateLevel } from './levels.js';
+import { resolveWallCollision } from './engine.js';
 import { db, ref, set, update, remove } from './firebase.js';
 import { recordHit, recordKill, recordDeath, recordDistance, recordDamageTaken } from './stats.js';
 import { trackKill, trackMineKill, trackSurvivalTime } from './progression.js';
 import './multiplayer.js';
+import { autoShowTutorial, updateTutorial, renderTutorial, closeTutorial } from './tutorial.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -62,6 +64,25 @@ function gameLoop(ct) {
             const speed = G.player.vel.length();
             if (speed > 0) { recordDistance(speed * dt); if (G.aiTracker) G.aiTracker.recordDistance(speed * dt); }
             if (G.aiTracker) G.aiTracker.tick(dt);
+        }
+
+        // Interpolate remote tanks toward their network positions with wall collision
+        if (G.isMultiplayerGame) {
+            for (let uid in G.remoteTanks) {
+                const rt = G.remoteTanks[uid];
+                const tank = rt.tank;
+                if (tank.alive && rt.targetPos) {
+                    // Frame-rate independent exponential smoothing toward network position
+                    const k = 15;
+                    const factor = 1 - Math.exp(-k * dt);
+                    tank.pos.x += (rt.targetPos.x - tank.pos.x) * factor;
+                    tank.pos.y += (rt.targetPos.y - tank.pos.y) * factor;
+                    // Prevent remote tank from clipping through walls
+                    for (let w of G.walls) {
+                        if (tank.collidesWithWall(w)) resolveWallCollision(tank, w);
+                    }
+                }
+            }
         }
 
         // Sync newly fired player bullets to Firebase
@@ -232,6 +253,43 @@ function gameLoop(ct) {
                 levelComplete();
             }
         }
+    } else if (G.gameState === GameState.TUTORIAL) {
+        // Interactive tutorial — let the player move, shoot, boost, place mines freely
+        if (G.player && G.player.alive) {
+            G.player.update(dt, ct);
+        }
+        for (let m of G.mines) m.update(dt);
+        G.mines = G.mines.filter(m => !m.exploded);
+        for (let b of G.bullets) { if (b.alive) b.update(dt); }
+        G.bullets = G.bullets.filter(b => b.alive);
+
+        updateTutorial(dt);
+    } else if (G.gameState === GameState.READY) {
+        const elapsed = (ct - G._readyAt) / 1000;
+        const count = Math.ceil(3 - elapsed);
+
+        // Dim overlay
+        ctx.fillStyle = 'rgba(0,0,0,0.2)';
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        if (count > 0) {
+            ctx.fillStyle = '#f39c12';
+            ctx.font = 'bold 96px Orbitron, monospace';
+            ctx.fillText(String(count), CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 16);
+            ctx.fillStyle = '#888';
+            ctx.font = '14px Orbitron, monospace';
+            ctx.fillText('GET READY', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 48);
+        } else if (elapsed < 3.8) {
+            ctx.fillStyle = '#27ae60';
+            ctx.font = 'bold 64px Orbitron, monospace';
+            ctx.fillText('GO!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+        } else {
+            G.gameState = GameState.PLAYING;
+            G.levelStartTime = performance.now();
+        }
     }
 
     for (let p of G.particles) { if (p.life > 0) { p.update(dt); p.draw(); } }
@@ -272,17 +330,18 @@ function gameLoop(ct) {
                 if (w) weaponName = w.name;
             }
             const hudX = CANVAS_WIDTH - 175;
-            const hudY = CANVAS_HEIGHT - 72;
+            const hudY = CANVAS_HEIGHT - 88;
             const hudW = 160;
+            const hudH = 94;
 
             ctx.fillStyle = 'rgba(0,0,0,0.55)';
             ctx.beginPath();
-            ctx.roundRect(hudX, hudY, hudW, 64, 6);
+            ctx.roundRect(hudX, hudY, hudW, hudH, 6);
             ctx.fill();
             ctx.strokeStyle = 'rgba(255,255,255,0.08)';
             ctx.lineWidth = 1;
             ctx.beginPath();
-            ctx.roundRect(hudX, hudY, hudW, 64, 6);
+            ctx.roundRect(hudX, hudY, hudW, hudH, 6);
             ctx.stroke();
 
             ctx.textAlign = 'left';
@@ -336,7 +395,41 @@ function gameLoop(ct) {
                 ctx.fillStyle = barColor;
                 ctx.fillText(labelText, hudX + hudW - 12, barY - 3);
             }
+
+            const fuelBarY = barY + barH + 4;
+            const fuelPct = p.maxFuel > 0 ? p.fuel / p.maxFuel : 1;
+            ctx.fillStyle = 'rgba(255,255,255,0.06)';
+            ctx.beginPath();
+            ctx.roundRect(barX, fuelBarY, barW, 5, 2);
+            ctx.fill();
+            ctx.fillStyle = fuelPct > 0.5 ? '#2ecc71' : fuelPct > 0.25 ? '#f39c12' : '#e74c3c';
+            ctx.beginPath();
+            ctx.roundRect(barX, fuelBarY, barW * fuelPct, 5, 2);
+            ctx.fill();
+            ctx.textAlign = 'left';
+            ctx.font = '7px Orbitron';
+            ctx.fillStyle = '#666';
+            ctx.fillText('FUEL', hudX + 12, fuelBarY + 11);
+
+            const boostBarY = fuelBarY + 5 + 5;
+            const boostPct = p.maxBoostEnergy > 0 ? p.boostEnergy / p.maxBoostEnergy : 1;
+            ctx.fillStyle = 'rgba(255,255,255,0.06)';
+            ctx.beginPath();
+            ctx.roundRect(barX, boostBarY, barW, 5, 2);
+            ctx.fill();
+            ctx.fillStyle = boostPct > 0.5 ? '#9b59b6' : boostPct > 0.25 ? '#e67e22' : '#e74c3c';
+            ctx.beginPath();
+            ctx.roundRect(barX, boostBarY, barW * boostPct, 5, 2);
+            ctx.fill();
+            ctx.textAlign = 'left';
+            ctx.font = '7px Orbitron';
+            ctx.fillStyle = '#666';
+            ctx.fillText('BOOST', hudX + 12, boostBarY + 11);
         }
+    }
+
+    if (G.gameState === GameState.TUTORIAL) {
+        renderTutorial(ctx);
     }
 
     requestAnimationFrame(gameLoop);
@@ -355,7 +448,10 @@ document.addEventListener('keydown', (e) => {
         nextLevel();
     }
     if (e.key === 'Escape') {
-        if (G.gameState === GameState.PLAYING) {
+        if (G.gameState === GameState.TUTORIAL) {
+            e.preventDefault();
+            closeTutorial();
+        } else if (G.gameState === GameState.PLAYING) {
             G.gameState = GameState.PAUSED;
             showOverlay('pauseOverlay');
             log('info','PAUSE','Game paused');
@@ -363,7 +459,7 @@ document.addEventListener('keydown', (e) => {
             resumeGame();
         } else if (G.gameState === GameState.MENU || G.gameState === GameState.LOADING || !G.gameState) {
             // Close overlay if one is open (detect via visible non-login overlays)
-            const overlays = ['settingsOverlay','aboutOverlay','statsOverlay','friendsOverlay','leaderboardOverlay','aiDifficultyOverlay','profileOverlay','missionsOverlay','shopOverlay'];
+            const overlays = ['settingsOverlay','aboutOverlay','statsOverlay','friendsOverlay','leaderboardOverlay','aiDifficultyOverlay','profileOverlay','missionsOverlay','shopOverlay','upgradeOverlay'];
             const active = overlays.find(id => {
                 const el = document.getElementById(id);
                 return el && el.classList.contains('active');
@@ -376,6 +472,7 @@ document.addEventListener('keydown', (e) => {
             else if (active === 'aiDifficultyOverlay') closeAIDifficulty();
             else if (active === 'missionsOverlay') closeMissions();
             else if (active === 'shopOverlay') closeShop();
+else if (active === 'upgradeOverlay') closeUpgrades();
         }
     }
 });
@@ -409,12 +506,11 @@ window.resumeGame = function(){
 
 window.leaveGame = function(){
     log('info','PAUSE','Leaving game');
-    // Clean up multiplayer listeners if active
     import('./multiplayer.js').then(m => m.cleanupMultiplayer()).catch(() => {});
     G.gameState = GameState.MENU;
     document.getElementById('loadingScreen').style.display = 'none';
-    showOverlay('loginOverlay');
     document.getElementById('loggedInPanel').style.display = 'flex';
+    showOverlay('loginOverlay');
 };
 
 // ==================== LEADERBOARD DEDUP ====================
@@ -551,6 +647,7 @@ function startWelcomeSequence() {
                     wo.style.display = 'none';
                     wo.classList.remove('active');
                     showOverlay('loginOverlay');
+                    autoShowTutorial();
                 }, 600);
             }, 400);
         }

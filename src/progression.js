@@ -21,6 +21,8 @@ function defaultProgression() {
         totalSurvivalTime: 0,
         aiWins: 0,
         highestSingleScore: 0,
+        upgradePoints: 0,
+        upgrades: { speed: 0, fuel: 0, mineRadius: 0 },
     };
 }
 
@@ -249,12 +251,14 @@ export function updateMissionProgress(trackType, increment = 1) {
 // ==================== TRACKING (called from game code) ====================
 export function trackKill() {
     P.totalKills++;
+    P.upgradePoints++;
     saveProgression();
     updateMissionProgress('kill', 1);
 }
 
 export function trackMineKill() {
     P.totalMineKills++;
+    P.upgradePoints++;
     saveProgression();
     updateMissionProgress('mineKill', 1);
 }
@@ -297,6 +301,60 @@ export function trackHighScore(score) {
     updateMissionProgress('highScore', score);
 }
 
+// ==================== UPGRADES ====================
+export function getUpgradePoints() { return P.upgradePoints; }
+
+export function addUpgradePoints(amount) {
+    if (amount <= 0) return;
+    P.upgradePoints += amount;
+    saveProgression();
+}
+
+const UPGRADE_COST_BASE = 1;
+const UPGRADE_COST_MULT = 1;
+
+export function getUpgradeLevel(category) {
+    return P.upgrades[category] || 0;
+}
+
+export function getUpgradeCost(category) {
+    const level = getUpgradeLevel(category);
+    return UPGRADE_COST_BASE + level * UPGRADE_COST_MULT;
+}
+
+export function getUpgradeMaxLevel() { return 10; }
+
+export function buyUpgrade(category) {
+    if (!['speed','fuel','mineRadius'].includes(category)) {
+        return { ok: false, reason: 'Unknown category' };
+    }
+    const level = getUpgradeLevel(category);
+    if (level >= getUpgradeMaxLevel()) {
+        return { ok: false, reason: 'Max level reached' };
+    }
+    const cost = getUpgradeCost(category);
+    if (P.upgradePoints < cost) {
+        return { ok: false, reason: 'Not enough upgrade points' };
+    }
+    P.upgradePoints -= cost;
+    P.upgrades[category]++;
+    saveProgression();
+    log('info', 'UPGRADE', category + ' upgraded to level ' + P.upgrades[category]);
+    return { ok: true, level: P.upgrades[category] };
+}
+
+export function applyUpgradesToPlayer(player) {
+    if (!player) return;
+    const speedLvl = getUpgradeLevel('speed');
+    player.speed = 200 * (1 + speedLvl * 0.12);
+    const fuelLvl = getUpgradeLevel('fuel');
+    const oldMax = player.maxFuel;
+    player.maxFuel = 100 + fuelLvl * 25;
+    player.fuel = Math.min(player.fuel + (player.maxFuel - oldMax), player.maxFuel);
+    const mineLvl = getUpgradeLevel('mineRadius');
+    player.mineRadius = 120 + mineLvl * 15;
+}
+
 // ==================== EARNINGS (called on level complete / game over) ====================
 export function awardLevelComplete(level) {
     const base = 50 + level * 25;
@@ -332,6 +390,28 @@ export function awardAiRoundWin() {
     return { coins: 25, xp: 50 };
 }
 
+// ==================== CAMPAIGN LEVEL (persistent across sessions) ====================
+const CAMPAIGN_KEY = 'tankBattle_campaignLevel';
+
+export function getCampaignLevel() {
+    try {
+        const saved = parseInt(localStorage.getItem(CAMPAIGN_KEY)) || 1;
+        return Math.max(1, saved);
+    } catch (e) {
+        return 1;
+    }
+}
+
+export function saveCampaignLevel(level) {
+    const current = getCampaignLevel();
+    // Only move forward — never regress
+    if (level >= current) {
+        try {
+            localStorage.setItem(CAMPAIGN_KEY, String(level));
+        } catch (e) {}
+    }
+}
+
 // ==================== APPLY TO PLAYER ====================
 export function applyProgressionToPlayer(player) {
     if (!player) return;
@@ -353,5 +433,11 @@ export function applyProgressionToPlayer(player) {
         player.reloadDuration = (weapon.reloadTime || 1.2) * 1000;
         player.reloading = false;
         player.weaponId = weapon.id;
+        player.bulletColor = weapon.bulletColor || null;
+        player.bulletSize = weapon.bulletSize || 1;
+        player.bulletBounce = weapon.bounce || 0;
+        player.bulletTrailEffect = weapon.trailEffect || 'normal';
+        player.bulletImpactEffect = weapon.impactEffect || 'normal';
     }
+    applyUpgradesToPlayer(player);
 }

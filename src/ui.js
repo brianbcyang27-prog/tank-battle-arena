@@ -1,6 +1,7 @@
 import { G } from './state.js';
 import { log } from './log.js';
 import { GameState } from './config.js';
+import { getCampaignLevel, getGems, getCoins, getRank, getRankProgress } from './progression.js';
 
 // ==================== SETTINGS ====================
 export function loadSettings() {
@@ -21,7 +22,8 @@ export function applySettingsToUI() {
     document.getElementById('settingShowFPS').checked = G.settings.showFPS;
     document.getElementById('settingAutoReady').checked = G.settings.autoReady;
     document.getElementById('settingVolume').value = G.settings.volume;
-    document.getElementById('settingBulletBounce').value = G.settings.bulletBounce || 0;
+    const volLabel = document.getElementById('volumeValue');
+    if (volLabel) volLabel.textContent = G.settings.volume;
 }
 
 export function saveSettings() {
@@ -29,11 +31,12 @@ export function saveSettings() {
     G.settings.showFPS = document.getElementById('settingShowFPS').checked;
     G.settings.autoReady = document.getElementById('settingAutoReady').checked;
     G.settings.volume = parseInt(document.getElementById('settingVolume').value);
-    G.settings.bulletBounce = parseInt(document.getElementById('settingBulletBounce').value);
+    const volLabel = document.getElementById('volumeValue');
+    if (volLabel) volLabel.textContent = G.settings.volume;
     localStorage.setItem('tankBattleSettings', JSON.stringify(G.settings));
     // Sync to Firebase for cross-session persistence
     if (G.currentUser) {
-        import('./firebase.js').then(({ ref, update, db }) => {
+        import('/src/firebase.js').then(({ ref, update, db }) => {
             update(ref(db, 'users/' + G.currentUser.uid + '/settings'), G.settings)
                 .catch(e => log('warn','SETTINGS','Firebase save failed: '+e.message));
         });
@@ -144,7 +147,7 @@ window.showStats = function() {
 };
 
 // ==================== UI HELPERS ====================
-const HOME_OVERLAYS = ['loginOverlay','missionsOverlay','shopOverlay','statsOverlay','leaderboardOverlay','friendsOverlay','aboutOverlay'];
+const HOME_OVERLAYS = ['loginOverlay','missionsOverlay','shopOverlay','statsOverlay','leaderboardOverlay','friendsOverlay','aboutOverlay','upgradeOverlay','tutorialOverlay'];
 
 export function showOverlay(id){
     document.querySelectorAll('.overlay').forEach(o=>{
@@ -188,12 +191,12 @@ window.setMode = function(m,btn){
 window.startVersusAI = function(){
     G.gameMode = 'ai1v1';
     showOverlay('aiDifficultyOverlay');
-    log('info','MODE','VS AI mode — showing difficulty selector');
+    log('info','MODE','Arcade mode — showing difficulty selector');
 };
 
 window.startAIGame = function(difficulty){
     G.aiDifficulty = difficulty;
-    log('info','MODE','Starting VS AI game with difficulty: '+difficulty);
+    log('info','MODE','Starting Arcade game with difficulty: '+difficulty);
     import('./game.js').then(m => m.startGameFromMenu());
 };
 
@@ -203,6 +206,11 @@ window.closeAIDifficulty = function() {
 
 window.startSolo = function(){
     G.gameMode='single';
+    import('./game.js').then(m => m.startGameFromMenu());
+};
+
+window.startCampaign = function(){
+    G.gameMode='campaign';
     import('./game.js').then(m => m.startGameFromMenu());
 };
 
@@ -237,7 +245,7 @@ window.submitOnlineScore = function(){
         log('warn','LB','Cannot submit score: not logged in');
         return;
     }
-    import('./firebase.js').then(({ ref, push, db, serverTimestamp }) => {
+    import('/src/firebase.js').then(({ ref, push, db, serverTimestamp }) => {
         const leaderboardRef=ref(db, 'leaderboard');
         push(leaderboardRef, {
             name:G.currentUser.email,
@@ -254,11 +262,12 @@ window.submitOnlineScore = function(){
 function loadOnlineLeaderboard(){
     const lb=document.getElementById('leaderboardEntries');
     lb.innerHTML='<p style="color:#666;">Loading online leaderboard...</p>';
-    import('./firebase.js').then(({ ref, query, orderByChild, limitToLast, get, db }) => {
+    import('/src/firebase.js').then(({ ref, query, orderByChild, limitToLast, get, db }) => {
         const leaderboardRef=ref(db, 'leaderboard');
         get(query(leaderboardRef, orderByChild('score'), limitToLast(10))).then(snapshot=>{
-            const entries=[];
-            snapshot.forEach(child=>entries.unshift(child.val()));
+            const raw = snapshot.val();
+            const entries = raw ? Object.values(raw) : [];
+            entries.sort((a, b) => (b.score || 0) - (a.score || 0));
             displayLeaderboard(entries);
         }).catch(()=>{
             lb.innerHTML='<p style="color:#666;">Could not load online leaderboard</p>';
@@ -280,41 +289,135 @@ export function displayLeaderboard(entries){
     log('info','LB','Leaderboard displayed with '+Math.min(entries.length,10)+' entries');
 }
 
-// ==================== HOME LEADERBOARD ====================
-window.showLeaderboard = function() {
-    const container = document.getElementById('lbHomeContent');
-    if (!container) return;
-    try {
-        const lb = JSON.parse(localStorage.getItem('tankBattleLeaderboard') || '[]');
-        if (lb.length === 0) {
-            container.innerHTML = '<p style="color:#666;text-align:center;">No scores yet.<br>Play a game to get on the board!</p>';
-        } else {
-            let html = '<ol style="text-align:left;padding-left:20px;">';
-            const displayCount = Math.min(lb.length, 20);
-            for (let i = 0; i < displayCount; i++) {
-                const n = lb[i].name || 'Anonymous';
-                const s = lb[i].score || 0;
-                const lvl = lb[i].level || 1;
-                const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '';
-                html += '<li style="color:#f39c12;margin-bottom:6px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;align-items:center;gap:8px;">';
-                if (medal) html += '<span style="font-size:16px;">' + medal + '</span>';
-                html += '<span style="flex:1;color:#eaeaea;">' + n.split('@')[0] + '</span>';
-                html += '<span style="color:#27ae60;font-weight:700;">' + s.toLocaleString() + '</span>';
-                html += '<span style="color:#666;font-size:10px;">Lv.' + lvl + '</span>';
-                html += '</li>';
-            }
-            html += '</ol>';
-            container.innerHTML = html;
-        }
-    } catch(e) {
-        container.innerHTML = '<p style="color:#e74c3c;text-align:center;">Could not load leaderboard</p>';
+// ==================== HOME LEADERBOARD (worldwide) ====================
+let _lbCache = null;
+let _lbFilter = 'all';
+
+function _lbRender() {
+    const listEl = document.getElementById('lbList');
+    const countEl = document.getElementById('lbCount');
+    const searchInput = document.getElementById('lbSearch');
+    if (!listEl) return;
+    const query = (searchInput && searchInput.value || '').toLowerCase().trim();
+    const filter = _lbFilter;
+    let entries = _lbCache || [];
+
+    if (filter === 'top10') entries = entries.slice(0, 10);
+    else if (filter === 'top50') entries = entries.slice(0, 50);
+    else if (filter === 'mine') {
+        const myName = (G.currentUser?.displayName || G.currentUser?.email?.split('@')[0] || '').toLowerCase();
+        if (myName) entries = entries.filter(e => (e.name || '').toLowerCase() === myName || (e.name || '').toLowerCase() === (G.currentUser?.email || '').toLowerCase());
+        else entries = [];
     }
+
+    if (query) entries = entries.filter(e => (e.name || '').toLowerCase().includes(query));
+
+    if (!entries.length) {
+        listEl.innerHTML = '<p style="color:#666;text-align:center;padding:10px;">No scores found.</p>';
+        if (countEl) countEl.textContent = '0 entries';
+        return;
+    }
+    let html = '<ol style="text-align:left;padding-left:20px;margin:0;">';
+    for (let i = 0; i < entries.length; i++) {
+        const n = entries[i].name || 'Anonymous';
+        const s = entries[i].score || 0;
+        const lvl = entries[i].level || 1;
+        const rank = i + 1;
+        const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '';
+        html += '<li style="color:#f39c12;margin-bottom:4px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;align-items:center;gap:6px;">';
+        if (medal) html += '<span style="font-size:14px;width:20px;text-align:center;">' + medal + '</span>';
+        else html += '<span style="width:20px;text-align:center;color:#666;font-size:10px;">' + rank + '.</span>';
+        html += '<span style="flex:1;color:#eaeaea;font-size:11px;">' + n.split('@')[0] + '</span>';
+        html += '<span style="color:#27ae60;font-weight:700;font-size:11px;">' + s.toLocaleString() + '</span>';
+        html += '<span style="color:#666;font-size:9px;min-width:30px;text-align:right;">Lv.' + lvl + '</span>';
+        html += '</li>';
+    }
+    html += '</ol>';
+    listEl.innerHTML = html;
+    if (countEl) countEl.textContent = 'Showing ' + entries.length + '/' + (_lbCache ? _lbCache.length : 0) + ' entries';
+}
+
+function _mergeLocal() {
+    try {
+        const local = JSON.parse(localStorage.getItem('tankBattleLeaderboard') || '[]');
+        const myName = (G.currentUser?.displayName || G.currentUser?.email?.split('@')[0] || '').toLowerCase();
+        if (!myName || !local.length || !_lbCache) return;
+        const localBest = local.find(e => (e.name || '').toLowerCase() === myName);
+        if (!localBest || !localBest.score) return;
+        const fbMatch = _lbCache.find(e => (e.name || '').toLowerCase() === myName);
+        if (fbMatch) {
+            if ((localBest.score || 0) > (fbMatch.score || 0)) {
+                fbMatch.score = localBest.score;
+                fbMatch.level = localBest.level || fbMatch.level;
+            }
+        } else {
+            _lbCache.push({ name: myName, score: localBest.score, level: localBest.level || 1 });
+        }
+        _lbCache.sort((a, b) => (b.score || 0) - (a.score || 0));
+    } catch(e) {}
+}
+
+window.showLeaderboard = function() {
+    const listEl = document.getElementById('lbList');
+    const countEl = document.getElementById('lbCount');
+    if (!listEl) return;
+    listEl.innerHTML = '<p style="color:#666;text-align:center;padding:20px;">Loading worldwide scores...</p>';
+    if (countEl) countEl.textContent = '';
+
+    _lbCache = null;
+    import('/src/firebase.js').then(({ ref, get, db }) => {
+        get(ref(db, 'leaderboard')).then(snapshot => {
+            const raw = snapshot.val();
+            _lbCache = raw ? Object.values(raw) : [];
+            // Deduplicate by name — keep highest score per player
+            const seen = {};
+            _lbCache = _lbCache.filter(e => {
+                if (!e.score || e.score <= 0) return false;
+                const key = (e.name || '').toLowerCase();
+                if (!key) return true;
+                if (seen[key]) {
+                    if ((e.score || 0) > (seen[key].score || 0)) seen[key].score = e.score;
+                    if ((e.level || 1) > (seen[key].level || 1)) seen[key].level = e.level;
+                    return false;
+                }
+                seen[key] = e;
+                return true;
+            });
+            _lbCache.sort((a, b) => (b.score || 0) - (a.score || 0));
+            _mergeLocal();
+            _lbRender();
+        }).catch(e => {
+            log('warn','LB','Failed to load leaderboard: '+e.message);
+            const local = JSON.parse(localStorage.getItem('tankBattleLeaderboard') || '[]');
+            _lbCache = local;
+            _lbRender();
+        });
+    }).catch(e => {
+        log('warn','LB','Import failed: '+e.message);
+        const local = JSON.parse(localStorage.getItem('tankBattleLeaderboard') || '[]');
+        _lbCache = local;
+        _lbRender();
+    });
     showOverlay('leaderboardOverlay');
     log('info','LB','Home leaderboard opened');
 };
 
+window.setLBFilter = function(filter) {
+    _lbFilter = filter;
+    document.querySelectorAll('.lb-filter').forEach(b => {
+        b.style.background = 'transparent';
+        b.style.color = '#999';
+    });
+    const btn = document.querySelector('.lb-filter[data-filter="' + filter + '"]');
+    if (btn) { btn.style.background = 'rgba(52,152,219,0.3)'; btn.style.color = '#f39c12'; }
+    _lbRender();
+};
+
+window.applyLBFilter = function() { _lbRender(); };
+
 window.closeLeaderboard = function() {
     showOverlay('loginOverlay');
+    _lbCache = null;
     log('info','LB','Home leaderboard closed');
 };
 
@@ -481,17 +584,26 @@ window.copyRoomCode = function() {
 // ==================== PROGRESSION UI ====================
 import { SKINS, WEAPONS } from './config.js';
 
+function updateCampaignDesc() {
+    const el = document.getElementById('campaignDesc');
+    if (el) {
+        const level = getCampaignLevel();
+        el.textContent = level > 1 ? 'Level ' + level + ' — Continue Progress' : 'Persistent — Continue Progress';
+    }
+}
+
 export function updateCurrencyDisplay() {
-    import('./progression.js').then(m => {
-        const gemEl = document.getElementById('homeGems');
-        const coinEl = document.getElementById('homeCoins');
-        const rankEl = document.getElementById('homeRankBadge');
-        const rankBar = document.getElementById('homeRankBar');
-        if (gemEl) gemEl.textContent = '💎 ' + m.getGems();
-        if (coinEl) coinEl.textContent = '🪙 ' + m.getCoins();
-        if (rankEl) rankEl.textContent = m.getRank().icon;
-        if (rankBar) rankBar.style.width = Math.round(m.getRankProgress() * 100) + '%';
-    });
+    updateCampaignDesc();
+    const gemsEl = document.getElementById('homeGems');
+    const coinsEl = document.getElementById('homeCoins');
+    if (gemsEl) gemsEl.textContent = '💎 ' + getGems();
+    if (coinsEl) coinsEl.textContent = '🪙 ' + getCoins();
+    // Rank
+    const rank = getRank();
+    const rankEl = document.getElementById('homeRankBadge');
+    const barEl = document.getElementById('homeRankBar');
+    if (rankEl) rankEl.textContent = rank.icon + ' ' + rank.title;
+    if (barEl) barEl.style.width = (getRankProgress() * 100).toFixed(0) + '%';
 }
 
 window.showMissions = function() {
@@ -578,6 +690,14 @@ window.switchShopTab = function(tab) {
     });
 };
 
+const WEAPON_ICONS = {
+    standard: '🔫',
+    rapid: '⚡',
+    cannon: '💥',
+    shotgun: '💢',
+    sniper: '🎯',
+};
+
 function renderShopItems(container, items, type, prog) {
     const ownedList = type === 'skin' ? prog.getOwnedSkins() : prog.getOwnedWeapons();
     const equippedId = type === 'skin' ? prog.getEquippedSkin() : prog.getEquippedWeapon();
@@ -587,7 +707,6 @@ function renderShopItems(container, items, type, prog) {
         const owned = ownedList.includes(item.id);
         const equipped = equippedId === item.id;
         const itemClass = equipped ? 'shop-item equipped' : owned ? 'shop-item owned' : 'shop-item';
-        const icon = type === 'skin' ? '🎨' : '🔫';
 
         let priceHtml = '';
         if (item.cost === 0) {
@@ -612,9 +731,13 @@ function renderShopItems(container, items, type, prog) {
             btnHtml = `<button class="shop-item-btn buy" onclick="${fn}('${item.id}')">BUY</button>`;
         }
 
+        const iconHtml = type === 'skin'
+            ? `<div class="shop-item-icon">🎨</div>`
+            : `<div class="shop-item-icon weapon-icon" onclick="showWeaponPreview3D('${item.id}')" style="cursor:pointer;" title="Click for 3D preview">${WEAPON_ICONS[item.id] || '🔫'}</div>`;
+
         html += `
         <div class="${itemClass}">
-            <div class="shop-item-icon">${icon}</div>
+            ${iconHtml}
             <div class="shop-item-name">${item.name}</div>
             <div class="shop-item-desc">${item.desc}</div>
             ${priceHtml}
@@ -643,4 +766,195 @@ window.equipShopSkin = function(id) {
 };
 window.equipShopWeapon = function(id) {
     import('./progression.js').then(m => { m.equipWeapon(id); window.showShop(); });
+};
+
+// ==================== UPGRADE SHOP ====================
+const UPGRADE_CATEGORIES = [
+    { id: 'speed',     icon: '⚡', name: 'Speed',       desc: 'Faster tank movement',      perLevel: '+12% speed' },
+    { id: 'fuel',      icon: '⛽', name: 'Fuel Capacity', desc: 'Larger fuel tank',          perLevel: '+25 fuel' },
+    { id: 'mineRadius', icon: '💥', name: 'Mine Radius',  desc: 'Bigger mine explosions',    perLevel: '+15px radius' },
+];
+
+window.showUpgrades = function() {
+    import('./progression.js').then(m => {
+        document.getElementById('upgradePoints').textContent = m.getUpgradePoints();
+        renderUpgradeGrid(m);
+    });
+    showOverlay('upgradeOverlay');
+    log('info','UI','Opening upgrade shop');
+};
+
+function renderUpgradeGrid(prog) {
+    const grid = document.getElementById('upgradeGrid');
+    if (!grid) return;
+    let html = '';
+    for (const cat of UPGRADE_CATEGORIES) {
+        const level = prog.getUpgradeLevel(cat.id);
+        const maxed = level >= prog.getUpgradeMaxLevel();
+        const cost = maxed ? 0 : prog.getUpgradeCost(cat.id);
+        const points = prog.getUpgradePoints();
+        const canAfford = !maxed && points >= cost;
+        const barSegments = 10;
+        let barHtml = '';
+        for (let i = 0; i < barSegments; i++) {
+            barHtml += `<span style="display:inline-block;width:14px;height:6px;margin-right:2px;border-radius:2px;background:${i < level ? '#f1c40f' : '#2a2a2a'};"></span>`;
+        }
+
+        html += `
+        <div class="upgrade-card ${maxed ? 'maxed' : ''}">
+            <div class="upgrade-card-icon">${cat.icon}</div>
+            <div class="upgrade-card-info">
+                <div class="upgrade-card-name">${cat.name}</div>
+                <div class="upgrade-card-desc">${cat.desc}</div>
+                <div class="upgrade-card-level">${barHtml} <span class="level-fill">${level}</span> / ${prog.getUpgradeMaxLevel()}</div>
+            </div>
+            <div class="upgrade-card-cost">
+                ${maxed
+                    ? '<button class="upgrade-card-btn maxed-btn" disabled>MAXED</button>'
+                    : `<button class="upgrade-card-btn" ${canAfford ? `onclick="buyUpgrade('${cat.id}')"` : 'disabled'}>${cost} PT</button>`
+                }
+            </div>
+        </div>`;
+    }
+    grid.innerHTML = html;
+}
+
+window.buyUpgrade = function(category) {
+    import('./progression.js').then(m => {
+        const result = m.buyUpgrade(category);
+        if (result.ok) {
+            document.getElementById('upgradePoints').textContent = m.getUpgradePoints();
+            renderUpgradeGrid(m);
+            log('info','UPGRADE','Upgraded ' + category + ' to level ' + result.level);
+        }
+    });
+};
+
+window.closeUpgrades = function() {
+    showOverlay('loginOverlay');
+    log('info','UI','Closing upgrade shop');
+};
+
+// ==================== 3D WEAPON PREVIEW (Three.js) ====================
+let _wp3dRenderer = null, _wp3dAnimId = null;
+
+window.wp3dCleanup = function() {
+    if (_wp3dAnimId) { cancelAnimationFrame(_wp3dAnimId); _wp3dAnimId = null; }
+    if (_wp3dRenderer) {
+        _wp3dRenderer.dispose();
+        const canvas = _wp3dRenderer.domElement;
+        if (canvas && canvas.parentNode) canvas.parentNode.removeChild(canvas);
+        _wp3dRenderer = null;
+    }
+};
+
+window.showWeaponPreview3D = function(weaponId) {
+    import('./config.js').then(({ WEAPONS }) => {
+        const wp = WEAPONS.find(w => w.id === weaponId);
+        if (!wp) return;
+        document.getElementById('wp3dTitle').textContent = wp.name;
+        document.getElementById('wp3dDesc').textContent = wp.desc + ' — ' + (wp.cost === 0 ? 'FREE' : (wp.currency === 'gems' ? '💎' : '🪙') + ' ' + wp.cost);
+        document.getElementById('weaponPreview3D').style.display = 'flex';
+        const loadingEl = document.getElementById('wp3dLoading');
+        if (loadingEl) loadingEl.style.display = 'none';
+
+        // Cleanup previous render
+        wp3dCleanup();
+
+        // Three.js setup
+        const container = document.getElementById('wp3dContainer');
+        const w = container.clientWidth || 320, h = container.clientHeight || 260;
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a14);
+        const camera = new THREE.PerspectiveCamera(35, w / h, 0.1, 100);
+        camera.position.set(3, 2, 5);
+        camera.lookAt(0, 0, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(w, h);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        container.appendChild(renderer.domElement);
+        _wp3dRenderer = renderer;
+
+        const ambient = new THREE.AmbientLight(0x404060, 0.5);
+        scene.add(ambient);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.position.set(2, 5, 3);
+        scene.add(dirLight);
+        const fillLight = new THREE.DirectionalLight(0x8888ff, 0.4);
+        fillLight.position.set(-2, 1, -3);
+        scene.add(fillLight);
+
+        const group = new THREE.Group();
+        const COLORS = {
+            standard: 0xcccccc,
+            rapid: 0x5dade2,
+            cannon: 0xe67e22,
+            shotgun: 0xf1c40f,
+            sniper: 0x8e44ad,
+        };
+        const baseColor = COLORS[weaponId] || 0xcccccc;
+
+        function mesh(geo, mat) { const m = new THREE.Mesh(geo, mat); group.add(m); return m; }
+        switch (weaponId) {
+            case 'standard': {
+                mesh(new THREE.BoxGeometry(0.6, 0.5, 0.7), new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.6, metalness: 0.3 })).position.set(-0.8, 0, 0);
+                const barrel = mesh(new THREE.CylinderGeometry(0.2, 0.25, 1.4, 16), new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.4, metalness: 0.6 }));
+                barrel.rotation.z = Math.PI / 2; barrel.position.set(0.2, 0, 0);
+                const muzzle = mesh(new THREE.TorusGeometry(0.25, 0.06, 8, 16), new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8 }));
+                muzzle.rotation.x = Math.PI / 2; muzzle.position.set(0.9, 0, 0);
+                break;
+            }
+            case 'rapid': {
+                mesh(new THREE.BoxGeometry(0.8, 0.4, 0.6), new THREE.MeshStandardMaterial({ color: 0x2c3e50, roughness: 0.5, metalness: 0.4 })).position.set(-0.5, 0, 0);
+                for (let i = -1; i <= 1; i++) {
+                    const b = mesh(new THREE.CylinderGeometry(0.1, 0.12, 1.2, 12), new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.3, metalness: 0.7 }));
+                    b.rotation.z = Math.PI / 2; b.position.set(0.3, i * 0.2, 0);
+                }
+                break;
+            }
+            case 'cannon': {
+                mesh(new THREE.BoxGeometry(0.8, 0.6, 0.8), new THREE.MeshStandardMaterial({ color: 0x5c2e16, roughness: 0.7, metalness: 0.2 })).position.set(-0.7, 0, 0);
+                const barrel = mesh(new THREE.CylinderGeometry(0.3, 0.4, 1.2, 16), new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.5, metalness: 0.4 }));
+                barrel.rotation.z = Math.PI / 2; barrel.position.set(0.1, 0, 0);
+                const muzzle = mesh(new THREE.TorusGeometry(0.42, 0.08, 8, 16), new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8 }));
+                muzzle.rotation.x = Math.PI / 2; muzzle.position.set(0.8, 0, 0);
+                break;
+            }
+            case 'shotgun': {
+                mesh(new THREE.BoxGeometry(0.7, 0.5, 0.6), new THREE.MeshStandardMaterial({ color: 0x2c2c2c, roughness: 0.7 })).position.set(-0.7, 0, 0);
+                for (let i = -1; i <= 1; i += 2) {
+                    const b = mesh(new THREE.CylinderGeometry(0.15, 0.18, 1.0, 12), new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.5, metalness: 0.3 }));
+                    b.rotation.z = Math.PI / 2; b.position.set(0.1, i * 0.16, 0);
+                }
+                break;
+            }
+            case 'sniper': {
+                mesh(new THREE.BoxGeometry(1.0, 0.25, 0.35), new THREE.MeshStandardMaterial({ color: 0x2c0e3a, roughness: 0.3, metalness: 0.5 })).position.set(-0.6, 0, 0);
+                const barrel = mesh(new THREE.CylinderGeometry(0.15, 0.18, 1.6, 14), new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.3, metalness: 0.7 }));
+                barrel.rotation.z = Math.PI / 2; barrel.position.set(0.4, 0, 0);
+                for (let i = 0; i < 3; i++) {
+                    const coil = mesh(new THREE.TorusGeometry(0.2, 0.04, 8, 12), new THREE.MeshStandardMaterial({ color: 0xbb86fc, emissive: 0xbb86fc, emissiveIntensity: 0.3 }));
+                    coil.rotation.x = Math.PI / 2; coil.position.set(0.1 + i * 0.3, 0, 0);
+                }
+                break;
+            }
+        }
+        const ground = new THREE.Mesh(new THREE.CircleGeometry(2.5, 32), new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.9, metalness: 0.1, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
+        ground.rotation.x = -Math.PI / 2; ground.position.y = -0.5;
+        scene.add(ground);
+        scene.add(group);
+
+        let angle = 0;
+        function animate() {
+            _wp3dAnimId = requestAnimationFrame(animate);
+            angle += 0.01;
+            group.rotation.y = angle;
+            group.position.y = Math.sin(angle * 0.5) * 0.05;
+            renderer.render(scene, camera);
+        }
+        animate();
+    }).catch(err => {
+        log('error','UI','3D preview failed: ' + err.message);
+    });
 };

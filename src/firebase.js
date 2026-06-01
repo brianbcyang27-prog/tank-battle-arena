@@ -39,13 +39,13 @@ export { auth, db };
 // ==================== AUTH ====================
 // Track whether the login was from an explicit user action vs session restore
 let _explicitSignIn = false;
-
 onAuthStateChanged(auth, (user) => {
     G.currentUser = user;
     if (user) {
         log('info','AUTH','User logged in: ' + (user.email || 'guest'));
         document.getElementById('loginForm').style.display = 'none';
         document.getElementById('loggedInPanel').style.display = 'flex';
+        document.getElementById('homeTopBar').style.display = 'flex';
         document.getElementById('loginOverlay').classList.add('overlay-home');
         import('./ui.js').then(m => m.updateCurrencyDisplay());
         const dispName = user.email || user.displayName || 'Player';
@@ -71,6 +71,7 @@ onAuthStateChanged(auth, (user) => {
             if (!snapshot.exists()) {
                 if (_explicitSignIn) {
                     document.getElementById('loggedInPanel').style.display = 'none';
+                    document.getElementById('homeTopBar').style.display = 'none';
                     const po = document.getElementById('profileOverlay');
                     po.style.display = 'flex';
                     po.classList.add('active');
@@ -95,19 +96,36 @@ onAuthStateChanged(auth, (user) => {
                 log('info','AUTH','Settings loaded from Firebase');
             }
         }).catch(e => log('warn','AUTH','Failed to load settings: ' + e.message));
+
+        // Sync progression from Firebase → localStorage (admin edits override local)
+        get(ref(db, 'user_progression/' + user.uid)).then(snapshot => {
+            if (snapshot.exists()) {
+                const fbProg = snapshot.val();
+                const localRaw = localStorage.getItem('tankBattle_progression');
+                const localProg = localRaw ? JSON.parse(localRaw) : {};
+                // Merge: Firebase values win for admin-controlled fields
+                const merged = { ...localProg, ...fbProg };
+                // Deep-merge upgrades object
+                if (fbProg.upgrades || localProg.upgrades) {
+                    merged.upgrades = { ...(localProg.upgrades || {}), ...(fbProg.upgrades || {}) };
+                }
+                // merge owned arrays (Firebase values replace entirely if present)
+                if (fbProg.ownedSkins) merged.ownedSkins = fbProg.ownedSkins;
+                if (fbProg.ownedWeapons) merged.ownedWeapons = fbProg.ownedWeapons;
+                localStorage.setItem('tankBattle_progression', JSON.stringify(merged));
+                log('info','PROG','Progression synced from Firebase for ' + (user.email || user.uid));
+            }
+        }).catch(e => log('warn','PROG','Failed to sync progression: ' + e.message));
     } else {
-        log('info','AUTH','No user signed in');
-        document.getElementById('loginForm').style.display = 'flex';
-        document.getElementById('loggedInPanel').style.display = 'none';
-        document.getElementById('loginOverlay').classList.remove('overlay-home');
-        const poEl = document.getElementById('profileOverlay');
-        poEl.style.display = 'none';
-        poEl.classList.remove('active');
-        document.getElementById('displayName').textContent = '';
+        log('info','AUTH','No user signed in — showing home as guest');
+        // Go straight to home (no login form)
+        document.getElementById('loginForm').style.display = 'none';
+        document.getElementById('loggedInPanel').style.display = 'flex';
+        document.getElementById('homeTopBar').style.display = 'flex';
+        document.getElementById('loginOverlay').classList.add('overlay-home');
+        document.getElementById('displayName').textContent = 'Player';
         const avatarEl2 = document.getElementById('homeAvatar');
         if (avatarEl2) avatarEl2.textContent = 'P';
-        const codeEl = document.getElementById('homeFriendCode');
-        if (codeEl) codeEl.textContent = '—';
     }
 });
 
@@ -222,6 +240,24 @@ window.signInWithGoogle = async function() {
         }
     }
 };
+
+// Save local progression to Firebase on page unload — so admin edits via the
+// PROGRESSION tab (which writes to localStorage) are persisted to the server.
+// This is a best-effort save (unload handlers don't support await).
+window.addEventListener('beforeunload', () => {
+    const u = G.currentUser;
+    if (!u) return;
+    try {
+        const raw = localStorage.getItem('tankBattle_progression');
+        if (raw) {
+            const prog = JSON.parse(raw);
+            // Don't block unload — fire and forget
+            set(ref(db, 'user_progression/' + u.uid), prog).catch(() => {});
+        }
+    } catch (e) {
+        // silently ignore — unload handlers must not throw
+    }
+});
 
 window.saveProfile = async function() {
     const birthday = document.getElementById('profileBirthday').value;

@@ -14,7 +14,8 @@ export function generateLevel(lvl){
     const gc=Math.floor(CANVAS_WIDTH/CELL_SIZE), gr=Math.floor(CANVAS_HEIGHT/CELL_SIZE);
     let grid=[];
     for(let y=0;y<gr;y++){ grid[y]=[]; for(let x=0;x<gc;x++) grid[y][x]=(x===0||x===gc-1||y===0||y===gr-1)?1:0; }
-    const wl=Math.floor(gc*gr*(0.2+Math.min(lvl*0.015,0.08)));
+    const wallDensityBase = lvl === 1 ? 0.10 : 0.20;
+    const wl=Math.floor(gc*gr*(wallDensityBase+Math.min(lvl*0.015,0.08)));
     for(let i=0;i<wl;i++){
         const x=2+Math.floor(Math.random()*(gc-4)), y=2+Math.floor(Math.random()*(gr-4));
         if(y>=0 && y<gr && x>=0 && x<gc && grid[y] && grid[y][x]===0){ grid[y][x]=1; }
@@ -30,7 +31,8 @@ export function generateLevel(lvl){
             const strategy = G.aiTracker ? G.aiTracker.getStrategy() : null;
             G.enemies.push(new Enemy(ex, ey, G.aiDifficulty || 2, strategy));
         } else {
-            const ne=Math.min(2+Math.floor(lvl*1.2),10), tier=Math.min(Math.ceil(lvl/2),4);
+            const baseEnemies = lvl === 1 ? 1 : 2;
+            const ne=Math.min(baseEnemies+Math.floor(lvl*1.2),10), tier=Math.min(Math.ceil(lvl/2),4);
             for(let i=0;i<ne;i++){
                 for(let a=0;a<50;a++){
                     const ex=CELL_SIZE*2+Math.random()*(CANVAS_WIDTH-CELL_SIZE*4), ey=CELL_SIZE*2+Math.random()*(CANVAS_HEIGHT-CELL_SIZE*4);
@@ -43,8 +45,8 @@ export function generateLevel(lvl){
         }
     }
     validateAllPaths();
-    G.levelStartTime=performance.now();
-    G.gameState=GameState.PLAYING;
+    G.gameState=GameState.READY;
+    G._readyAt=performance.now();
     log('info','LEVEL','Level generated - enemies: '+G.enemies.length+', player pos: '+G.player.pos.x+','+G.player.pos.y);
 }
 

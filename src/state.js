@@ -37,6 +37,7 @@ export const G = {
     remoteBullets: {},
     _multiplayerStarting: false,
     _bulletSeq: 0,
+    _readyAt: 0,
     bulletListenerRef: null,
     playerUpdateInterval: null,
 

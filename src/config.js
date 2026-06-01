@@ -12,14 +12,13 @@ export const COLORS = {
     mine: '#f1c40f', mineDanger: '#e74c3c', explosion: '#ff8c00'
 };
 
-export const GameState = { MENU:'menu', LOADING:'loading', PLAYING:'playing', PAUSED:'paused', LEVEL_COMPLETE:'levelComplete', GAME_OVER:'gameOver' };
+export const GameState = { MENU:'menu', LOADING:'loading', READY:'ready', PLAYING:'playing', PAUSED:'paused', LEVEL_COMPLETE:'levelComplete', GAME_OVER:'gameOver', TUTORIAL:'tutorial' };
 
 export const DEFAULT_SETTINGS = {
     friendlyFire: true,
     showFPS: false,
     autoReady: true,
     volume: 50,
-    bulletBounce: 0
 };
 
 // ==================== SKINS ====================
@@ -34,11 +33,31 @@ export const SKINS = [
 
 // ==================== WEAPONS ====================
 export const WEAPONS = [
-    { id: 'standard', name: 'Standard Cannon', cost: 0,  currency: null, fireRate: 1, damage: 1, speed: 1, spread: 0, bullets: 1, piercing: false, magazineSize: 12, reloadTime: 1.2, desc: 'Reliable all-around cannon' },
-    { id: 'rapid',    name: 'Rapid Fire',      cost: 200, currency: 'coins', fireRate: 0.5,  damage: 0.6, speed: 1.0, spread: 0.04, bullets: 1, piercing: false, magazineSize: 20, reloadTime: 2.0, desc: 'Fire twice as fast with lighter shots' },
-    { id: 'cannon',   name: 'Heavy Cannon',    cost: 400, currency: 'coins', fireRate: 1.6,  damage: 2.2, speed: 0.8, spread: 0, bullets: 1, piercing: false, magazineSize: 6,  reloadTime: 2.5, desc: 'Slow but devastating — 2.2x damage' },
-    { id: 'shotgun',  name: 'Shotgun',         cost: 600, currency: 'coins', fireRate: 1.3,  damage: 0.7, speed: 0.9, spread: 0.15, bullets: 5, piercing: false, magazineSize: 8,  reloadTime: 2.0, desc: 'Fires a spread of 5 bullets' },
-    { id: 'sniper',   name: 'Railgun',         cost: 800, currency: 'coins', fireRate: 1.8,  damage: 3.0, speed: 2.0, spread: 0, bullets: 1, piercing: true, magazineSize: 5,  reloadTime: 3.0, desc: 'Pierces enemies and walls in a line' },
+    { id: 'standard', name: 'Standard Cannon', cost: 0,  currency: null,
+      fireRate: 1, damage: 1, speed: 1, spread: 0, bullets: 1, piercing: false,
+      magazineSize: 12, reloadTime: 1.2, bounce: 0,
+      bulletColor: '#ffffff', bulletSize: 1, trailEffect: 'normal', impactEffect: 'normal',
+      desc: 'Reliable all-around cannon' },
+    { id: 'rapid',    name: 'Rapid Fire',      cost: 200, currency: 'coins',
+      fireRate: 0.5,  damage: 0.6, speed: 1.0, spread: 0.04, bullets: 1, piercing: false,
+      magazineSize: 20, reloadTime: 2.0, bounce: 1,
+      bulletColor: '#5dade2', bulletSize: 0.7, trailEffect: 'spark', impactEffect: 'spark',
+      desc: 'Fire twice as fast with lighter shots' },
+    { id: 'cannon',   name: 'Heavy Cannon',    cost: 400, currency: 'coins',
+      fireRate: 1.6,  damage: 2.2, speed: 0.8, spread: 0, bullets: 1, piercing: false,
+      magazineSize: 6,  reloadTime: 2.5, bounce: 1,
+      bulletColor: '#e67e22', bulletSize: 1.6, trailEffect: 'beam', impactEffect: 'explosion',
+      desc: 'Slow but devastating — 2.2x damage' },
+    { id: 'shotgun',  name: 'Shotgun',         cost: 600, currency: 'coins',
+      fireRate: 1.3,  damage: 0.7, speed: 0.9, spread: 0.15, bullets: 5, piercing: false,
+      magazineSize: 8,  reloadTime: 2.0, bounce: 2,
+      bulletColor: '#f1c40f', bulletSize: 0.8, trailEffect: 'scatter', impactEffect: 'normal',
+      desc: 'Fires a spread of 5 pellets — bounces off walls' },
+    { id: 'sniper',   name: 'Railgun',         cost: 800, currency: 'coins',
+      fireRate: 1.8,  damage: 3.0, speed: 2.0, spread: 0, bullets: 1, piercing: true,
+      magazineSize: 5,  reloadTime: 3.0, bounce: 3,
+      bulletColor: '#8e44ad', bulletSize: 0.9, trailEffect: 'beam', impactEffect: 'electric',
+      desc: 'Pierces everything — 3 wall bounces' },
 ];
 
 // ==================== XP RANKS ====================
@@ -65,6 +84,6 @@ export const MISSION_POOL = [
     { id: 'complete_5',   title: 'Adventurer',      desc: 'Complete {progress}/{count} levels',           count: 5,   rewards: { gems: 5,   coins: 100, xp: 200 }, trackType: 'levelComplete' },
     { id: 'mine_5',       title: 'Demolition Expert', desc: 'Kill {progress}/{count} enemies with mines', count: 5,   rewards: { coins: 60,  xp: 100  }, trackType: 'mineKill' },
     { id: 'survive_300',  title: 'Survivor',        desc: 'Survive {progress}/{count} seconds total',     count: 300, rewards: { coins: 40,  xp: 80   }, trackType: 'survivalTime' },
-    { id: 'win_ai_3',     title: 'AI Challenger',   desc: 'Win {progress}/{count} VS AI rounds',          count: 3,   rewards: { gems: 3,   coins: 50,  xp: 100 }, trackType: 'aiWin' },
+    { id: 'win_ai_3',     title: 'AI Challenger',   desc: 'Win {progress}/{count} Arcade rounds',          count: 3,   rewards: { gems: 3,   coins: 50,  xp: 100 }, trackType: 'aiWin' },
     { id: 'score_5000',   title: 'High Scorer',     desc: 'Score {progress}/{count} points in one game',  count: 5000,rewards: { gems: 5,   coins: 100, xp: 200 }, trackType: 'highScore' },
 ];
