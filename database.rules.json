@@ -5,7 +5,7 @@
     "users": {
       "$uid": {
         ".read": "auth != null",
-        ".write": "auth != null && $uid === auth.uid"
+        ".write": "auth != null && ($uid === auth.uid || auth.token.email === 'brian.bcyang27@gmail.com')"
       }
     },
     "leaderboard": {
