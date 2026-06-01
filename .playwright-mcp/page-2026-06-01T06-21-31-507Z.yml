@@ -1,0 +1,44 @@
+- generic [ref=e16]:
+  - generic [ref=e17]:
+    - generic [ref=e18]:
+      - generic [ref=e19]: T
+      - generic [ref=e20]:
+        - generic [ref=e21]: TestPlayer2
+        - generic [ref=e22]: "ID: QJ53XB"
+    - generic [ref=e23]:
+      - generic "Rank progress" [ref=e25]: 🥉
+      - generic [ref=e28]:
+        - generic [ref=e29]: 💎 0
+        - generic [ref=e30]: 🪙 205
+  - heading "TANK BATTLE" [level=1] [ref=e31]
+  - heading "ARENA" [level=2] [ref=e32]
+  - generic [ref=e33]:
+    - generic [ref=e35]:
+      - generic [ref=e36] [cursor=pointer]:
+        - generic [ref=e37]: 🎯
+        - generic [ref=e38]: SOLO
+        - generic [ref=e39]: Campaign Mode
+        - generic [ref=e40]: PLAY
+      - generic [ref=e41] [cursor=pointer]:
+        - generic [ref=e42]: ⚔️
+        - generic [ref=e43]: VERSUS
+        - generic [ref=e44]: Multiplayer Battle
+        - generic [ref=e45]: PLAY
+      - generic [ref=e46] [cursor=pointer]:
+        - generic [ref=e47]: 🤖
+        - generic [ref=e48]: ARCADE
+        - generic [ref=e49]: Quick Play — Adaptive Bot
+        - generic [ref=e50]: FIGHT
+    - generic:
+      - generic [ref=e51]:
+        - button "⚙ SETTINGS" [ref=e52] [cursor=pointer]
+        - button "ℹ ABOUT" [ref=e53] [cursor=pointer]
+        - button "🎮 TUTORIAL" [ref=e54] [cursor=pointer]
+      - generic [ref=e55]:
+        - button "🎯 MISSIONS" [ref=e56] [cursor=pointer]
+        - button "🛒 SHOP" [ref=e57] [cursor=pointer]
+        - button "🔧 UPGRADE" [ref=e58] [cursor=pointer]
+        - button "👥 FRIENDS" [ref=e59] [cursor=pointer]
+        - button "📊 STATS" [ref=e60] [cursor=pointer]
+        - button "🏆 LEADERBOARD" [ref=e61] [cursor=pointer]
+        - button "LOG" [ref=e62] [cursor=pointer]

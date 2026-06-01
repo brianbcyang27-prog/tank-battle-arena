@@ -21,59 +21,66 @@ export const DEFAULT_SETTINGS = {
     volume: 50,
 };
 
-// ==================== SKINS ====================
-export const SKINS = [
-    { id: 'classic',   name: 'Classic',       cost: 0,   currency: null,   color: '#e94560', trailColor: '#ff6b6b', explosionColor: '#e94560', turretGlow: null,   desc: 'The original red battle tank' },
-    { id: 'golden',    name: 'Golden Warrior', cost: 30,  currency: 'gems', color: '#ffd700', trailColor: '#ffd700', explosionColor: '#ffd700', turretGlow: '#ffd700', desc: 'Solid gold — for the fearless' },
-    { id: 'neon',      name: 'Neon Blade',     cost: 50,  currency: 'gems', color: '#00ff88', trailColor: '#00ff88', explosionColor: '#00ff88', turretGlow: '#00ff88', desc: 'Radioactive green energy' },
-    { id: 'inferno',   name: 'Inferno',        cost: 80,  currency: 'gems', color: '#ff4500', trailColor: '#ff4500', explosionColor: '#ff5200', turretGlow: '#ff4500', desc: 'Burning rage on tracks' },
-    { id: 'shadow',    name: 'Shadow Strike',  cost: 120, currency: 'gems', color: '#8a2be2', trailColor: '#8a2be2', explosionColor: '#9b30ff', turretGlow: '#8a2be2', desc: 'Dark purple menace' },
-    { id: 'frost',     name: 'Crystal Frost',  cost: 200, currency: 'gems', color: '#00bfff', trailColor: '#00bfff', explosionColor: '#87ceeb', turretGlow: '#00bfff', desc: 'Sub-zero military grade' },
-];
-
 // ==================== WEAPONS ====================
 export const WEAPONS = [
-    { id: 'standard', name: 'Standard Cannon', cost: 0,  currency: null,
+    { id: 'standard', name: 'Standard Cannon', cost: 0,  currency: null,  minRank: null,
       fireRate: 1, damage: 1, speed: 1, spread: 0, bullets: 1, piercing: false,
       magazineSize: 12, reloadTime: 1.2, bounce: 0,
       bulletColor: '#ffffff', bulletSize: 1, trailEffect: 'normal', impactEffect: 'normal',
       desc: 'Reliable all-around cannon' },
-    { id: 'rapid',    name: 'Rapid Fire',      cost: 200, currency: 'coins',
+    { id: 'rapid',    name: 'Rapid Fire',      cost: 300, currency: 'coins', minRank: 'Bronze II',
       fireRate: 0.5,  damage: 0.6, speed: 1.0, spread: 0.04, bullets: 1, piercing: false,
       magazineSize: 20, reloadTime: 2.0, bounce: 1,
       bulletColor: '#5dade2', bulletSize: 0.7, trailEffect: 'spark', impactEffect: 'spark',
       desc: 'Fire twice as fast with lighter shots' },
-    { id: 'cannon',   name: 'Heavy Cannon',    cost: 400, currency: 'coins',
+    { id: 'cannon',   name: 'Heavy Cannon',    cost: 500, currency: 'coins', minRank: 'Silver I',
       fireRate: 1.6,  damage: 2.2, speed: 0.8, spread: 0, bullets: 1, piercing: false,
       magazineSize: 6,  reloadTime: 2.5, bounce: 1,
       bulletColor: '#e67e22', bulletSize: 1.6, trailEffect: 'beam', impactEffect: 'explosion',
       desc: 'Slow but devastating — 2.2x damage' },
-    { id: 'shotgun',  name: 'Shotgun',         cost: 600, currency: 'coins',
+    { id: 'shotgun',  name: 'Shotgun',         cost: 750, currency: 'coins', minRank: 'Silver II',
       fireRate: 1.3,  damage: 0.7, speed: 0.9, spread: 0.15, bullets: 5, piercing: false,
       magazineSize: 8,  reloadTime: 2.0, bounce: 2,
       bulletColor: '#f1c40f', bulletSize: 0.8, trailEffect: 'scatter', impactEffect: 'normal',
       desc: 'Fires a spread of 5 pellets — bounces off walls' },
-    { id: 'sniper',   name: 'Railgun',         cost: 800, currency: 'coins',
+    { id: 'sniper',   name: 'Railgun',         cost: 1000, currency: 'coins', minRank: 'Gold I',
       fireRate: 1.8,  damage: 3.0, speed: 2.0, spread: 0, bullets: 1, piercing: true,
       magazineSize: 5,  reloadTime: 3.0, bounce: 3,
       bulletColor: '#8e44ad', bulletSize: 0.9, trailEffect: 'beam', impactEffect: 'electric',
       desc: 'Pierces everything — 3 wall bounces' },
 ];
 
+// ==================== SKINS ====================
+export const SKINS = [
+    { id: 'classic',   name: 'Classic',       cost: 0,   currency: null,   minRank: null,
+      color: '#e94560', trailColor: '#ff6b6b', explosionColor: '#e94560', turretGlow: null,   desc: 'The original red battle tank' },
+    { id: 'golden',    name: 'Golden Warrior', cost: 30,  currency: 'gems', minRank: null,
+      color: '#ffd700', trailColor: '#ffd700', explosionColor: '#ffd700', turretGlow: '#ffd700', desc: 'Solid gold — for the fearless' },
+    { id: 'neon',      name: 'Neon Blade',     cost: 50,  currency: 'gems', minRank: 'Bronze III',
+      color: '#00ff88', trailColor: '#00ff88', explosionColor: '#00ff88', turretGlow: '#00ff88', desc: 'Radioactive green energy' },
+    { id: 'inferno',   name: 'Inferno',        cost: 80,  currency: 'gems', minRank: 'Silver II',
+      color: '#ff4500', trailColor: '#ff4500', explosionColor: '#ff5200', turretGlow: '#ff4500', desc: 'Burning rage on tracks' },
+    { id: 'shadow',    name: 'Shadow Strike',  cost: 120, currency: 'gems', minRank: 'Gold I',
+      color: '#8a2be2', trailColor: '#8a2be2', explosionColor: '#9b30ff', turretGlow: '#8a2be2', desc: 'Dark purple menace' },
+    { id: 'frost',     name: 'Crystal Frost',  cost: 200, currency: 'gems', minRank: 'Diamond',
+      color: '#00bfff', trailColor: '#00bfff', explosionColor: '#87ceeb', turretGlow: '#00bfff', desc: 'Sub-zero military grade' },
+];
+
 // ==================== XP RANKS ====================
+// Exponential curve: early ranks fast, late ranks take serious grinding
 export const RANKS = [
-    { minXp: 0,     title: 'Bronze I',    icon: '🥉' },
-    { minXp: 100,   title: 'Bronze II',   icon: '🥉' },
-    { minXp: 300,   title: 'Bronze III',  icon: '🥉' },
-    { minXp: 600,   title: 'Silver I',    icon: '🥈' },
-    { minXp: 1000,  title: 'Silver II',   icon: '🥈' },
-    { minXp: 1600,  title: 'Silver III',  icon: '🥈' },
-    { minXp: 2400,  title: 'Gold I',      icon: '🥇' },
-    { minXp: 3400,  title: 'Gold II',     icon: '🥇' },
-    { minXp: 4600,  title: 'Gold III',    icon: '🥇' },
-    { minXp: 6000,  title: 'Diamond',     icon: '💎' },
-    { minXp: 8000,  title: 'Elite',       icon: '⭐' },
-    { minXp: 10000, title: 'Legend',      icon: '👑' },
+    { minXp: 0,      title: 'Bronze I',    icon: '🥉' },
+    { minXp: 200,    title: 'Bronze II',   icon: '🥉' },
+    { minXp: 500,    title: 'Bronze III',  icon: '🥉' },
+    { minXp: 1000,   title: 'Silver I',    icon: '🥈' },
+    { minXp: 2000,   title: 'Silver II',   icon: '🥈' },
+    { minXp: 3500,   title: 'Silver III',  icon: '🥈' },
+    { minXp: 5500,   title: 'Gold I',      icon: '🥇' },
+    { minXp: 8000,   title: 'Gold II',     icon: '🥇' },
+    { minXp: 12000,  title: 'Gold III',    icon: '🥇' },
+    { minXp: 18000,  title: 'Diamond',     icon: '💎' },
+    { minXp: 25000,  title: 'Elite',       icon: '⭐' },
+    { minXp: 35000,  title: 'Legend',      icon: '👑' },
 ];
 
 // ==================== MISSIONS ====================

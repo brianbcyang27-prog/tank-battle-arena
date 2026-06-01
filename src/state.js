@@ -5,6 +5,9 @@ export const G = {
     // Canvas
     ctx: null,
 
+    screenShake: 0,
+    safePeriod: 2.0,
+
     // Game objects
     player: null,
     enemies: [],

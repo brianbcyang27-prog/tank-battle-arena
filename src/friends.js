@@ -147,6 +147,7 @@ export async function clearInvitation(fromUid) {
 
 let _invitationListener = null;
 export function listenInvitations(callback) {
+    if (!G.currentUser) return;
     if (_invitationListener) { off(_invitationListener.ref, 'value', _invitationListener.handler); }
     const invRef = ref(db, 'invitations/' + G.currentUser.uid);
     const handler = onValue(invRef, snapshot => {

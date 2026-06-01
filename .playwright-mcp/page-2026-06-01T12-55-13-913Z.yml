@@ -1,0 +1,61 @@
+- generic [ref=e2]:
+  - generic:
+    - generic:
+      - generic: 🎖️
+      - heading "TANK BATTLE" [level=1]
+      - heading "ARENA" [level=2]
+      - generic: WHERE LEGENDS ARE FORGED
+      - generic:
+        - generic:
+          - generic: INITIALIZING SYSTEMS...
+          - generic: 4%
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e7]: P
+        - generic [ref=e8]:
+          - generic [ref=e9]: Player
+          - generic [ref=e10]: "ID: —"
+      - generic [ref=e11]:
+        - generic "Rank progress" [ref=e13]: 🥉
+        - generic [ref=e15]:
+          - generic [ref=e16]: 💎 0
+          - generic [ref=e17]: 🪙 0
+    - heading "TANK BATTLE" [level=1] [ref=e18]
+    - heading "ARENA" [level=2] [ref=e19]
+    - generic [ref=e20]:
+      - generic [ref=e22]:
+        - generic [ref=e23] [cursor=pointer]:
+          - generic [ref=e24]: 🎯
+          - generic [ref=e25]: SOLO
+          - generic [ref=e26]: Campaign Mode
+          - generic [ref=e27]: PLAY
+        - generic [ref=e28] [cursor=pointer]:
+          - generic [ref=e29]: ⚔️
+          - generic [ref=e30]: VERSUS
+          - generic [ref=e31]: Multiplayer Battle
+          - generic [ref=e32]: PLAY
+        - generic [ref=e33] [cursor=pointer]:
+          - generic [ref=e34]: 🤖
+          - generic [ref=e35]: ARCADE
+          - generic [ref=e36]: Quick Play — Adaptive Bot
+          - generic [ref=e37]: FIGHT
+        - generic [ref=e38] [cursor=pointer]:
+          - generic [ref=e39]: 🏆
+          - generic [ref=e40]: CAMPAIGN
+          - generic [ref=e41]: Persistent — Continue Progress
+          - generic [ref=e42]: CONTINUE
+      - generic:
+        - generic [ref=e43]:
+          - button "⚙ SETTINGS" [ref=e44] [cursor=pointer]
+          - button "ℹ ABOUT" [ref=e45] [cursor=pointer]
+          - button "🎮 TUTORIAL" [ref=e46] [cursor=pointer]
+        - generic [ref=e47]:
+          - button "🎯 MISSIONS" [ref=e48] [cursor=pointer]
+          - button "🛒 SHOP" [ref=e49] [cursor=pointer]
+          - button "🔧 UPGRADE" [ref=e50] [cursor=pointer]
+          - button "👥 FRIENDS" [ref=e51] [cursor=pointer]
+          - button "📊 STATS" [ref=e52] [cursor=pointer]
+          - button "📈 PROGRESSION" [ref=e53] [cursor=pointer]
+          - button "🏆 LEADERBOARD" [ref=e54] [cursor=pointer]
+          - button "LOG" [ref=e55] [cursor=pointer]

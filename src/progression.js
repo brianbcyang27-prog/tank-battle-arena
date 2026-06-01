@@ -7,7 +7,7 @@ const STORAGE_KEY = 'tankBattle_progression';
 function defaultProgression() {
     return {
         gems: 0,
-        coins: 200, // starting coins
+        coins: 100, // starting coins
         xp: 0,
         ownedSkins: ['classic'],
         equippedSkin: 'classic',
@@ -57,6 +57,23 @@ function saveProgression() {
 loadProgression();
 
 // ==================== CURRENCY ====================
+export { RANKS };
+export function getPlayerData() { return P; }
+export function getStats() {
+    return {
+        levelsCompleted: P.levelCompletes,
+        highScore: P.highestSingleScore,
+        gamesPlayed: P.levelCompletes + (P.aiWins || 0),
+        totalKills: P.totalKills,
+    };
+}
+export function rankIndex(rank) {
+    if (!rank) return -1;
+    if (typeof rank === 'string') {
+        return RANKS.findIndex(r => r.title === rank);
+    }
+    return RANKS.findIndex(r => r.title === rank.title || r.minXp === rank.minXp);
+}
 export function getGems() { return P.gems; }
 export function getCoins() { return P.coins; }
 export function getXp() { return P.xp; }
@@ -138,10 +155,18 @@ export function getWeaponData(id) {
 export function ownSkin(id) { return P.ownedSkins.includes(id); }
 export function ownWeapon(id) { return P.ownedWeapons.includes(id); }
 
+function playerRankIndex() {
+    const rank = getRank();
+    return RANKS.findIndex(r => r.title === rank.title);
+}
+
 export function buySkin(id) {
     const skin = SKINS.find(s => s.id === id);
     if (!skin) return { ok: false, reason: 'Skin not found' };
     if (P.ownedSkins.includes(id)) return { ok: false, reason: 'Already owned' };
+    if (skin.minRank && rankIndex(skin.minRank) > playerRankIndex()) {
+        return { ok: false, reason: 'Requires ' + skin.minRank + ' rank' };
+    }
     if (skin.currency === 'gems') {
         if (!spendGems(skin.cost)) return { ok: false, reason: 'Not enough gems' };
     } else if (skin.currency === 'coins') {
@@ -157,6 +182,9 @@ export function buyWeapon(id) {
     const weapon = WEAPONS.find(w => w.id === id);
     if (!weapon) return { ok: false, reason: 'Weapon not found' };
     if (P.ownedWeapons.includes(id)) return { ok: false, reason: 'Already owned' };
+    if (weapon.minRank && rankIndex(weapon.minRank) > playerRankIndex()) {
+        return { ok: false, reason: 'Requires ' + weapon.minRank + ' rank' };
+    }
     if (!spendCoins(weapon.cost)) return { ok: false, reason: 'Not enough coins' };
     P.ownedWeapons.push(id);
     saveProgression();
@@ -357,18 +385,18 @@ export function applyUpgradesToPlayer(player) {
 
 // ==================== EARNINGS (called on level complete / game over) ====================
 export function awardLevelComplete(level) {
-    const base = 50 + level * 25;
-    addCoins(base);
-    addXp(100 + level * 50);
+    const coins = 15 + level * 10;
+    const xp = 30 + level * 20;
+    addCoins(coins);
+    addXp(xp);
     trackLevelComplete();
-    log('info', 'PROG', 'Level ' + level + ' rewards: +' + base + ' coins, +' + (100 + level * 50) + ' xp');
-    return { coins: base, xp: 100 + level * 50 };
+    log('info', 'PROG', 'Level ' + level + ' rewards: +' + coins + ' coins, +' + xp + ' xp');
+    return { coins, xp };
 }
 
 export function awardGameOver(score) {
-    // Small consolation
-    const coins = Math.max(5, Math.floor(score / 100));
-    const xp = Math.max(10, Math.floor(score / 50));
+    const coins = Math.max(3, Math.floor(score / 150));
+    const xp = Math.max(5, Math.floor(score / 100));
     addCoins(coins);
     addXp(xp);
     trackHighScore(score);
@@ -377,17 +405,17 @@ export function awardGameOver(score) {
 }
 
 export function awardAiWin() {
-    addCoins(100);
-    addXp(200);
+    addCoins(60);
+    addXp(100);
     trackAiWin();
-    log('info', 'PROG', 'AI match win: +100 coins, +200 xp');
-    return { coins: 100, xp: 200 };
+    log('info', 'PROG', 'AI match win: +60 coins, +100 xp');
+    return { coins: 60, xp: 100 };
 }
 
 export function awardAiRoundWin() {
-    addCoins(25);
-    addXp(50);
-    return { coins: 25, xp: 50 };
+    addCoins(15);
+    addXp(25);
+    return { coins: 15, xp: 25 };
 }
 
 // ==================== CAMPAIGN LEVEL (persistent across sessions) ====================

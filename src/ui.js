@@ -147,7 +147,7 @@ window.showStats = function() {
 };
 
 // ==================== UI HELPERS ====================
-const HOME_OVERLAYS = ['loginOverlay','missionsOverlay','shopOverlay','statsOverlay','leaderboardOverlay','friendsOverlay','aboutOverlay','upgradeOverlay','tutorialOverlay'];
+const HOME_OVERLAYS = ['loginOverlay','missionsOverlay','shopOverlay','statsOverlay','leaderboardOverlay','friendsOverlay','aboutOverlay','upgradeOverlay','tutorialOverlay','progressionOverlay'];
 
 export function showOverlay(id){
     document.querySelectorAll('.overlay').forEach(o=>{
@@ -211,6 +211,95 @@ window.startSolo = function(){
 
 window.startCampaign = function(){
     G.gameMode='campaign';
+    showCampaignMap();
+};
+
+function showCampaignMap() {
+    const savedLevel = getCampaignLevel();
+    const grid = document.getElementById('campaignLevelGrid');
+    const sub = document.getElementById('campaignMapSub');
+    const btn = document.getElementById('campaignStartBtn');
+    if (!grid) return;
+    
+    grid.innerHTML = '';
+    const maxLevel = 60;
+    const colsPerRow = 10;
+    
+    if (sub) {
+        sub.textContent = savedLevel > 1
+            ? 'LEVEL ' + savedLevel + ' — ' + (savedLevel - 1) + ' COMPLETED'
+            : 'READY TO BEGIN YOUR JOURNEY';
+    }
+    if (btn) btn.textContent = savedLevel > 1 ? 'CONTINUE (LEVEL ' + savedLevel + ')' : 'START';
+    
+    for (let i = 1; i <= maxLevel; i += colsPerRow) {
+        const row = document.createElement('div');
+        row.className = 'campaign-row' + ((Math.floor((i - 1) / colsPerRow) % 2 === 1) ? ' reverse' : '');
+        
+        for (let j = 0; j < colsPerRow && i + j <= maxLevel; j++) {
+            const lvl = i + j;
+            const node = document.createElement('div');
+            node.className = 'campaign-node';
+            
+            const iconSpan = document.createElement('div');
+            iconSpan.className = 'node-icon';
+            const levelSpan = document.createElement('div');
+            levelSpan.className = 'node-level';
+            
+            if (lvl < savedLevel) {
+                node.classList.add('completed');
+                iconSpan.textContent = '✓';
+                levelSpan.textContent = 'L' + lvl;
+            } else if (lvl === savedLevel) {
+                node.classList.add('current');
+                iconSpan.textContent = '▶';
+                levelSpan.textContent = 'L' + lvl;
+            } else {
+                node.classList.add('locked');
+                iconSpan.textContent = '🔒';
+                levelSpan.textContent = '' + lvl;
+            }
+            
+            node.appendChild(iconSpan);
+            node.appendChild(levelSpan);
+            row.appendChild(node);
+        }
+        grid.appendChild(row);
+        
+        // Connector row between level rows
+        if (i + colsPerRow <= maxLevel) {
+            const connRow = document.createElement('div');
+            connRow.className = 'campaign-row';
+            connRow.style.cssText = 'gap:6px;justify-content:center;';
+            
+            const connWidth = 46 * Math.min(colsPerRow, maxLevel - i) + 6 * (Math.min(colsPerRow, maxLevel - i) - 1);
+            const conn = document.createElement('div');
+            conn.style.cssText = 'width:' + connWidth + 'px;height:6px;display:flex;align-items:center;justify-content:center;';
+            
+            const lastInBatch = Math.min(i + colsPerRow - 1, maxLevel);
+            const nextLevel = lastInBatch + 1;
+            
+            let connClass = 'campaign-connector';
+            if (nextLevel <= savedLevel) connClass += ' done';
+            else if (nextLevel === savedLevel + 1) connClass += ' active';
+            conn.innerHTML = '<div class="' + connClass + '">⤵</div>';
+            
+            connRow.appendChild(conn);
+            grid.appendChild(connRow);
+        }
+    }
+    
+    showOverlay('campaignMapOverlay');
+    log('info','CAMPAIGN','Campaign map shown, saved level: ' + savedLevel);
+}
+
+window.closeCampaignMap = function() {
+    showOverlay('loginOverlay');
+    log('info','CAMPAIGN','Campaign map closed');
+};
+
+window.startCampaignGame = function(){
+    showOverlay(null);
     import('./game.js').then(m => m.startGameFromMenu());
 };
 
@@ -665,6 +754,83 @@ window.closeMissions = function() {
     log('info','UI','Closing missions panel');
 };
 
+window.showProgression = function() {
+    import('./progression.js').then(m => {
+        const P = m.getPlayerData();
+        const rank = m.getRank();
+        const rankIdx = m.rankIndex(rank);
+        const ranks = m.RANKS;
+        const nextRank = rankIdx < ranks.length - 1 ? ranks[rankIdx + 1] : null;
+        const xpInRank = nextRank ? P.xp - rank.minXp : 0;
+        const xpNeeded = nextRank ? nextRank.minXp - rank.minXp : 1;
+        const xpPct = Math.min(100, Math.round((xpInRank / xpNeeded) * 100));
+        const maxRankIdx = ranks.length - 1;
+
+        let html = '';
+
+        // Current rank card
+        html += '<div class="prog-current-rank">';
+        html += '<span class="prog-rank-icon">' + rank.icon + '</span>';
+        html += '<div class="prog-rank-title">' + rank.title + '</div>';
+        html += '<div class="prog-rank-xp">' + P.xp.toLocaleString() + ' total XP';
+        if (nextRank) {
+            html += ' &bull; ' + xpInRank.toLocaleString() + ' / ' + xpNeeded.toLocaleString() + ' to next rank';
+        } else {
+            html += ' &bull; MAX RANK';
+        }
+        html += '</div>';
+        if (nextRank) {
+            html += '<div class="prog-xp-bar-bg"><div class="prog-xp-bar-fill" style="width:' + xpPct + '%"></div></div>';
+        }
+        html += '</div>';
+
+        // Stats row
+        const stats = m.getStats();
+        html += '<div class="prog-stats-row">';
+        html += '<div class="prog-stat"><div class="prog-stat-val">' + (stats.levelsCompleted || 0) + '</div><div class="prog-stat-lbl">LEVELS</div></div>';
+        html += '<div class="prog-stat"><div class="prog-stat-val">' + (stats.highScore || 0).toLocaleString() + '</div><div class="prog-stat-lbl">BEST SCORE</div></div>';
+        html += '<div class="prog-stat"><div class="prog-stat-val">' + (stats.gamesPlayed || 0) + '</div><div class="prog-stat-lbl">GAMES</div></div>';
+        html += '<div class="prog-stat"><div class="prog-stat-val">' + (P.ownedWeapons ? P.ownedWeapons.length : 0) + '</div><div class="prog-stat-lbl">WEAPONS</div></div>';
+        html += '<div class="prog-stat"><div class="prog-stat-val">' + (P.ownedSkins ? P.ownedSkins.length : 0) + '</div><div class="prog-stat-lbl">SKINS</div></div>';
+        html += '</div>';
+
+        // Rank list
+        html += '<div class="prog-rank-list">';
+        for (let i = 0; i <= maxRankIdx; i++) {
+            const r = m.RANKS[i];
+            const isCurrent = i === rankIdx;
+            const isUnlocked = i <= rankIdx;
+            let cls = 'prog-rank-row';
+            if (isCurrent) cls += ' current';
+            else if (isUnlocked) cls += ' unlocked';
+            else cls += ' locked';
+
+            html += '<div class="' + cls + '">';
+            html += '<span class="prog-r-icon">' + r.icon + '</span>';
+            html += '<span class="prog-r-title">' + r.title + '</span>';
+            html += '<span class="prog-r-xp">' + r.minXp.toLocaleString() + ' XP</span>';
+            if (isCurrent) {
+                html += '<span class="prog-r-check" style="color:#f1c40f;">⬅</span>';
+            } else if (isUnlocked) {
+                html += '<span class="prog-r-check" style="color:#2ecc71;">✓</span>';
+            } else {
+                html += '<span class="prog-r-check" style="color:#555;">🔒</span>';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+
+        document.getElementById('progressionGrid').innerHTML = html;
+    });
+    showOverlay('progressionOverlay');
+    log('info','UI','Opening progression panel');
+};
+
+window.closeProgression = function() {
+    showOverlay('loginOverlay');
+    log('info','UI','Closing progression panel');
+};
+
 window.showShop = function() {
     const gemEl = document.getElementById('shopGems');
     const coinEl = document.getElementById('shopCoins');
@@ -701,12 +867,14 @@ const WEAPON_ICONS = {
 function renderShopItems(container, items, type, prog) {
     const ownedList = type === 'skin' ? prog.getOwnedSkins() : prog.getOwnedWeapons();
     const equippedId = type === 'skin' ? prog.getEquippedSkin() : prog.getEquippedWeapon();
+    const rank = prog.getRank();
 
     let html = '<div class="shop-grid">';
     for (const item of items) {
         const owned = ownedList.includes(item.id);
         const equipped = equippedId === item.id;
-        const itemClass = equipped ? 'shop-item equipped' : owned ? 'shop-item owned' : 'shop-item';
+        const rankLocked = item.minRank && prog.rankIndex(item.minRank) > prog.rankIndex(rank);
+        const itemClass = equipped ? 'shop-item equipped' : owned ? 'shop-item owned' : rankLocked ? 'shop-item' : 'shop-item';
 
         let priceHtml = '';
         if (item.cost === 0) {
@@ -723,6 +891,8 @@ function renderShopItems(container, items, type, prog) {
         } else if (owned) {
             const fn = type === 'skin' ? 'equipShopSkin' : 'equipShopWeapon';
             btnHtml = `<button class="shop-item-btn equip" onclick="${fn}('${item.id}')">EQUIP</button>`;
+        } else if (rankLocked) {
+            btnHtml = `<button class="shop-item-btn" style="color:#666;cursor:not-allowed;" disabled>🔒 ${item.minRank.title}</button>`;
         } else if (item.cost === 0) {
             const fn = type === 'skin' ? 'buyShopSkin' : 'buyShopWeapon';
             btnHtml = `<button class="shop-item-btn buy" onclick="${fn}('${item.id}')">GET FREE</button>`;

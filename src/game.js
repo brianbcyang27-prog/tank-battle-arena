@@ -6,6 +6,7 @@ import { showOverlay, updateUI, updateCurrencyDisplay } from './ui.js';
 import { log } from './log.js';
 import { initStats, finalizeStats } from './stats.js';
 import { awardLevelComplete, awardGameOver, awardAiWin, awardAiRoundWin, getCampaignLevel, saveCampaignLevel } from './progression.js';
+import { initAudio, playBackgroundMusic } from './audio.js';
 
 // ==================== GAME FLOW ====================
 export function startGame(){
@@ -21,6 +22,8 @@ export function startGame(){
 
 export function startGameFromMenu(){
     showOverlay(null);
+    initAudio();
+    playBackgroundMusic();
     if(G.gameMode==='single'){
         log('info','START','Starting single player game');
         G.level=1; G.score=0; initStats();
@@ -62,6 +65,7 @@ window.startGameFromMenu = startGameFromMenu;
 // ==================== LEVEL COMPLETE ====================
 export function levelComplete(){
     G.mouseDown = false;
+    import('./audio.js').then(m => m.playVictory());
     const tb=Math.max(0,Math.floor(1000-G.levelTime*10));
     G.score+=tb+500*G.level;
     G.gameState=GameState.LEVEL_COMPLETE;
@@ -109,6 +113,7 @@ function savePersonalBest(score) {
 
 export function gameOver(){
     G.gameState=GameState.GAME_OVER;
+    import('./audio.js').then(m => m.playDefeat());
     finalizeStats(false);
     if (G.currentUser) saveToLeaderboard();
     awardGameOver(G.score);
@@ -171,7 +176,15 @@ function showNormalGameOver() {
     updateUI();
     showOverlay('gameOverOverlay');
     showGameOverStats();
-    document.getElementById('restartButton').onclick = startGame;
+
+    const restartBtn = document.getElementById('restartButton');
+    if (G.gameMode === 'campaign') {
+        restartBtn.textContent = 'TRY AGAIN';
+        restartBtn.onclick = startGameFromMenu;
+    } else {
+        restartBtn.textContent = 'PLAY AGAIN';
+        restartBtn.onclick = startGame;
+    }
 
     const submitBar = document.getElementById('scoreSubmitBar');
     const submitMsg = document.getElementById('scoreSubmittedMsg');
@@ -568,6 +581,9 @@ export function multiplayerGameOver(isWinner){
             if (playerWonMatch) {
                 const ci = setInterval(() => { spawnConfettiBurst(6); }, 200);
                 setTimeout(() => clearInterval(ci), 3500);
+                import('./audio.js').then(m => m.playVictory());
+            } else {
+                import('./audio.js').then(m => m.playDefeat());
             }
             log('info','MATCH','Match over. Result: '+(playerWonMatch?'WIN':'LOSE')+' ('+myWins+'-'+aiWins+')');
         } else {
@@ -575,13 +591,21 @@ export function multiplayerGameOver(isWinner){
             if (isWinner) {
                 awardAiRoundWin();
                 updateCurrencyDisplay();
+                import('./audio.js').then(m => m.playRoundWin());
+            } else {
+                import('./audio.js').then(m => m.playRoundLose());
             }
             const rt = isWinner ? 'ROUND WON!' : 'ROUND LOST!';
             const rc = isWinner ? '#27ae60' : '#e74c3c';
+            const diffLabels = {1:'EASY',2:'MEDIUM',3:'HARD'};
+            const diffColors = {1:'#27ae60',2:'#f39c12',3:'#e74c3c'};
+            const diffLabel = diffLabels[G.aiDifficulty] || 'MEDIUM';
+            const diffColor = diffColors[G.aiDifficulty] || '#f39c12';
             const overlay=document.getElementById('gameOverOverlay');
             overlay.innerHTML=`
                 <h1 style="color:${rc};font-size:52px;margin:0 0 5px;text-shadow:0 0 25px ${rc};">${rt}</h1>
-                <p style="color:#eaeaea;font-size:16px;margin:0 0 3px;">Round ${roundsPlayed} of ${G.aiMatch.maxRounds}</p>
+                <p style="color:#888;font-size:14px;margin:0 0 2px;">Round ${roundsPlayed} of ${G.aiMatch.maxRounds}</p>
+                <p style="color:${diffColor};font-size:16px;margin:0 0 10px;">${diffLabel} MODE</p>
                 <p style="color:#f39c12;font-size:26px;margin:0 0 10px;">YOU ${myWins} — ${aiWins} AI</p>
                 <div id="mpGameOverStats" style="margin:6px 0;width:75%;max-width:360px;background:rgba(0,0,0,0.3);border-radius:4px;padding:8px;display:none;"></div>
                 <div id="mpGameOverStatsContent" style="display:none;"></div>

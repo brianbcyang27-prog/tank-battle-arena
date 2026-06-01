@@ -1,0 +1,18 @@
+- generic [ref=e63]:
+  - heading "LEADERBOARD" [level=2] [ref=e64]
+  - generic [ref=e65]:
+    - generic [ref=e66]:
+      - textbox "🔍 Search players..." [ref=e67]
+      - generic [ref=e68]:
+        - button "ALL" [ref=e69] [cursor=pointer]
+        - button "TOP 10" [ref=e70] [cursor=pointer]
+        - button "TOP 50" [ref=e71] [cursor=pointer]
+        - button "MINE" [ref=e72] [cursor=pointer]
+    - list [ref=e74]:
+      - listitem [ref=e75]:
+        - generic [ref=e76]: 🥇
+        - generic [ref=e77]: brian.bcyang27
+        - generic [ref=e78]: "0"
+        - generic [ref=e79]: Lv.1
+    - paragraph [ref=e80]: Showing 1/1 entries
+  - button "CLOSE" [ref=e81] [cursor=pointer]

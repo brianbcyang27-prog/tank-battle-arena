@@ -451,22 +451,23 @@ window.saveUserProgression = function(uid) {
     const getVal = (id) => parseInt(document.getElementById(id).value) || 0;
     const getStr = (id) => document.getElementById(id).value.trim();
 
-    const progression = {
-        gems: getVal('prog_gems'),
-        coins: getVal('prog_coins'),
-        xp: getVal('prog_xp'),
-        upgradePoints: getVal('prog_upgradePoints'),
-        upgrades: {
-            speed: getVal('prog_up_speed'),
-            fuel: getVal('prog_up_fuel'),
-            mineRadius: getVal('prog_up_mineRadius')
-        },
-        ownedSkins: getStr('prog_ownedSkins').split(',').map(s => s.trim()).filter(Boolean),
-        equippedSkin: getStr('prog_equippedSkin'),
-        ownedWeapons: getStr('prog_ownedWeapons').split(',').map(s => s.trim()).filter(Boolean),
-        equippedWeapon: getStr('prog_equippedWeapon'),
-        updatedAt: Date.now()
+    const existing = cachedProgression[uid] || {};
+    const progression = { ...existing };
+
+    progression.gems = getVal('prog_gems');
+    progression.coins = getVal('prog_coins');
+    progression.xp = getVal('prog_xp');
+    progression.upgradePoints = getVal('prog_upgradePoints');
+    progression.upgrades = {
+        speed: getVal('prog_up_speed'),
+        fuel: getVal('prog_up_fuel'),
+        mineRadius: getVal('prog_up_mineRadius')
     };
+    progression.ownedSkins = getStr('prog_ownedSkins').split(',').map(s => s.trim()).filter(Boolean);
+    progression.equippedSkin = getStr('prog_equippedSkin');
+    progression.ownedWeapons = getStr('prog_ownedWeapons').split(',').map(s => s.trim()).filter(Boolean);
+    progression.equippedWeapon = getStr('prog_equippedWeapon');
+    progression.updatedAt = Date.now();
 
     db.ref('user_progression/' + uid).set(progression).then(() => {
         showToast('Progression saved to Firebase for ' + uid.slice(0, 12));
@@ -758,25 +759,20 @@ window.renderControls = function() {
 window.saveControl = function(uid) {
     const getNum = (id) => parseInt(document.getElementById(id).value) || 0;
 
-    const progression = {
-        gems: getNum('ctrl_' + uid + '_gems'),
-        coins: getNum('ctrl_' + uid + '_coins'),
-        xp: getNum('ctrl_' + uid + '_xp'),
-        upgradePoints: getNum('ctrl_' + uid + '_upgradePoints'),
-        upgrades: {
-            speed: getNum('ctrl_' + uid + '_speed'),
-            fuel: getNum('ctrl_' + uid + '_fuel'),
-            mineRadius: getNum('ctrl_' + uid + '_mineRadius')
-        },
-        updatedAt: Date.now()
-    };
-
-    // Merge back owned/inventory fields if they already exist in cached progression
+    // Start from existing data so admin saves don't wipe out missions, stats, etc.
     const existing = cachedProgression[uid] || {};
-    if (existing.ownedSkins) progression.ownedSkins = existing.ownedSkins;
-    if (existing.equippedSkin) progression.equippedSkin = existing.equippedSkin;
-    if (existing.ownedWeapons) progression.ownedWeapons = existing.ownedWeapons;
-    if (existing.equippedWeapon) progression.equippedWeapon = existing.equippedWeapon;
+    const progression = { ...existing };
+
+    progression.gems = getNum('ctrl_' + uid + '_gems');
+    progression.coins = getNum('ctrl_' + uid + '_coins');
+    progression.xp = getNum('ctrl_' + uid + '_xp');
+    progression.upgradePoints = getNum('ctrl_' + uid + '_upgradePoints');
+    progression.upgrades = {
+        speed: getNum('ctrl_' + uid + '_speed'),
+        fuel: getNum('ctrl_' + uid + '_fuel'),
+        mineRadius: getNum('ctrl_' + uid + '_mineRadius')
+    };
+    progression.updatedAt = Date.now();
 
     db.ref('user_progression/' + uid).set(progression).then(() => {
         showToast('Saved: ' + uid.slice(0, 12));

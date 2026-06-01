@@ -39,8 +39,12 @@ export { auth, db };
 // ==================== AUTH ====================
 // Track whether the login was from an explicit user action vs session restore
 let _explicitSignIn = false;
+let _progUnsub = null;
+
 onAuthStateChanged(auth, (user) => {
     G.currentUser = user;
+    if (_progUnsub) { _progUnsub(); _progUnsub = null; }
+
     if (user) {
         log('info','AUTH','User logged in: ' + (user.email || 'guest'));
         document.getElementById('loginForm').style.display = 'none';
@@ -97,25 +101,29 @@ onAuthStateChanged(auth, (user) => {
             }
         }).catch(e => log('warn','AUTH','Failed to load settings: ' + e.message));
 
-        // Sync progression from Firebase → localStorage (admin edits override local)
-        get(ref(db, 'user_progression/' + user.uid)).then(snapshot => {
-            if (snapshot.exists()) {
-                const fbProg = snapshot.val();
-                const localRaw = localStorage.getItem('tankBattle_progression');
-                const localProg = localRaw ? JSON.parse(localRaw) : {};
-                // Merge: Firebase values win for admin-controlled fields
-                const merged = { ...localProg, ...fbProg };
-                // Deep-merge upgrades object
-                if (fbProg.upgrades || localProg.upgrades) {
-                    merged.upgrades = { ...(localProg.upgrades || {}), ...(fbProg.upgrades || {}) };
+        // Reactive listener so admin Firebase edits propagate live to the game
+        _progUnsub = onValue(ref(db, 'user_progression/' + user.uid), (snapshot) => {
+            import('./progression.js').then(prog => {
+                const P = prog.getPlayerData();
+                if (snapshot.exists()) {
+                    const fbProg = snapshot.val();
+                    const localRaw = localStorage.getItem('tankBattle_progression');
+                    const localProg = localRaw ? JSON.parse(localRaw) : {};
+                    const merged = { ...localProg, ...fbProg };
+                    if (fbProg.upgrades || localProg.upgrades) {
+                        merged.upgrades = { ...(localProg.upgrades || {}), ...(fbProg.upgrades || {}) };
+                    }
+                    if (fbProg.ownedSkins) merged.ownedSkins = fbProg.ownedSkins;
+                    if (fbProg.ownedWeapons) merged.ownedWeapons = fbProg.ownedWeapons;
+                    localStorage.setItem('tankBattle_progression', JSON.stringify(merged));
+                    Object.assign(P, merged);
+                    log('info','PROG','Progression live-synced from Firebase for ' + (user.email || user.uid));
                 }
-                // merge owned arrays (Firebase values replace entirely if present)
-                if (fbProg.ownedSkins) merged.ownedSkins = fbProg.ownedSkins;
-                if (fbProg.ownedWeapons) merged.ownedWeapons = fbProg.ownedWeapons;
-                localStorage.setItem('tankBattle_progression', JSON.stringify(merged));
-                log('info','PROG','Progression synced from Firebase for ' + (user.email || user.uid));
-            }
-        }).catch(e => log('warn','PROG','Failed to sync progression: ' + e.message));
+                import('./ui.js').then(m => m.updateCurrencyDisplay());
+            });
+        }, (err) => {
+            log('warn','PROG','Progression listener error: ' + err.message);
+        });
     } else {
         log('info','AUTH','No user signed in — showing home as guest');
         // Go straight to home (no login form)

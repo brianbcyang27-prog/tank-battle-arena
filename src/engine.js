@@ -178,9 +178,9 @@ export class Tank {
         this.width=36; this.height=36; this.turretAngle=0;
         this.color=color; this.name=name; this.health=3; this.maxHealth=3;
         this.speed=200; this.fireRate=3; this.lastFire=0; this.alive=true;
-        this.labelTime=3;
+        this.labelTime=3; this.damageFlash=0;
     }
-    update(dt){ this.pos=this.pos.add(this.vel.mul(dt)); this.constrainToBounds(); if(this.labelTime>0) this.labelTime-=dt; }
+    update(dt){ this.pos=this.pos.add(this.vel.mul(dt)); this.constrainToBounds(); if(this.labelTime>0) this.labelTime-=dt; if(this.damageFlash>0) this.damageFlash-=dt; }
     constrainToBounds(){
         this.pos.x=Math.max(18,Math.min(CANVAS_WIDTH-18,this.pos.x));
         this.pos.y=Math.max(18,Math.min(CANVAS_HEIGHT-18,this.pos.y));
@@ -192,7 +192,7 @@ export class Tank {
         const d=new Vector2(Math.cos(this.turretAngle),Math.sin(this.turretAngle));
         return new Bullet(this.pos.x+d.x*25,this.pos.y+d.y*25,d.mul(bulletSpeed),this);
     }
-    takeDamage(d=1){ this.health-=d; if(this.health<=0){ this.alive=false; this.explode(); } }
+    takeDamage(d=1){ if(G.safePeriod > 0 && this === G.player) return; this.health-=d; this.damageFlash=0.2; G.screenShake = 0.3; import('./audio.js').then(m => m.playHit()); if(this.health<=0){ this.alive=false; this.explode(); } }
     explode(){
         for(let i=0;i<20;i++){
             const a=Math.random()*Math.PI*2;
@@ -201,14 +201,29 @@ export class Tank {
     }
     draw(){
         const ctx = G.ctx;
-        ctx.save(); ctx.translate(this.pos.x,this.pos.y);
-        ctx.fillStyle=this.color; ctx.strokeStyle='#000'; ctx.lineWidth=2;
+        const shakeAmt = this.damageFlash > 0 ? this.damageFlash * 10 : 0;
+        const shakeX = shakeAmt > 0 ? (Math.random()-0.5)*shakeAmt : 0;
+        const shakeY = shakeAmt > 0 ? (Math.random()-0.5)*shakeAmt : 0;
+        ctx.save(); ctx.translate(this.pos.x + shakeX, this.pos.y + shakeY);
+        const flashColor = this.damageFlash > 0 ? '#ff6666' : this.color;
+        ctx.fillStyle=flashColor; ctx.strokeStyle='#000'; ctx.lineWidth=2;
         ctx.beginPath(); ctx.roundRect(-18,-18,36,36,6); ctx.fill(); ctx.stroke();
         ctx.rotate(this.turretAngle);
         ctx.strokeStyle=this.color; ctx.lineWidth=6; ctx.lineCap='round';
         ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(22,0); ctx.stroke();
         ctx.fillStyle='#000'; ctx.beginPath(); ctx.arc(0,0,6,0,Math.PI*2); ctx.fill();
         ctx.restore();
+
+        if(this === G.player && G.safePeriod > 0){
+            const pulse = 0.5 + Math.sin(performance.now() / 100) * 0.5;
+            ctx.save();
+            ctx.strokeStyle = `rgba(100, 200, 255, ${pulse * 0.8})`;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(this.pos.x, this.pos.y, 28 + pulse * 5, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
 
         const barWidth = 36;
         const barHeight = 5;
@@ -320,6 +335,7 @@ export class Player extends Tank {
                     b.impactEffect = this.bulletImpactEffect || 'normal';
                     G.bullets.push(b);
                 }
+                import('./audio.js').then(m => m.playShoot());
                 import('./stats.js').then(m => m.recordShot());
                 if(G.aiTracker) G.aiTracker.recordShot();
             }
@@ -334,6 +350,7 @@ export class Player extends Tank {
         if((G.keys['c']||G.keys['KeyC'])&&now-this.lastMine>=1000&&G.mines.length<3){
             G.mines.push(new LandMine(this.pos.x,this.pos.y,this));
             this.lastMine=now;
+            import('./audio.js').then(m => m.playMinePlace());
             window.log('info','MINE','Mine placed at '+Math.round(this.pos.x)+','+Math.round(this.pos.y));
             import('./stats.js').then(m => m.recordMinePlaced());
             if(G.aiTracker) G.aiTracker.recordMinePlaced();
@@ -342,6 +359,7 @@ export class Player extends Tank {
     startReload(now){
         this.reloading = true;
         this.reloadStart = now;
+        import('./audio.js').then(m => m.playReload());
     }
 }
 
@@ -524,6 +542,39 @@ export class Enemy extends Tank {
         }
         return true;
     }
+    draw(){
+        const ctx = G.ctx;
+        const baseSize = 18 + this.tier * 2;
+        const turretLen = 22 + this.tier * 2;
+        const shakeAmt = this.damageFlash > 0 ? this.damageFlash * 10 : 0;
+        const shakeX = shakeAmt > 0 ? (Math.random()-0.5)*shakeAmt : 0;
+        const shakeY = shakeAmt > 0 ? (Math.random()-0.5)*shakeAmt : 0;
+        ctx.save(); ctx.translate(this.pos.x + shakeX, this.pos.y + shakeY);
+        const flashColor = this.damageFlash > 0 ? '#ff6666' : this.color;
+        if(this.tier >= 3){
+            ctx.shadowColor = this.color;
+            ctx.shadowBlur = 15;
+        }
+        ctx.fillStyle = flashColor; ctx.strokeStyle = this.tier >= 2 ? '#fff' : '#000'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.roundRect(-baseSize,-baseSize,baseSize*2,baseSize*2,6); ctx.fill(); ctx.stroke();
+        if(this.tier >= 3){ ctx.shadowBlur = 0; }
+        ctx.rotate(this.turretAngle);
+        ctx.strokeStyle = flashColor; ctx.lineWidth = 5 + this.tier; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(turretLen,0); ctx.stroke();
+        ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(0,0,5+this.tier,0,Math.PI*2); ctx.fill();
+        ctx.restore();
+        const barWidth = baseSize * 2;
+        const barHeight = 5;
+        const barYOffset = baseSize + 12;
+        const healthPercent = this.health / this.maxHealth;
+        ctx.fillStyle = '#333';
+        ctx.fillRect(this.pos.x - barWidth/2, this.pos.y + barYOffset, barWidth, barHeight);
+        const healthColor = healthPercent > 0.5 ? '#27ae60' : healthPercent > 0.25 ? '#f39c12' : '#e74c3c';
+        ctx.fillStyle = healthColor;
+        ctx.fillRect(this.pos.x - barWidth/2, this.pos.y + barYOffset, barWidth * healthPercent, barHeight);
+        ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
+        ctx.strokeRect(this.pos.x - barWidth/2, this.pos.y + barYOffset, barWidth, barHeight);
+    }
 }
 
 export class LandMine {
@@ -537,18 +588,17 @@ export class LandMine {
     }
     update(dt){
         if(this.exploded) return;
-        this.lifeTimer+=dt;
         this.blinkTimer+=dt;
         if(this.blinkTimer>=0.5){ this.blinkTimer=0; this.blinkState=!this.blinkState; }
-        if(this.lifeTimer>=3) this.explode();
     }
     checkCollision(tank){ if(this.exploded) return false; if(tank===this.placer) return false; return this.pos.distanceTo(tank.pos)<this.radius+18; }
     explode(){
         this.exploded=true;
+        import('./audio.js').then(m => m.playExplosion());
         window.log('info','MINE','Mine exploded!');
         for(let i=0;i<30;i++){ const a=Math.random()*Math.PI*2; G.particles.push(new Particle(this.pos.x,this.pos.y,Math.cos(a)*(100+Math.random()*200),Math.sin(a)*(100+Math.random()*200),COLORS.explosion,0.8+Math.random()*0.4)); }
         for(let i=G.walls.length-1;i>=0;i--){ if(this.pos.distanceTo(new Vector2(G.walls[i].x+G.walls[i].w/2,G.walls[i].y+G.walls[i].h/2))<this.explosionRadius) G.walls.splice(i,1); }
-        for(let t of [G.player,...G.enemies]){ if(t&&t.alive&&this.pos.distanceTo(t.pos)<this.explosionRadius) t.takeDamage(10); }
+        for(let t of [G.player,...G.enemies]){ if(t&&t.alive&&t!==this.placer&&this.pos.distanceTo(t.pos)<this.explosionRadius) t.takeDamage(10); }
     }
     draw(){
         if(this.exploded) return;

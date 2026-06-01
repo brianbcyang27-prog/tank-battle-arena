@@ -1,0 +1,5 @@
+- generic [ref=e3]:
+  - heading "ADMIN PANEL" [level=1] [ref=e4]
+  - paragraph [ref=e5]: Tank Battle Arena — Authorization Required
+  - button "SIGN IN WITH GOOGLE" [ref=e7] [cursor=pointer]
+  - paragraph [ref=e8]: Only authorized administrators can access this panel.

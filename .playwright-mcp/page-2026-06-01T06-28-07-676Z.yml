@@ -1,0 +1,18 @@
+- generic [ref=e51]:
+  - heading "LEADERBOARD" [level=2] [ref=e52]
+  - generic [ref=e53]:
+    - generic [ref=e54]:
+      - textbox "🔍 Search players..." [ref=e55]
+      - generic [ref=e56]:
+        - button "ALL" [ref=e57] [cursor=pointer]
+        - button "TOP 10" [ref=e58] [cursor=pointer]
+        - button "TOP 50" [ref=e59] [cursor=pointer]
+        - button "MINE" [ref=e60] [cursor=pointer]
+    - list [ref=e62]:
+      - listitem [ref=e63]:
+        - generic [ref=e64]: 🥇
+        - generic [ref=e65]: testplayer2
+        - generic [ref=e66]: "100"
+        - generic [ref=e67]: Lv.1
+    - paragraph [ref=e68]: Showing 1/1 entries
+  - button "CLOSE" [ref=e69] [cursor=pointer]

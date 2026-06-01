@@ -10,6 +10,7 @@ import { recordHit, recordKill, recordDeath, recordDistance, recordDamageTaken }
 import { trackKill, trackMineKill, trackSurvivalTime } from './progression.js';
 import './multiplayer.js';
 import { autoShowTutorial, updateTutorial, renderTutorial, closeTutorial } from './tutorial.js';
+import { initAudio, playMenuSelect, playButtonClick } from './audio.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -56,6 +57,7 @@ function gameLoop(ct) {
 
     if (G.gameState === GameState.PLAYING) {
         G.levelTime = (ct - G.levelStartTime) / 1000;
+        if(G.safePeriod > 0) G.safePeriod = Math.max(0, G.safePeriod - dt);
         trackSurvivalTime(Math.min(dt, 0.05));
 
         if (G.player && G.player.alive) {
@@ -245,7 +247,7 @@ function gameLoop(ct) {
             }
         }
 
-        if (!G.isMultiplayerGame && G.enemies.filter(e => e.alive).length === 0 && G.player.alive) {
+        if (!G.isMultiplayerGame && G.enemies.filter(e => e.alive).length === 0 && G.player.alive && G.gameState !== GameState.TUTORIAL) {
             if (G.gameMode === 'ai1v1') {
                 recordKill(); if (G.aiTracker) G.aiTracker.recordKill();
                 multiplayerGameOver(true);
@@ -259,9 +261,24 @@ function gameLoop(ct) {
             G.player.update(dt, ct);
         }
         for (let m of G.mines) m.update(dt);
+
+        // Mine collision with enemies (but not self-placer)
+        for (let m of G.mines) {
+            if (m.armed && !m.exploded) {
+                for (let e of G.enemies) {
+                    if (e.alive && m.checkCollision(e)) {
+                        log('info','TUTORIAL','Collision: enemy at ' + Math.round(e.pos.x) + ',' + Math.round(e.pos.y) + ' vs mine at ' + Math.round(m.pos.x) + ',' + Math.round(m.pos.y) + ' dist=' + Math.round(e.pos.distanceTo(m.pos)));
+                        m.explode();
+                        break;
+                    }
+                }
+            }
+        }
         G.mines = G.mines.filter(m => !m.exploded);
         for (let b of G.bullets) { if (b.alive) b.update(dt); }
         G.bullets = G.bullets.filter(b => b.alive);
+
+        for (let e of G.enemies) { if (e.alive) e.update(dt, ct); }
 
         updateTutorial(dt);
     } else if (G.gameState === GameState.READY) {
@@ -302,22 +319,31 @@ function gameLoop(ct) {
     for (let uid in G.remoteTanks) { const rt = G.remoteTanks[uid].tank; if (rt.alive) rt.draw(); }
     for (let e of G.enemies) { if (e.alive) e.draw(); }
 
-    if (G.gameState === GameState.PLAYING) {
+    if (G.gameState === GameState.PLAYING || G.gameState === GameState.TUTORIAL) {
+        const isTutorial = G.gameState === GameState.TUTORIAL;
         ctx.fillStyle = COLORS.text;
-        ctx.font = '18px Orbitron';
+        ctx.font = '22px Orbitron';
         if (G.gameMode === 'ai1v1') {
+            const diffLabels = {1:'EASY',2:'MEDIUM',3:'HARD'};
+            const diffColors = {1:'#27ae60',2:'#f39c12',3:'#e74c3c'};
             ctx.textAlign = 'left';
             ctx.fillText('ROUND ' + G.aiMatch.round + '/' + G.aiMatch.maxRounds, 20, 35);
             ctx.fillText('YOU ' + G.aiMatch.myScore + ' - ' + G.aiMatch.aiScore + ' AI', 20, 60);
             ctx.textAlign = 'right';
-            ctx.fillText('TIME: ' + G.levelTime.toFixed(1) + 's', CANVAS_WIDTH - 20, 35);
-            ctx.fillText('MINES: ' + (3 - G.mines.length) + '/3', CANVAS_WIDTH - 20, 60);
-        } else {
+            ctx.fillStyle = diffColors[G.aiDifficulty] || '#f39c12';
+            ctx.fillText(diffLabels[G.aiDifficulty] || 'MEDIUM', CANVAS_WIDTH - 20, 35);
+            ctx.fillStyle = COLORS.text;
+            ctx.fillText('TIME: ' + G.levelTime.toFixed(1) + 's', CANVAS_WIDTH - 20, 60);
+            ctx.fillText('MINES: ' + (3 - G.mines.length) + '/3', CANVAS_WIDTH - 20, 85);
+        } else if (!isTutorial) {
             ctx.textAlign = 'left';
             ctx.fillText('LEVEL ' + G.level, 20, 35);
             ctx.fillText('SCORE: ' + G.score, 20, 60);
             ctx.textAlign = 'right';
             ctx.fillText('TIME: ' + G.levelTime.toFixed(1) + 's', CANVAS_WIDTH - 20, 35);
+            ctx.fillText('MINES: ' + (3 - G.mines.length) + '/3', CANVAS_WIDTH - 20, 60);
+        } else {
+            ctx.textAlign = 'right';
             ctx.fillText('MINES: ' + (3 - G.mines.length) + '/3', CANVAS_WIDTH - 20, 60);
         }
 
@@ -492,7 +518,7 @@ canvas.addEventListener('mousemove', (e) => {
     G.mouseY = (e.clientY - r.top) * (CANVAS_HEIGHT / r.height);
 });
 
-canvas.addEventListener('mousedown', (e) => { if (e.button === 0) G.mouseDown = true; });
+canvas.addEventListener('mousedown', (e) => { initAudio(); if (e.button === 0) G.mouseDown = true; });
 canvas.addEventListener('mouseup', (e) => { if (e.button === 0) G.mouseDown = false; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 

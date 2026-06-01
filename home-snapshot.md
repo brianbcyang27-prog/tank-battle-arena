@@ -1,0 +1,49 @@
+- generic [ref=e16]:
+  - generic [ref=e17]:
+    - generic [ref=e18]:
+      - generic [ref=e19]: T
+      - generic [ref=e20]:
+        - generic [ref=e21]: TestPlayer2
+        - generic [ref=e22]: "ID: E3RLE9"
+    - generic [ref=e23]:
+      - generic "Rank progress" [ref=e25]: 🥉 Bronze I
+      - generic [ref=e28]:
+        - generic [ref=e29]: 💎 0
+        - generic [ref=e30]: 🪙 210
+  - heading "TANK BATTLE" [level=1] [ref=e31]
+  - heading "ARENA" [level=2] [ref=e32]
+  - generic [ref=e33]:
+    - generic [ref=e35]:
+      - generic [ref=e36] [cursor=pointer]:
+        - generic [ref=e37]: 🎯
+        - generic [ref=e38]: SOLO
+        - generic [ref=e39]: Campaign Mode
+        - generic [ref=e40]: PLAY
+      - generic [ref=e41] [cursor=pointer]:
+        - generic [ref=e42]: ⚔️
+        - generic [ref=e43]: VERSUS
+        - generic [ref=e44]: Multiplayer Battle
+        - generic [ref=e45]: PLAY
+      - generic [ref=e46] [cursor=pointer]:
+        - generic [ref=e47]: 🤖
+        - generic [ref=e48]: ARCADE
+        - generic [ref=e49]: Quick Play — Adaptive Bot
+        - generic [ref=e50]: FIGHT
+      - generic [ref=e51] [cursor=pointer]:
+        - generic [ref=e52]: 🏆
+        - generic [ref=e53]: CAMPAIGN
+        - generic [ref=e54]: Persistent — Continue Progress
+        - generic [ref=e55]: CONTINUE
+    - generic:
+      - generic [ref=e56]:
+        - button "⚙ SETTINGS" [ref=e57] [cursor=pointer]
+        - button "ℹ ABOUT" [ref=e58] [cursor=pointer]
+        - button "🎮 TUTORIAL" [ref=e59] [cursor=pointer]
+      - generic [ref=e60]:
+        - button "🎯 MISSIONS" [ref=e61] [cursor=pointer]
+        - button "🛒 SHOP" [ref=e62] [cursor=pointer]
+        - button "🔧 UPGRADE" [ref=e63] [cursor=pointer]
+        - button "👥 FRIENDS" [ref=e64] [cursor=pointer]
+        - button "📊 STATS" [ref=e65] [cursor=pointer]
+        - button "🏆 LEADERBOARD" [ref=e66] [cursor=pointer]
+        - button "LOG" [ref=e67] [cursor=pointer]

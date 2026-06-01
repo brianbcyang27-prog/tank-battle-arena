@@ -1,6 +1,6 @@
 import { G } from './state.js';
 import { CANVAS_WIDTH, CANVAS_HEIGHT, GameState } from './config.js';
-import { Player, Wall } from './engine.js';
+import { Player, Wall, Enemy, Particle } from './engine.js';
 import { showOverlay } from './ui.js';
 import { log } from './log.js';
 
@@ -24,44 +24,60 @@ const STEPS = [
         title: 'MOVEMENT',
         instruction: 'Press W A S D to move your tank around',
         hint: 'Your turret follows the mouse independently from the hull',
-        successMsg: 'Excellent! You control where your tank goes'
+        successMsg: 'You control where your tank goes! Press each key a few times to get comfortable'
+    },
+    {
+        id: 'hud',
+        title: 'HUD OVERVIEW',
+        instruction: 'Your HUD shows ammo, fuel, boost, and health — study it carefully',
+        hint: '',
+        successMsg: 'Knowing your HUD keeps you alive in battle!'
     },
     {
         id: 'fuel',
         title: 'FUEL MANAGEMENT',
-        instruction: 'Moving consumes fuel — stop to let it regenerate',
-        hint: 'Watch the green FUEL bar on the HUD. Run out and you\'ll slow down!',
-        successMsg: 'Fuel management keeps you mobile in battle'
+        instruction: 'Move until your fuel runs low, then stop to regenerate',
+        hint: 'Watch the green FUEL bar drain as you move. Without fuel you slow way down!',
+        successMsg: 'Managing fuel keeps you mobile — stop to recover when needed'
     },
     {
         id: 'aim',
         title: 'AIMING',
-        instruction: 'Move your mouse to aim the turret',
-        hint: 'Drive one way, shoot another — independent hull and turret control',
-        successMsg: 'Deadly aim! Fire in any direction while moving'
+        instruction: 'Move your mouse to aim — notice the turret moves independently',
+        hint: 'Your hull (tank body) faces one way, turret can point another. Drive one direction, shoot another!',
+        successMsg: 'Deadly aim! Independent hull and turret give you total control'
     },
     {
         id: 'shoot',
         title: 'COMBAT',
-        instruction: 'Left Click to fire your cannon',
-        hint: 'Watch the ammo counter and reload bar in the bottom-right HUD',
-        successMsg: 'Boom! Direct hit!'
+        instruction: 'Left Click to fire at the target dummy — fire 3 times',
+        hint: 'Watch the ammo counter decrease. When empty, the cannon auto-reloads',
+        successMsg: 'Nice shooting! Keep track of ammo and reload timing'
     },
     {
         id: 'boost',
         title: 'BOOST',
-        instruction: 'Hold SHIFT while moving for a burst of speed',
-        hint: 'Purple bar = boost energy. Drains fast, recharges when you release SHIFT',
-        successMsg: 'Speed demon! Use boost to dodge and close distances'
+        instruction: 'Hold SHIFT while moving to boost — hold for 2 full seconds',
+        hint: 'Purple bar = boost energy. It drains fast, recharges when you release SHIFT',
+        successMsg: 'Use boost to dodge attacks and close distances — but watch your energy!'
     },
     {
         id: 'mine',
         title: 'MINES',
-        instruction: 'Press C to place a mine behind your tank',
-        hint: 'Mines arm after 3 seconds. Max 3 at a time. Enemies trigger them!',
-        successMsg: 'Mines control the battlefield — use them wisely'
+        instruction: 'Press C to place a mine, then an enemy will chase you into it',
+        hint: 'Mines arm after 3 seconds. Max 3 at a time. Lead the enemy over your mine!',
+        successMsg: 'Mines control the battlefield — place them in chokepoints'
     }
 ];
+
+const MOVE_KEYS = [
+    { code: 'KeyW', label: 'W', instruction: 'Press W to move forward', success: 'Forward!' },
+    { code: 'KeyA', label: 'A', instruction: 'Press A to turn left', success: 'Left turn!' },
+    { code: 'KeyS', label: 'S', instruction: 'Press S to move backward', success: 'Backward!' },
+    { code: 'KeyD', label: 'D', instruction: 'Press D to turn right', success: 'Right turn!' }
+];
+
+const MOVE_CODES = MOVE_KEYS.map(k => k.code);
 
 let currentStep = 0;
 let stepTimer = 0;
@@ -72,11 +88,24 @@ let totalDist = 0;
 let lastPos = null;
 let initialAngle = null;
 let angleChanged = false;
-let hasShot = false;
+let shotCount = 0;
 let hasBoosted = false;
-let hasMined = false;
+let boostTimer = 0;
+let mineTimer = 0;
+let enemyTriggeredMine = false;
 let fuelDrained = false;
 let isActive = false;
+
+// Key-by-key movement
+let moveKeyIndex = 0;
+let wrongKeyTimer = 0;
+let prevKeys = {};
+
+// Spotlight
+let spotlightHighlightEl = null;
+
+// Target dummy
+let targetDummy = null;
 
 function setupTutorialArena() {
     G.walls = [];
@@ -104,6 +133,16 @@ function setupTutorialArena() {
     G.player.maxAmmo = 99;
     G.player.ammo = 99;
 
+    // Target dummy (stationary, marked as destroyed so it doesn't move/shoot)
+    targetDummy = new Enemy(700, 450, 1);
+    targetDummy.health = 3;
+    targetDummy.maxHealth = 3;
+    targetDummy.speed = 0;       // stationary
+    targetDummy.fireRate = 0;    // doesn't shoot
+    targetDummy.accuracy = 0;    // irrelevant
+    targetDummy.alive = true;
+    G.enemies = [targetDummy];
+
     G.gameState = GameState.TUTORIAL;
     G.levelTime = 0;
     G.score = 0;
@@ -115,17 +154,35 @@ function resetStepState() {
     lastPos = G.player ? G.player.pos.clone() : null;
     initialAngle = G.player ? G.player.turretAngle : null;
     angleChanged = false;
-    hasShot = false;
+    shotCount = 0;
     hasBoosted = false;
-    hasMined = false;
+    boostTimer = 0;
+    mineTimer = 0;
+    enemyTriggeredMine = false;
     fuelDrained = false;
     stepTimer = 0;
+    moveKeyIndex = 0;
+    wrongKeyTimer = 0;
+    prevKeys = {};
+    removeSpotlight();
+    // Restore target dummy health between steps
+    if (targetDummy && !targetDummy.alive) {
+        targetDummy.health = targetDummy.maxHealth;
+        targetDummy.alive = true;
+    }
+    if (targetDummy && G.enemies.indexOf(targetDummy) !== -1) {
+        const nextStepId = currentStep + 1 < STEPS.length ? STEPS[currentStep + 1].id : null;
+        const enteringMine = STEPS[currentStep] && STEPS[currentStep].id === 'mine';
+        if (enteringMine || nextStepId === 'mine') {
+            G.enemies.splice(G.enemies.indexOf(targetDummy), 1);
+        }
+    }
 }
 
 function advanceStep() {
     if (currentStep < STEPS.length - 1) {
         showSuccess = true;
-        successTimer = 1.5;
+        successTimer = 2.5;
     } else {
         showModeOverview();
     }
@@ -152,38 +209,77 @@ export function updateTutorial(dt) {
     if (!step) return;
 
     stepTimer += dt;
+    if (wrongKeyTimer > 0) wrongKeyTimer -= dt;
+    if (wrongKeyTimer < 0) wrongKeyTimer = 0;
 
     switch (step.id) {
         case 'move': {
-            const moving = G.keys['w'] || G.keys['a'] || G.keys['s'] || G.keys['d'] ||
-                           G.keys['W'] || G.keys['A'] || G.keys['S'] || G.keys['D'] ||
-                           G.keys['KeyW'] || G.keys['KeyA'] || G.keys['KeyS'] || G.keys['KeyD'];
-            if (moving) hasMoved = true;
-            if (hasMoved && G.player) {
-                if (lastPos) totalDist += G.player.pos.distanceTo(lastPos);
-                lastPos = G.player.pos.clone();
-                if (totalDist > 100) advanceStep();
+            // Snapshot current key state for edge detection
+            const curKeys = {};
+            for (const code in G.keys) {
+                if (G.keys[code]) curKeys[code] = true;
+            }
+
+            // Edge-detect newly pressed keys
+            for (const code of MOVE_CODES) {
+                const wasDown = !!prevKeys[code];
+                const isDown = !!curKeys[code];
+                if (!wasDown && isDown) {
+                    if (code === MOVE_KEYS[moveKeyIndex].code) {
+                        // Correct key — advance to next
+                        moveKeyIndex++;
+                        if (moveKeyIndex >= MOVE_KEYS.length) {
+                            advanceStep();
+                        }
+                    } else {
+                        // Wrong key — shake + red flash
+                        wrongKeyTimer = 0.6;
+                        document.getElementById('gameContainer').classList.add('tutorial-shake');
+                        setTimeout(() => {
+                            const gc = document.getElementById('gameContainer');
+                            if (gc) gc.classList.remove('tutorial-shake');
+                        }, 350);
+                    }
+                }
+            }
+
+            prevKeys = curKeys;
+            break;
+        }
+        case 'hud': {
+            if (!spotlightHighlightEl) createSpotlight();
+            if (stepTimer > 6) {
+                removeSpotlight();
+                advanceStep();
             }
             break;
         }
         case 'fuel': {
-            if (G.player && G.player.fuel < 98) fuelDrained = true;
-            if (fuelDrained && stepTimer > 2) advanceStep();
+            if (!spotlightHighlightEl) createSpotlight();
+            if (G.player && G.player.fuel < 30) fuelDrained = true;
+            // Let player see regeneration for 3s after fuel drained
+            if (fuelDrained && stepTimer > 3) {
+                removeSpotlight();
+                advanceStep();
+            }
             break;
         }
         case 'aim': {
             if (G.player && initialAngle !== null) {
-                if (Math.abs(G.player.turretAngle - initialAngle) > 0.3) angleChanged = true;
+                if (Math.abs(G.player.turretAngle - initialAngle) > 0.5) angleChanged = true;
             }
-            if (angleChanged && stepTimer > 1) advanceStep();
+            if (angleChanged && stepTimer > 2) advanceStep();
             break;
         }
         case 'shoot': {
-            if (G.mouseDown) hasShot = true;
-            if (!hasShot && G.player && G.player.lastFire > 0) {
-                if (performance.now() - G.player.lastFire < 100) hasShot = true;
+            const justFired = G.player && G.player.lastFire > 0 &&
+                (performance.now() - G.player.lastFire < 150);
+            if (justFired) {
+                shotCount++;
+                // Small delay so repeat fires count as separate shots
+                G.player.lastFire = 0;
             }
-            if (hasShot) advanceStep();
+            if (shotCount >= 3) advanceStep();
             break;
         }
         case 'boost': {
@@ -191,64 +287,427 @@ export function updateTutorial(dt) {
             const moving = G.keys['w'] || G.keys['a'] || G.keys['s'] || G.keys['d'] ||
                            G.keys['W'] || G.keys['A'] || G.keys['S'] || G.keys['D'] ||
                            G.keys['KeyW'] || G.keys['KeyA'] || G.keys['KeyS'] || G.keys['KeyD'];
-            if (shiftHeld && moving) hasBoosted = true;
-            if (hasBoosted) advanceStep();
+            if (shiftHeld && moving) {
+                boostTimer += dt;
+            } else if (hasBoosted && !shiftHeld) {
+                // Let them see energy regenerate for 2s after releasing shift
+                if (stepTimer > 2) advanceStep();
+            }
+            if (boostTimer >= 2.0) {
+                hasBoosted = true;
+            }
             break;
         }
         case 'mine': {
-            if (G.mines.length > 0) hasMined = true;
-            if (hasMined) advanceStep();
+            console.log('MINE STEP ENTERED'); // DEBUG
+            // Count existing live mines
+            const liveMines = G.mines.filter(m => !m.exploded).length;
+            if (liveMines > 0) mineTimer += dt;
+
+            if (mineTimer > 0 && mineTimer < 2 && G.enemies.length === 0) {
+                const firstMine = G.mines.find(m => !m.exploded);
+                if (firstMine) {
+                    const spawnX = firstMine.pos.x + 150;
+                    const spawnY = firstMine.pos.y;
+                    const e = new Enemy(spawnX, spawnY, 1);
+                    e.health = 1;
+                    e.maxHealth = 1;
+                    e.speed = 160;
+                    G.enemies.push(e);
+                    log('info', 'TUTORIAL', 'Enemy spawned at ' + spawnX + ',' + spawnY + ' (mine at ' + firstMine.pos.x + ',' + firstMine.pos.y + ')');
+                }
+            }
+
+            // Log enemy distance to nearest live mine for debugging
+            if (G.enemies.length > 0) {
+                const nearestMine = G.mines.find(m => !m.exploded);
+                if (nearestMine && G.enemies[0].alive) {
+                    const dist = Math.round(G.enemies[0].pos.distanceTo(nearestMine.pos));
+                    if (dist < 60) log('info', 'TUTORIAL', 'Enemy ' + dist + 'px from mine');
+                }
+            }
+
+            // Check if any enemy was killed by a mine
+            if (!enemyTriggeredMine) {
+                for (const e of G.enemies) {
+                    if (!e.alive || e.health <= 0) {
+                        enemyTriggeredMine = true;
+                        log('info', 'TUTORIAL', 'EnemyTriggeredMine = true (alive=' + e.alive + ', health=' + e.health + ')');
+                        break;
+                    }
+                }
+            }
+            if (enemyTriggeredMine) advanceStep();
             break;
         }
     }
 }
 
+function createSpotlight() {
+    const container = document.getElementById('gameContainer');
+    if (!container || spotlightHighlightEl) return;
+
+    // Highlight frame uses box-shadow to dim everything EXCEPT the HUD window
+    // HUD: hudX=1025, hudY=712, hudW=160, hudH=94 (CANVAS 1200x800)
+    const hlW = 190, hlH = 130;
+    const hlLeft = 1025 - 15;
+    const hlTop = 712 - 18;
+
+    const hl = document.createElement('div');
+    hl.className = 'tutorial-spotlight-highlight';
+    hl.style.cssText = 'left:' + hlLeft + 'px;top:' + hlTop + 'px;width:' + hlW + 'px;height:' + hlH + 'px;';
+    container.appendChild(hl);
+    spotlightHighlightEl = hl;
+
+    log('info', 'TUTORIAL', 'Spotlight effect created over HUD');
+}
+
+function removeSpotlight() {
+    if (spotlightHighlightEl) {
+        spotlightHighlightEl.remove();
+        spotlightHighlightEl = null;
+        log('info', 'TUTORIAL', 'Spotlight effect removed');
+    }
+}
+
 export function renderTutorial(ctx) {
     if (!isActive || G.gameState !== GameState.TUTORIAL) return;
-
     const step = STEPS[currentStep];
     if (!step) return;
 
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    if (wrongKeyTimer > 0) {
+        const pulse = 0.1 + Math.sin(wrongKeyTimer * 40) * 0.06;
+        ctx.fillStyle = 'rgba(255, 40, 40, ' + Math.max(0, pulse) + ')';
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    } else {
+        ctx.fillStyle = 'rgba(0,0,0,0.15)';
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    }
 
-    const barH = 90;
-    ctx.fillStyle = 'rgba(13,13,26,0.92)';
-    ctx.fillRect(0, 0, CANVAS_WIDTH, barH);
-    ctx.strokeStyle = 'rgba(233,69,96,0.3)';
-    ctx.lineWidth = 1;
+    // --- Bottom instruction panel ---
+    const panelH = 120;
+    const panelY = CANVAS_HEIGHT - panelH;
+    const grad = ctx.createLinearGradient(0, panelY, 0, CANVAS_HEIGHT);
+    grad.addColorStop(0, 'rgba(13,13,26,0.8)');
+    grad.addColorStop(1, 'rgba(13,13,26,0.95)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, panelY, CANVAS_WIDTH, panelH);
+
+    const pulseAccent = 0.3 + Math.sin(stepTimer * 3) * 0.15;
+    ctx.strokeStyle = 'rgba(233,69,96,' + pulseAccent + ')';
+    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(0, barH);
-    ctx.lineTo(CANVAS_WIDTH, barH);
+    ctx.moveTo(0, panelY);
+    ctx.lineTo(CANVAS_WIDTH, panelY);
     ctx.stroke();
 
     ctx.textAlign = 'right';
-    ctx.font = '11px Orbitron';
-    ctx.fillStyle = '#555';
-    ctx.fillText('STEP ' + (currentStep + 1) + ' / ' + STEPS.length, CANVAS_WIDTH - 24, 20);
-
-    ctx.textAlign = 'center';
-    ctx.font = '18px Orbitron';
-    ctx.fillStyle = '#e94560';
-    ctx.fillText(step.title, CANVAS_WIDTH / 2, 34);
-
-    ctx.font = '14px Orbitron';
-    ctx.fillStyle = '#eaeaea';
-    ctx.fillText(step.instruction, CANVAS_WIDTH / 2, 62);
-
     ctx.font = '10px Orbitron';
-    ctx.fillStyle = '#888';
-    ctx.fillText(step.hint, CANVAS_WIDTH / 2, 82);
+    ctx.fillStyle = '#555';
+    ctx.fillText('STEP ' + (currentStep + 1) + ' / ' + STEPS.length, CANVAS_WIDTH - 20, panelY + 16);
 
-    if (showSuccess) {
-        ctx.fillStyle = 'rgba(39,174,96,0.15)';
-        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 22px Orbitron';
+    ctx.fillStyle = '#e94560';
+    ctx.fillText(step.title, 20, panelY + 42);
+
+    ctx.textAlign = 'left';
+    ctx.font = '16px Orbitron';
+    ctx.fillStyle = '#eaeaea';
+    ctx.fillText(step.instruction, 20, panelY + 70);
+
+    if (step.hint) {
+        ctx.textAlign = 'left';
+        ctx.font = '12px Orbitron';
+        ctx.fillStyle = '#999';
+        ctx.fillText('💡 ' + step.hint, 20, panelY + 94);
+    }
+
+    if (step.id === 'move' && moveKeyIndex < MOVE_KEYS.length) {
+        const mk = MOVE_KEYS[moveKeyIndex];
+        const shakeX = wrongKeyTimer > 0 ? (Math.random() - 0.5) * 10 : 0;
+        ctx.textAlign = 'right';
+        ctx.font = 'bold 40px Orbitron';
+        ctx.fillStyle = '#f1c40f';
+        ctx.shadowColor = '#f1c40f';
+        ctx.shadowBlur = 25;
+        ctx.fillText('[' + mk.label + ']', CANVAS_WIDTH - 160 + shakeX, panelY + 72);
+        ctx.shadowBlur = 0;
 
         ctx.textAlign = 'center';
-        ctx.font = '24px Orbitron';
+        ctx.font = '12px Orbitron';
+        let dots = '';
+        for (let i = 0; i < MOVE_KEYS.length; i++) {
+            dots += i < moveKeyIndex ? '●  ' : '○  ';
+        }
+        ctx.fillStyle = moveKeyIndex > 0 ? '#2ecc71' : '#555';
+        ctx.fillText(dots, CANVAS_WIDTH - 80, panelY + 100);
+    }
+
+    // --- HUD / Fuel labels ---
+    if (spotlightHighlightEl) {
+        const hudX = CANVAS_WIDTH - 175;
+        const hudY = CANVAS_HEIGHT - 88;
+        const hudW = 160;
+
+        if (step.id === 'hud') {
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 11px Orbitron';
+            ctx.fillStyle = '#eaeaea';
+            ctx.fillText('▼ AMMO — rounds remaining, auto-reloads', hudX + hudW / 2, hudY - 22);
+            ctx.font = '9px Orbitron';
+            ctx.fillStyle = '#888';
+            ctx.fillText('(yellow when low, red when empty)', hudX + hudW / 2, hudY - 10);
+
+            ctx.font = 'bold 11px Orbitron';
+            ctx.fillStyle = '#3498db';
+            ctx.fillText('▼ RELOAD / COOLDOWN — blue bar fills → ready', hudX + hudW / 2, hudY + 82);
+            ctx.font = '9px Orbitron';
+            ctx.fillStyle = '#888';
+            ctx.fillText('Fires when bar is full; gold during reload', hudX + hudW / 2, hudY + 94);
+
+            ctx.font = 'bold 11px Orbitron';
+            ctx.fillStyle = '#2ecc71';
+            ctx.fillText('▼ FUEL — drains as you move', hudX + hudW / 2, hudY + 112);
+            ctx.font = '9px Orbitron';
+            ctx.fillStyle = '#888';
+            ctx.fillText('Stop to regenerate', hudX + hudW / 2, hudY + 124);
+
+            ctx.font = 'bold 11px Orbitron';
+            ctx.fillStyle = '#9b59b6';
+            ctx.fillText('▼ BOOST — hold SHIFT to sprint', hudX + hudW / 2, hudY + 140);
+            ctx.font = '9px Orbitron';
+            ctx.fillStyle = '#888';
+            ctx.fillText('Recharges when released', hudX + hudW / 2, hudY + 152);
+
+            ctx.textAlign = 'left';
+            ctx.font = 'bold 11px Orbitron';
+            ctx.fillStyle = '#e74c3c';
+            ctx.fillText('❤ HEALTH', 14, CANVAS_HEIGHT - panelH - 34);
+            ctx.font = '9px Orbitron';
+            ctx.fillStyle = '#888';
+            ctx.fillText('3 HP. Getting hit costs 1 HP. Watch top-left of screen.', 14, CANVAS_HEIGHT - panelH - 20);
+
+            ctx.font = '9px Orbitron';
+            ctx.fillStyle = '#666';
+            ctx.textAlign = 'center';
+            ctx.fillText('Step advances automatically — take your time reading', CANVAS_WIDTH / 2, panelY - 8);
+        } else if (step.id === 'fuel') {
+            const fuelPct = G.player && G.player.maxFuel > 0 ? (G.player.fuel / G.player.maxFuel) : 1;
+            const arrowPulse = Math.sin(stepTimer * 5) * 0.3 + 0.7;
+
+            ctx.textAlign = 'center';
+            ctx.font = 'bold 26px Orbitron';
+            ctx.fillStyle = 'rgba(241,196,15,' + arrowPulse + ')';
+            ctx.shadowColor = '#f1c40f';
+            ctx.shadowBlur = 20;
+            ctx.fillText('⬇ KEEP MOVING TO DRAIN FUEL ⬇', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 100);
+            ctx.shadowBlur = 0;
+
+            ctx.font = 'bold 48px Orbitron';
+            if (fuelPct > 0.5) {
+                ctx.fillStyle = '#2ecc71';
+                ctx.shadowColor = '#2ecc71';
+            } else if (fuelPct > 0.1) {
+                ctx.fillStyle = '#f39c12';
+                ctx.shadowColor = '#f39c12';
+            } else {
+                ctx.fillStyle = '#e74c3c';
+                ctx.shadowColor = '#e74c3c';
+            }
+            ctx.shadowBlur = 15;
+            ctx.fillText(Math.round(fuelPct * 100) + '%', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 40);
+            ctx.shadowBlur = 0;
+
+            ctx.font = 'bold 20px Orbitron';
+            if (fuelPct > 0.5) {
+                ctx.fillStyle = '#eaeaea';
+                ctx.fillText('Keep moving until fuel drops below 30%!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+            } else if (fuelPct > 0.1) {
+                ctx.fillStyle = '#f39c12';
+                ctx.fillText('Almost out of fuel — prepare to STOP!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+            } else {
+                ctx.fillStyle = '#2ecc71';
+                ctx.fillText('STOP! Watch the green bar refill!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+            }
+
+            ctx.font = 'bold 14px Orbitron';
+            ctx.fillStyle = 'rgba(241,196,15,' + arrowPulse + ')';
+            ctx.shadowColor = '#f1c40f';
+            ctx.shadowBlur = 12;
+            ctx.fillText('⬇ FUEL BAR ⬇', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 135);
+            ctx.shadowBlur = 0;
+        }
+    }
+
+    // --- Aim indicators ---
+    if (step.id === 'aim' && G.player) {
+        const len = 80;
+        const tx = G.player.pos.x + Math.cos(G.player.turretAngle) * len;
+        const ty = G.player.pos.y + Math.sin(G.player.turretAngle) * len;
+
+        ctx.strokeStyle = 'rgba(241,196,15,0.85)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.moveTo(G.player.pos.x, G.player.pos.y);
+        ctx.lineTo(tx, ty);
+        ctx.stroke();
+
+        const arrowSize = 10;
+        const aAngle = G.player.turretAngle;
+        ctx.fillStyle = 'rgba(241,196,15,0.9)';
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(tx + Math.cos(aAngle) * arrowSize, ty + Math.sin(aAngle) * arrowSize);
+        ctx.lineTo(tx + Math.cos(aAngle + 2.3) * arrowSize * 0.6, ty + Math.sin(aAngle + 2.3) * arrowSize * 0.6);
+        ctx.lineTo(tx + Math.cos(aAngle - 2.3) * arrowSize * 0.6, ty + Math.sin(aAngle - 2.3) * arrowSize * 0.6);
+        ctx.closePath();
+        ctx.fill();
+
+        const hx = G.player.pos.x + Math.cos(G.player.angle) * 40;
+        const hy = G.player.pos.y + Math.sin(G.player.angle) * 40;
+        ctx.strokeStyle = 'rgba(52,152,219,0.85)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(G.player.pos.x, G.player.pos.y);
+        ctx.lineTo(hx, hy);
+        ctx.stroke();
+
+        ctx.setLineDash([]);
+
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 12px Orbitron';
+        ctx.fillStyle = '#f1c40f';
+        ctx.shadowColor = '#f1c40f';
+        ctx.shadowBlur = 8;
+        ctx.fillText('← TURRET (mouse)', tx, ty + 22);
+        ctx.shadowBlur = 0;
+
+        ctx.fillStyle = '#3498db';
+        ctx.shadowColor = '#3498db';
+        ctx.shadowBlur = 8;
+        ctx.fillText('HULL (WASD) →', hx - 24, hy - 12);
+        ctx.shadowBlur = 0;
+
+        ctx.textAlign = 'center';
+        ctx.font = '11px Orbitron';
+        ctx.fillStyle = '#888';
+        ctx.fillText('Yellow line = where your turret points (mouse). Blue line = hull direction (WASD).', CANVAS_WIDTH / 2, panelY - 22);
+        ctx.fillStyle = '#666';
+        ctx.fillText('Drive one way, shoot another — independent control is your biggest advantage!', CANVAS_WIDTH / 2, panelY - 8);
+    }
+
+    // --- Shoot: target dummy ---
+    if (step.id === 'shoot' && targetDummy && targetDummy.alive) {
+        const bx = targetDummy.pos.x;
+        const by = targetDummy.pos.y - 50;
+        const bw = 60;
+        const bh = 10;
+
+        const targetPulse = Math.sin(stepTimer * 4) * 0.25 + 0.75;
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 14px Orbitron';
+        ctx.fillStyle = 'rgba(231,76,60,' + targetPulse + ')';
+        ctx.shadowColor = '#e74c3c';
+        ctx.shadowBlur = 15;
+        ctx.fillText('🎯 TARGET DUMMY', bx, by - 16);
+        ctx.shadowBlur = 0;
+
+        ctx.font = '12px Orbitron';
+        ctx.fillStyle = '#eaeaea';
+        ctx.fillText('Shots: ' + shotCount + ' / 3', bx, by + bh + 20);
+
+        ctx.fillStyle = 'rgba(0,0,0,0.6)';
+        ctx.beginPath();
+        ctx.roundRect(bx - bw/2, by, bw, bh, 4);
+        ctx.fill();
+
+        const healthPct = Math.max(0, targetDummy.health / targetDummy.maxHealth);
+        ctx.fillStyle = healthPct > 0.5 ? '#2ecc71' : healthPct > 0.25 ? '#f39c12' : '#e74c3c';
+        ctx.beginPath();
+        ctx.roundRect(bx - bw/2, by, bw * healthPct, bh, 4);
+        ctx.fill();
+    }
+
+    // --- Boost energy indicator ---
+    if (step.id === 'boost' && G.player) {
+        const boostPct = G.player.maxBoostEnergy > 0 ? (G.player.boostEnergy / G.player.maxBoostEnergy) : 1;
+        const pulseBoost = Math.sin(stepTimer * 4) * 0.3 + 0.7;
+
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 14px Orbitron';
+        ctx.fillStyle = 'rgba(155,89,182,' + pulseBoost + ')';
+        ctx.shadowColor = '#9b59b6';
+        ctx.shadowBlur = 12;
+        ctx.fillText('⚡ BOOST ENERGY: ' + Math.round(boostPct * 100) + '%', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 140);
+        ctx.shadowBlur = 0;
+
+        ctx.font = '12px Orbitron';
+        if (boostTimer > 0) {
+            ctx.fillStyle = '#f1c40f';
+            ctx.fillText('Boosting: ' + boostTimer.toFixed(1) + 's / 2.0s — HOLD SHIFT + MOVE', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 124);
+        } else if (hasBoosted) {
+            ctx.fillStyle = '#2ecc71';
+            ctx.fillText('✓ 2s boost complete! Release SHIFT to see purple bar recharge', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 124);
+        } else {
+            ctx.fillStyle = '#eaeaea';
+            ctx.fillText('Hold SHIFT + move WASD to boost for 2 seconds', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 124);
+        }
+    }
+
+    // --- Mine contextual hints ---
+    if (step.id === 'mine') {
+        const liveMines = G.mines.filter(m => !m.exploded).length;
+        const minePulse = Math.sin(stepTimer * 3) * 0.2 + 0.8;
+
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 14px Orbitron';
+        if (liveMines === 0) {
+            ctx.fillStyle = 'rgba(241,196,15,' + minePulse + ')';
+            ctx.shadowColor = '#f1c40f';
+            ctx.shadowBlur = 10;
+            ctx.fillText('⌨ Press C to drop a mine behind your tank', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 142);
+            ctx.shadowBlur = 0;
+            ctx.font = '11px Orbitron';
+            ctx.fillStyle = '#999';
+            ctx.fillText('Mines arm after 3 seconds, then an enemy will appear!', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 126);
+        } else if (G.enemies.length === 0) {
+            ctx.fillStyle = 'rgba(46,204,113,' + minePulse + ')';
+            ctx.shadowColor = '#2ecc71';
+            ctx.shadowBlur = 10;
+            ctx.fillText('✓ Mine placed! Enemy approaching in...', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 142);
+            ctx.shadowBlur = 0;
+            ctx.font = '11px Orbitron';
+            ctx.fillStyle = '#999';
+            ctx.fillText('Wait for the enemy — then lead it over the mine!', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 126);
+        } else if (!enemyTriggeredMine) {
+            const enemyAlive = G.enemies.some(e => e.alive && e.health > 0);
+            if (enemyAlive) {
+                ctx.fillStyle = 'rgba(231,76,60,' + minePulse + ')';
+                ctx.shadowColor = '#e74c3c';
+                ctx.shadowBlur = 15;
+                ctx.fillText('⚠ ENEMY CHASING! Lead it over your mine! ⚠', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 142);
+                ctx.shadowBlur = 0;
+            } else {
+                ctx.fillStyle = '#2ecc71';
+                ctx.shadowColor = '#2ecc71';
+                ctx.shadowBlur = 15;
+                ctx.fillText('💥 Enemy destroyed by mine!', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 142);
+                ctx.shadowBlur = 0;
+            }
+        }
+    }
+
+    if (showSuccess) {
+        ctx.fillStyle = 'rgba(39,174,96,0.12)';
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 26px Orbitron';
         ctx.fillStyle = '#2ecc71';
         ctx.shadowColor = '#2ecc71';
-        ctx.shadowBlur = 20;
+        ctx.shadowBlur = 30;
         ctx.fillText(step.successMsg, CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
         ctx.shadowBlur = 0;
     }
@@ -256,7 +715,7 @@ export function renderTutorial(ctx) {
     ctx.textAlign = 'center';
     ctx.font = '9px Orbitron';
     ctx.fillStyle = '#444';
-    ctx.fillText('Press ESC to skip tutorial', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 12);
+    ctx.fillText('Press ESC to skip tutorial', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 6);
 }
 
 export function startTutorial() {
@@ -272,7 +731,18 @@ export function startTutorial() {
 
 function showModeOverview() {
     isActive = false;
+    removeSpotlight();
     markTutorialSeen();
+
+    const confettiColors = ['#f39c12','#e74c3c','#9b59b6','#3498db','#2ecc71','#f1c40f','#e91e63'];
+    for(let i=0;i<80;i++){
+        const angle=Math.random()*Math.PI*2;
+        const speed=100+Math.random()*300;
+        const color=confettiColors[Math.floor(Math.random()*confettiColors.length)];
+        G.particles.push(new Particle(CANVAS_WIDTH/2,CANVAS_HEIGHT/2,Math.cos(angle)*speed,Math.sin(angle)*speed-100,color,1.5+Math.random()));
+    }
+
+    import('./progression.js').then(({addCoins,addGems})=>{ addCoins(50); addGems(1); });
 
     document.getElementById('tutorialOverlay').style.display = 'flex';
     document.getElementById('tutorialOverlay').classList.add('active');
@@ -285,11 +755,14 @@ export function closeTutorial() {
     isActive = false;
     currentStep = 0;
     showSuccess = false;
+    removeSpotlight();
+    targetDummy = null;
     G.player = null;
     G.walls = [];
     G.bullets = [];
     G.particles = [];
     G.mines = [];
+    G.enemies = [];
     G.gameState = GameState.MENU;
 
     const to = document.getElementById('tutorialOverlay');
