@@ -87,11 +87,11 @@ export const SKINS = [
       desc: 'Burning rage on tracks — flame-kissed armor' },
     { id: 'shadow',    name: 'Shadow Strike',  cost: 120, currency: 'gems', minRank: 'Gold I',
       color: '#8a2be2', trailColor: '#8a2be2', explosionColor: '#9b30ff', turretGlow: '#8a2be2',
-      bodyPattern: 'stealth', glowColor: '#bb55ff', visorColor: '#cc88ff', traceFade: true,
+      bodyPattern: 'stealth', glowColor: '#bb55ff', visorColor: '#cc88ff',
       desc: 'Dark stealth weave with phased resonator — fading tracks' },
     { id: 'frost',     name: 'Crystal Frost',  cost: 150, currency: 'gems', minRank: 'Diamond',
       color: '#00bfff', trailColor: '#00bfff', explosionColor: '#87ceeb', turretGlow: '#00bfff',
-      bodyPattern: 'crystal', glowColor: '#66ddff', visorColor: '#e0f7ff', traceFade: true,
+      bodyPattern: 'crystal', glowColor: '#66ddff', visorColor: '#e0f7ff',
       desc: 'Cryo-forged crystal armor — sub-zero military grade' },
 
     // Season 1 exclusive skins (not in shop — earned via battle pass)
@@ -105,8 +105,82 @@ export const SKINS = [
       desc: 'Season 1 exclusive — molten rock given deadly form' },
     { id: 'ignition_overlord', name: 'Ignition Overlord', cost: 0, currency: null, minRank: null, session: 's1',
       color: '#ffd700', trailColor: '#ffaa00', explosionColor: '#ffd700', turretGlow: '#ffd700',
-      bodyPattern: 'circuit', glowColor: '#ffd700', visorColor: '#fff8dc', traceFade: true,
+      bodyPattern: 'circuit', glowColor: '#ffd700', visorColor: '#fff8dc',
       desc: 'Season 1 Grand Prize — the ultimate Ignition champion\'s armor' },
+];
+
+// ==================== GADGETS ====================
+// Active abilities — press Q to activate. Cooldown in seconds.
+export const GADGETS = [
+    { id: 'repair_kit',  name: 'Repair Kit',   cost: 500,  currency: 'coins', minRank: null,
+      cooldown: 30, duration: 3, desc: 'Heal 1 HP over 3 seconds',
+      icon: '❤️', color: '#2ecc71' },
+    { id: 'emp_pulse',   name: 'EMP Pulse',    cost: 800,  currency: 'coins', minRank: 'Silver I',
+      cooldown: 25, duration: 1.5, desc: 'Stun nearby enemies for 1.5s',
+      icon: '⚡', color: '#3498db' },
+    { id: 'smoke_screen', name: 'Smoke Screen', cost: 600,  currency: 'coins', minRank: 'Bronze III',
+      cooldown: 20, duration: 3, desc: 'Deploy smoke — enemies can\'t see you inside',
+      icon: '🌫️', color: '#95a5a6' },
+    { id: 'dash',        name: 'Dash',         cost: 400,  currency: 'coins', minRank: null,
+      cooldown: 8,  duration: 0.15, desc: 'Quick lunge in movement direction',
+      icon: '💨', color: '#f39c12' },
+];
+
+// ==================== TRAILS ====================
+// Cosmetic tank track trails
+export const TRAILS = [
+    { id: 'default',  name: 'Standard',  cost: 0,    currency: null,   minRank: null,
+      color: 'rgba(60,55,50,0.12)', glowColor: null, icon: '🔘',
+      desc: 'Standard tank tracks' },
+    { id: 'flame',    name: 'Flame',     cost: 40,   currency: 'gems', minRank: 'Bronze III',
+      color: 'rgba(255,69,0,0.25)', glowColor: '#ff4500', icon: '🔥',
+      desc: 'Burning-hot track marks' },
+    { id: 'ice',      name: 'Ice',       cost: 40,   currency: 'gems', minRank: 'Bronze II',
+      color: 'rgba(0,191,255,0.25)', glowColor: '#00bfff', icon: '❄️',
+      desc: 'Frozen crystal trails' },
+    { id: 'electric', name: 'Electric',  cost: 60,   currency: 'gems', minRank: 'Silver I',
+      color: 'rgba(255,255,0,0.25)', glowColor: '#ffff00', icon: '⚡',
+      desc: 'Crackling energy tracks' },
+    { id: 'shadow',   name: 'Shadow',    cost: 80,   currency: 'gems', minRank: 'Silver II',
+      color: 'rgba(138,43,226,0.3)', glowColor: '#8a2be2', icon: '🌑',
+      desc: 'Dark ethereal trails' },
+];
+
+// ==================== KILL EFFECTS ====================
+// Visual effects when you destroy an enemy tank
+export const KILL_EFFECTS = [
+    { id: 'default',    name: 'None',        cost: 0,   currency: null,  minRank: null,
+      effect: null, desc: 'No special effect',
+      icon: '—' },
+    { id: 'explosion',  name: 'Firework',    cost: 300, currency: 'coins', minRank: 'Bronze III',
+      effect: 'firework', desc: 'Enemy explodes in a fiery burst',
+      icon: '💥', color: '#ff4500' },
+    { id: 'lightning',  name: 'Lightning',   cost: 500, currency: 'coins', minRank: 'Silver I',
+      effect: 'lightning', desc: 'Lightning strikes the destroyed tank',
+      icon: '⚡', color: '#ffff00' },
+    { id: 'confetti',   name: 'Confetti',    cost: 30,  currency: 'gems', minRank: null,
+      effect: 'confetti', desc: 'Enemy bursts into colorful confetti',
+      icon: '🎉', color: '#f1c40f' },
+    { id: 'ice_shatter', name: 'Ice Shatter', cost: 50, currency: 'gems', minRank: 'Silver II',
+      effect: 'ice_shatter', desc: 'Enemy shatters into ice crystals',
+      icon: '❄️', color: '#00bfff' },
+];
+
+// ==================== WEAPON SKINS ====================
+// Cosmetic variants for weapons (resource sink for coins)
+export const WEAPON_SKINS = [
+    { id: 'ws_default',  name: 'Default',   cost: 0,   currency: null, weaponId: null,
+      color: null, icon: '🔫', desc: 'Standard issue' },
+    { id: 'ws_gold',     name: 'Gold Plated', cost: 60, currency: 'gems', weaponId: null,
+      color: '#ffd700', icon: '✨', desc: '24-karat gold finish for all weapons' },
+    { id: 'ws_neon',     name: 'Neon',       cost: 200, currency: 'coins', weaponId: null,
+      color: '#00ff88', icon: '💚', desc: 'Radioactive green barrel coating' },
+    { id: 'ws_carbon',   name: 'Carbon Fiber', cost: 350, currency: 'coins', weaponId: null,
+      color: '#555555', icon: '⬛', desc: 'Lightweight carbon fiber wrap' },
+    { id: 'ws_magma',    name: 'Magma',      cost: 500, currency: 'coins', weaponId: null,
+      color: '#ff4500', icon: '🌋', desc: 'Molten lava barrel finish' },
+    { id: 'ws_crystal',  name: 'Crystal',    cost: 80,  currency: 'gems', minRank: 'Silver II',
+      color: '#00bfff', icon: '💎', desc: 'Frozen crystal coating' },
 ];
 
 // ==================== XP RANKS ====================
