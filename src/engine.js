@@ -192,7 +192,6 @@ export class Tank {
         this.skinGlowColor = null;
         this.skinVisorColor = null;
         this.traceColor = 'rgba(60,55,50,0.12)';
-        this.traceFade = false;
     }
     update(dt){
         this.pos=this.pos.add(this.vel.mul(dt));
@@ -200,16 +199,22 @@ export class Tank {
         if(this.vel.length() > 5) this.bodyAngle = Math.atan2(this.vel.y, this.vel.x);
         if(this.labelTime>0) this.labelTime-=dt;
         if(this.damageFlash>0) this.damageFlash-=dt;
-        if (this.vel.length() > 1) {
-            const targetCtx = this.traceFade && G._fadeTraceCtx ? G._fadeTraceCtx : G._traceCtx;
-            if (targetCtx) {
-                targetCtx.fillStyle = this.traceColor;
-                targetCtx.save();
-                targetCtx.translate(this.pos.x, this.pos.y);
-                targetCtx.rotate(this.bodyAngle);
-                targetCtx.fillRect(-16, -14, 4, 28);
-                targetCtx.fillRect(12, -14, 4, 28);
-                targetCtx.restore();
+        if (this.vel.length() > 1 && G._traceCtx) {
+            G._traceCtx.fillStyle = this.traceColor;
+            G._traceCtx.save();
+            G._traceCtx.translate(this.pos.x, this.pos.y);
+            G._traceCtx.rotate(this.bodyAngle);
+            G._traceCtx.fillRect(-16, -14, 4, 28);
+            G._traceCtx.fillRect(12, -14, 4, 28);
+            G._traceCtx.restore();
+            if (this.trailGlowColor) {
+                G._traceCtx.fillStyle = this.trailGlowColor.replace(')', ',0.08)').replace('rgb', 'rgba');
+                G._traceCtx.save();
+                G._traceCtx.translate(this.pos.x, this.pos.y);
+                G._traceCtx.rotate(this.bodyAngle);
+                G._traceCtx.fillRect(-16, -14, 4, 28);
+                G._traceCtx.fillRect(12, -14, 4, 28);
+                G._traceCtx.restore();
             }
         }
     }
@@ -427,6 +432,19 @@ export class Player extends Tank {
         this.maxBoostEnergy = 100;
         // Grip: 1.0 = instant response, lower = more drift/slide
         this.grip = 0.5;
+        // Gadget system (set by applyProgressionToPlayer)
+        this.gadgetId = null;
+        this.gadgetCooldown = 0;
+        this.gadgetTimer = 0;
+        this.gadgetReady = true;
+        this.gadgetActive = false;
+        this.gadgetActiveTimer = 0;
+        // Trail system (set by applyProgressionToPlayer)
+        this.trailId = 'default';
+        this.trailColor = 'rgba(60,55,50,0.12)';
+        this.trailGlowColor = null;
+        // Kill effect
+        this.killEffectId = 'default';
     }
     update(dt,now){
         let mx=0,my=0;
@@ -523,11 +541,148 @@ export class Player extends Tank {
             import('./stats.js').then(m => m.recordMinePlaced());
             if(G.aiTracker) G.aiTracker.recordMinePlaced();
         }
+
+        if (this.gadgetId && this.gadgetTimer > 0) {
+            this.gadgetTimer -= dt;
+            if (this.gadgetTimer <= 0) {
+                this.gadgetTimer = 0;
+                this.gadgetReady = true;
+            }
+        }
+        if (this.gadgetActive) {
+            this.gadgetActiveTimer -= dt;
+            if (this.gadgetActiveTimer <= 0) {
+                this.gadgetActive = false;
+            }
+        }
+        if (this.gadgetId && this.gadgetReady && !this.gadgetActive && G.keys['KeyQ']) {
+            this.gadgetReady = false;
+            this.gadgetActive = true;
+            this.gadgetTimer = this.gadgetCooldown;
+            activateGadget(this);
+            G.keys['KeyQ'] = false;
+        }
     }
+
     startReload(now){
         this.reloading = true;
         this.reloadStart = now;
         import('./audio.js').then(m => m.playReload());
+    }
+}
+
+function activateGadget(player) {
+    const gadget = player.gadgetId;
+    import('./audio.js').then(m => m.playGadgetActivate && m.playGadgetActivate());
+    switch (gadget) {
+        case 'repair_kit': {
+            // Heal 1 HP over 3 seconds
+            const healAmount = 1;
+            const healInterval = 1; // heal 1 HP per second for 3 seconds
+            let healed = 0;
+            const healTimer = setInterval(() => {
+                if (!player.alive) { clearInterval(healTimer); return; }
+                player.health = Math.min(player.maxHealth, player.health + 1);
+                healed++;
+                // Green spark particles
+                for (let i = 0; i < 3; i++) {
+                    const a = Math.random() * Math.PI * 2;
+                    G.particles.push(new Particle(
+                        player.pos.x, player.pos.y,
+                        Math.cos(a) * 20, Math.sin(a) * 20,
+                        '#2ecc71', 0.5
+                    ));
+                }
+                if (healed >= healAmount * 3) {
+                    clearInterval(healTimer);
+                    player.gadgetActive = false;
+                }
+            }, healInterval * 1000);
+            // Initial burst
+            for (let i = 0; i < 10; i++) {
+                const a = Math.random() * Math.PI * 2;
+                G.particles.push(new Particle(
+                    player.pos.x, player.pos.y,
+                    Math.cos(a) * 30, Math.sin(a) * 30,
+                    '#2ecc71', 0.6
+                ));
+            }
+            player.gadgetActiveTimer = 3;
+            break;
+        }
+        case 'emp_pulse': {
+            // Stun nearby enemies for 1.5s
+            const empRadius = 200;
+            // Visual: expanding ring
+            for (let i = 0; i < 20; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const dist = Math.random() * empRadius;
+                G.particles.push(new Particle(
+                    player.pos.x + Math.cos(a) * dist,
+                    player.pos.y + Math.sin(a) * dist,
+                    Math.cos(a) * 20, Math.sin(a) * 20,
+                    '#3498db', 0.7
+                ));
+            }
+            for (const enemy of G.enemies) {
+                if (enemy.alive && player.pos.distanceTo(enemy.pos) < empRadius) {
+                    enemy.stunned = true;
+                    enemy.stunTimer = 1.5;
+                }
+            }
+            player.gadgetActiveTimer = 1.5;
+            break;
+        }
+        case 'smoke_screen': {
+            // Deploy smoke cloud at player position for 3 seconds
+            const smokeRadius = 100;
+            const smokePos = player.pos.clone();
+            // Spawn a dense cloud of dark particles
+            for (let i = 0; i < 40; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const r = Math.random() * smokeRadius;
+                G.particles.push(new Particle(
+                    smokePos.x + Math.cos(a) * r,
+                    smokePos.y + Math.sin(a) * r,
+                    (Math.random() - 0.5) * 10,
+                    -Math.random() * 15,
+                    '#555', 1.5 + Math.random()
+                ));
+            }
+            player._smokePos = smokePos;
+            player._smokeTimer = 3;
+            player.gadgetActiveTimer = 3;
+            break;
+        }
+        case 'dash': {
+            // Quick lunge in movement direction
+            const dashSpeed = 400;
+            const dashDir = new Vector2(
+                G.keys['KeyD'] ? 1 : G.keys['KeyA'] ? -1 : 0,
+                G.keys['KeyS'] ? 1 : G.keys['KeyW'] ? -1 : 0
+            );
+            if (dashDir.length() > 0) {
+                dashDir.normalize();
+                player.vel = dashDir.mul(dashSpeed);
+            } else {
+                // Dash in turret direction if no movement key
+                player.vel = new Vector2(
+                    Math.cos(player.turretAngle) * dashSpeed,
+                    Math.sin(player.turretAngle) * dashSpeed
+                );
+            }
+            // Dash trail particles
+            for (let i = 0; i < 8; i++) {
+                const a = Math.random() * Math.PI * 2;
+                G.particles.push(new Particle(
+                    player.pos.x, player.pos.y,
+                    Math.cos(a) * 10, Math.sin(a) * 10,
+                    '#f39c12', 0.4
+                ));
+            }
+            player.gadgetActiveTimer = 0.15;
+            break;
+        }
     }
 }
 
@@ -556,6 +711,9 @@ export class Enemy extends Tank {
         this._qlState = null;
         this._qlAction = null;
         this._accumulatedReward = 0;
+        // Stun (from EMP gadget)
+        this.stunned = false;
+        this.stunTimer = 0;
     }
     applyStrategy(strategy){
         this._erratic=strategy?strategy.erraticMovement||0.3:0.3;
@@ -587,6 +745,16 @@ export class Enemy extends Tank {
 
     update(dt,now){
         if(!G.player||!G.player.alive) return;
+        if (this.stunned) {
+            this.stunTimer -= dt;
+            this.vel = this.vel.mul(0.9);
+            if (this.stunTimer <= 0) {
+                this.stunned = false;
+                this.stunTimer = 0;
+            }
+            super.update(dt);
+            return;
+        }
         this.aiTimer+=dt;
         if(this.aiTimer>0.5){
             this.aiTimer=0;
@@ -859,15 +1027,24 @@ export class LandMine {
         this.lifeTimer=0; this.blinkTimer=0; this.blinkState=false;
         this.exploded=false;
         this.explosionRadius = (placer && placer.mineRadius) ? placer.mineRadius : 120;
-        this.armed=true;
+        this.armed=false;
+        this.armTimer=0;
         this.placer=placer;
     }
     update(dt){
         if(this.exploded) return;
+        if(!this.armed){
+            this.armTimer+=dt;
+            if(this.armTimer>=3){
+                this.armed=true;
+                this.blinkTimer=0;
+                import('./audio.js').then(m => m.playMineArmed());
+            }
+        }
         this.blinkTimer+=dt;
-        if(this.blinkTimer>=0.5){ this.blinkTimer=0; this.blinkState=!this.blinkState; }
+        if(this.blinkTimer>=(this.armed?0.25:0.5)){ this.blinkTimer=0; this.blinkState=!this.blinkState; }
     }
-    checkCollision(tank){ if(this.exploded) return false; return this.pos.distanceTo(tank.pos)<this.radius+18; }
+    checkCollision(tank){ if(this.exploded||!this.armed) return false; return this.pos.distanceTo(tank.pos)<this.radius+18; }
     explode(){
         this.exploded=true;
         import('./audio.js').then(m => m.playExplosion());
@@ -890,5 +1067,60 @@ export class LandMine {
         G.ctx.fillStyle=this.blinkState?COLORS.mineDanger:COLORS.mine;
         G.ctx.beginPath(); G.ctx.arc(this.pos.x,this.pos.y,this.radius,0,Math.PI*2); G.ctx.fill();
         G.ctx.strokeStyle=this.blinkState?'#ff0000':'#ffff00'; G.ctx.lineWidth=2; G.ctx.beginPath(); G.ctx.arc(this.pos.x,this.pos.y,this.radius+4,0,Math.PI*2); G.ctx.stroke();
+    }
+}
+
+export function spawnKillEffect(effectId, x, y, targetColor) {
+    switch (effectId) {
+        case 'firework':
+            for (let i = 0; i < 25; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const speed = 50 + Math.random() * 150;
+                const colors = ['#ff4500', '#ff8c00', '#ffd700', '#ff6347', '#ff0000'];
+                G.particles.push(new Particle(
+                    x, y,
+                    Math.cos(a) * speed, Math.sin(a) * speed,
+                    colors[Math.floor(Math.random() * colors.length)],
+                    0.6 + Math.random() * 0.4
+                ));
+            }
+            break;
+        case 'lightning':
+            for (let i = 0; i < 15; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const dist = Math.random() * 60;
+                G.particles.push(new Particle(
+                    x + Math.cos(a) * dist, y + Math.sin(a) * dist,
+                    (Math.random() - 0.5) * 30, -Math.random() * 50,
+                    '#ffff00', 0.3 + Math.random() * 0.2
+                ));
+            }
+            break;
+        case 'confetti':
+            for (let i = 0; i < 30; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const speed = 30 + Math.random() * 100;
+                const hue = Math.random() * 360;
+                G.particles.push(new Particle(
+                    x, y,
+                    Math.cos(a) * speed, Math.sin(a) * speed - 50,
+                    'hsl(' + hue + ', 80%, 60%)',
+                    0.8 + Math.random() * 0.5
+                ));
+            }
+            break;
+        case 'ice_shatter':
+            for (let i = 0; i < 20; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const speed = 30 + Math.random() * 80;
+                G.particles.push(new Particle(
+                    x, y,
+                    Math.cos(a) * speed, Math.sin(a) * speed,
+                    '#00bfff', 0.5 + Math.random() * 0.5
+                ));
+            }
+            break;
+        default:
+            break;
     }
 }
