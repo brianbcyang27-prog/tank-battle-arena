@@ -1,14 +1,40 @@
-import { SKINS, WEAPONS, RANKS, MISSION_POOL, STAGE_COUNT, LEVELS_PER_STAGE } from './config.js';
+import { SKINS, WEAPONS, GADGETS, TRAILS, KILL_EFFECTS, WEAPON_SKINS, RANKS, MISSION_POOL, STAGE_COUNT, LEVELS_PER_STAGE } from './config.js';
 import { SESSION, SESSION_TIERS } from './sessionConfig.js';
 import { log } from './log.js';
 
 const STORAGE_KEY = 'tankBattle_progression';
 
+// ==================== BACKPACK ITEM TYPES ====================
+export const BACKPACK_TYPES = ['gadget', 'trail', 'killEffect', 'weaponSkin'];
+
+// Build default backpack — all "default" items are free and owned
+function buildDefaultBackpack() {
+    const bp = {};
+    for (const g of GADGETS) bp['gadget:' + g.id] = true;
+    for (const t of TRAILS) bp['trail:' + t.id] = true;
+    for (const k of KILL_EFFECTS) bp['killEffect:' + k.id] = true;
+    for (const w of WEAPON_SKINS) bp['weaponSkin:' + w.id] = true;
+    return bp;
+}
+
+// Build default loadout state
+function buildDefaultLoadout() {
+    return {
+        weapon: 'standard',
+        skin: 'classic',
+        title: null,
+        gadget: null,
+        trail: 'default',
+        killEffect: 'default',
+        weaponSkin: 'ws_default',
+    };
+}
+
 // ==================== INITIAL STATE ====================
 function defaultProgression() {
     return {
         gems: 0,
-        coins: 100, // starting coins
+        coins: 100,
         xp: 0,
         ownedSkins: ['classic'],
         equippedSkin: 'classic',
@@ -24,23 +50,52 @@ function defaultProgression() {
         highestSingleScore: 0,
         upgradePoints: 0,
         upgrades: { speed: 0, fuel: 0, mineRadius: 0 },
-        // Session / Battle Pass
         sessionXp: 0,
         sessionRewardsClaimed: [],
-        sessionLifetimeXp: 0, // total earned this session (for display)
+        sessionLifetimeXp: 0,
+        backpack: buildDefaultBackpack(),
+        loadout: buildDefaultLoadout(),
     };
 }
 
 // ==================== STORAGE ====================
 let P = { ...defaultProgression() };
 
+function migrateToBackpack(saved) {
+    // Convert old ownedSkins/ownedWeapons to backpack format if backpack is missing
+    if (!saved.backpack) {
+        saved.backpack = buildDefaultBackpack();
+        if (Array.isArray(saved.ownedSkins)) {
+            for (const id of saved.ownedSkins) saved.backpack['skin:' + id] = true;
+        }
+        if (Array.isArray(saved.ownedWeapons)) {
+            for (const id of saved.ownedWeapons) saved.backpack['weapon:' + id] = true;
+        }
+        if (Array.isArray(saved.titles)) {
+            for (const t of saved.titles) saved.backpack['title:' + t] = true;
+        }
+    }
+    if (!saved.loadout) {
+        saved.loadout = buildDefaultLoadout();
+        if (saved.equippedSkin) saved.loadout.skin = saved.equippedSkin;
+        if (saved.equippedWeapon) saved.loadout.weapon = saved.equippedWeapon;
+        if (saved.equippedTitle) saved.loadout.title = saved.equippedTitle;
+    }
+    // Ensure default items are present
+    const defaults = buildDefaultBackpack();
+    for (const key in defaults) {
+        if (!saved.backpack[key]) saved.backpack[key] = true;
+    }
+    return saved;
+}
+
 export function loadProgression() {
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
         if (raw) {
             const saved = JSON.parse(raw);
-            P = { ...defaultProgression(), ...saved };
-            // Ensure owned arrays exist
+            const migrated = migrateToBackpack(saved);
+            P = { ...defaultProgression(), ...migrated };
             if (!P.ownedSkins || P.ownedSkins.length === 0) P.ownedSkins = ['classic'];
             if (!P.ownedWeapons || P.ownedWeapons.length === 0) P.ownedWeapons = ['standard'];
             log('info', 'PROG', 'Progression loaded: ' + P.gems + ' gems, ' + P.coins + ' coins, ' + P.xp + ' xp');
@@ -200,6 +255,7 @@ export function buyWeapon(id) {
 export function equipSkin(id) {
     if (!P.ownedSkins.includes(id)) return false;
     P.equippedSkin = id;
+    if (P.loadout) P.loadout.skin = id;
     saveProgression();
     return true;
 }
@@ -207,6 +263,7 @@ export function equipSkin(id) {
 export function equipWeapon(id) {
     if (!P.ownedWeapons.includes(id)) return false;
     P.equippedWeapon = id;
+    if (P.loadout) P.loadout.weapon = id;
     saveProgression();
     return true;
 }
@@ -332,6 +389,104 @@ export function trackHighScore(score) {
         saveProgression();
     }
     updateMissionProgress('highScore', score);
+}
+
+// ==================== BACKPACK (UNIFIED INVENTORY) ====================
+export function getBackpack() {
+    return P.backpack ? { ...P.backpack } : {};
+}
+
+export function getLoadout() {
+    return P.loadout ? { ...P.loadout } : buildDefaultLoadout();
+}
+
+export function getBackpackByType(type) {
+    const bp = getBackpack();
+    const results = [];
+    for (const key in bp) {
+        if (key.startsWith(type + ':') && bp[key]) {
+            results.push(key.slice(type.length + 1));
+        }
+    }
+    return results;
+}
+
+export function isItemOwned(type, id) {
+    if (!P.backpack) return false;
+    return !!P.backpack[type + ':' + id];
+}
+
+export function addItemToBackpack(type, id) {
+    if (!P.backpack) P.backpack = buildDefaultBackpack();
+    P.backpack[type + ':' + id] = true;
+    saveProgression();
+}
+
+export function equipItem(type, id) {
+    if (!P.backpack) P.backpack = buildDefaultBackpack();
+    if (!P.loadout) P.loadout = buildDefaultLoadout();
+    if (!isItemOwned(type, id)) return false;
+    // For weapon/skin/title, also update legacy fields for backward compat
+    if (type === 'weapon') {
+        P.loadout.weapon = id;
+        P.equippedWeapon = id;
+    } else if (type === 'skin') {
+        P.loadout.skin = id;
+        P.equippedSkin = id;
+    } else if (type === 'title') {
+        P.loadout.title = id;
+        P.equippedTitle = id;
+    } else if (type === 'gadget' || type === 'trail' || type === 'killEffect' || type === 'weaponSkin') {
+        P.loadout[type] = id;
+    } else {
+        return false;
+    }
+    saveProgression();
+    return true;
+}
+
+export function getEquippedItem(type) {
+    if (!P.loadout) P.loadout = buildDefaultLoadout();
+    return P.loadout[type] || null;
+}
+
+export function getBackpackItemCount() {
+    if (!P.backpack) return 0;
+    let count = 0;
+    for (const key in P.backpack) {
+        if (P.backpack[key]) count++;
+    }
+    return count;
+}
+
+// ==================== BACKPACK SHOP ====================
+// Generic purchase function for any backpack-tracked item type
+
+const ITEM_CONFIGS = {
+    gadget:     { arr: GADGETS,     type: 'gadget' },
+    trail:      { arr: TRAILS,      type: 'trail' },
+    killEffect: { arr: KILL_EFFECTS, type: 'killEffect' },
+    weaponSkin: { arr: WEAPON_SKINS, type: 'weaponSkin' },
+};
+
+export function buyItem(configType, id) {
+    const cfg = ITEM_CONFIGS[configType];
+    if (!cfg) return { ok: false, reason: 'Unknown item type' };
+    const item = cfg.arr.find(x => x.id === id);
+    if (!item) return { ok: false, reason: 'Item not found' };
+    if (isItemOwned(cfg.type, id)) return { ok: false, reason: 'Already owned' };
+    if (item.minRank && rankIndex(item.minRank) > playerRankIndex()) {
+        return { ok: false, reason: 'Requires ' + item.minRank + ' rank' };
+    }
+    if (item.currency === 'gems') {
+        if (!spendGems(item.cost)) return { ok: false, reason: 'Not enough gems' };
+    } else if (item.currency === 'coins') {
+        if (!spendCoins(item.cost)) return { ok: false, reason: 'Not enough coins' };
+    }
+    addItemToBackpack(cfg.type, id);
+    saveProgression();
+    log('info', 'SHOP', 'Bought ' + configType + ': ' + item.name);
+    return { ok: true };
 }
 
 // ==================== UPGRADES ====================
@@ -687,6 +842,7 @@ export function isTierClaimed(tier) {
 function grantSkin(skinId) {
     if (!P.ownedSkins.includes(skinId)) {
         P.ownedSkins.push(skinId);
+        addItemToBackpack('skin', skinId);
         log('info', 'SESSION', 'Granted skin: ' + skinId);
     }
 }
@@ -694,15 +850,16 @@ function grantSkin(skinId) {
 function grantWeapon(weaponId) {
     if (!P.ownedWeapons.includes(weaponId)) {
         P.ownedWeapons.push(weaponId);
+        addItemToBackpack('weapon', weaponId);
         log('info', 'SESSION', 'Granted weapon: ' + weaponId);
     }
 }
 
 function grantTitle(title) {
-    // Titles are stored as an array of earned titles
     if (!P.titles) P.titles = [];
     if (!P.titles.includes(title)) {
         P.titles.push(title);
+        addItemToBackpack('title', title);
         log('info', 'SESSION', 'Granted title: ' + title);
     }
 }
@@ -719,6 +876,7 @@ export function equipTitle(titleId) {
     if (!P.titles) P.titles = [];
     if (!P.titles.includes(titleId)) return false;
     P.equippedTitle = titleId;
+    if (P.loadout) P.loadout.title = titleId;
     saveProgression();
     return true;
 }
@@ -788,7 +946,16 @@ export function awardSessionXpFromMatch(matchXp) {
 // ==================== APPLY TO PLAYER ====================
 export function applyProgressionToPlayer(player) {
     if (!player) return;
-    const skin = getSkinData(P.equippedSkin);
+    // Read from loadout with legacy fallback
+    const equippedSkinId = (P.loadout && P.loadout.skin) || P.equippedSkin || 'classic';
+    const equippedWeaponId = (P.loadout && P.loadout.weapon) || P.equippedWeapon || 'standard';
+    const equippedGadgetId = (P.loadout && P.loadout.gadget) || null;
+    const equippedTrailId = (P.loadout && P.loadout.trail) || 'default';
+    const equippedKillEffectId = (P.loadout && P.loadout.killEffect) || 'default';
+    const equippedWeaponSkinId = (P.loadout && P.loadout.weaponSkin) || 'ws_default';
+
+    // Apply skin
+    const skin = getSkinData(equippedSkinId);
     if (skin && skin.color) {
         player.color = skin.color;
         player.bulletTrailColor = skin.trailColor || null;
@@ -801,9 +968,10 @@ export function applyProgressionToPlayer(player) {
             const b = parseInt(skin.trailColor.slice(5,7), 16);
             player.traceColor = 'rgba(' + r + ',' + g + ',' + b + ',0.12)';
         }
-        player.traceFade = !!skin.traceFade;
     }
-    const weapon = getWeaponData(P.equippedWeapon);
+
+    // Apply weapon
+    const weapon = getWeaponData(equippedWeaponId);
     if (weapon) {
         player.fireRate = weapon.fireRate;
         player.bulletDamage = weapon.damage;
@@ -822,7 +990,39 @@ export function applyProgressionToPlayer(player) {
         player.bulletTrailEffect = weapon.trailEffect || 'normal';
         player.bulletImpactEffect = weapon.impactEffect || 'normal';
         player.recoil = weapon.recoil || 0;
+        // Apply weapon skin color override
+        const ws = WEAPON_SKINS.find(s => s.id === equippedWeaponSkinId);
+        if (ws && ws.color) player.bulletColor = ws.color;
     }
+
+    // Apply gadget
+    if (equippedGadgetId) {
+        player.gadgetId = equippedGadgetId;
+        const gadgetData = GADGETS.find(g => g.id === equippedGadgetId);
+        if (gadgetData) {
+            player.gadgetCooldown = gadgetData.cooldown;
+            player.gadgetTimer = 0;
+            player.gadgetReady = true;
+        }
+    } else {
+        player.gadgetId = null;
+        player.gadgetCooldown = 0;
+        player.gadgetTimer = 0;
+        player.gadgetReady = false;
+    }
+
+    // Apply trail
+    player.trailId = equippedTrailId;
+    const trailData = TRAILS.find(t => t.id === equippedTrailId);
+    if (trailData) {
+        player.trailColor = trailData.color;
+        player.trailGlowColor = trailData.glowColor || null;
+        player.traceColor = trailData.color;
+    }
+
+    // Apply kill effect
+    player.killEffectId = equippedKillEffectId;
+
     applyUpgradesToPlayer(player);
     if (weapon && weapon.weight !== undefined) {
         const w = weapon.weight;
