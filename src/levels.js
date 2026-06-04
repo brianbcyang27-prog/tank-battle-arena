@@ -55,7 +55,6 @@ export function generateLevel(lvl){
     log('info','LEVEL','Generating level '+lvl+' (multiplayer: '+G.isMultiplayerGame+')');
     G.walls=[]; G.bullets=[]; G.particles=[]; G.mines=[]; G.enemies=[];
     if (G._traceCtx && G._traceCanvas) G._traceCtx.clearRect(0, 0, G._traceCanvas.width, G._traceCanvas.height);
-if (G._fadeTraceCtx && G._fadeTraceCanvas) G._fadeTraceCtx.clearRect(0, 0, G._fadeTraceCanvas.width, G._fadeTraceCanvas.height);
 
     const loadingEl = document.getElementById('loadingScreen');
     if(loadingEl) loadingEl.style.display='none';

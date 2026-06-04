@@ -12,7 +12,6 @@ export function startGame(){
     if (G.gameState === GameState.LOADING) return;
     G.gameState = GameState.LOADING;
     if (G._traceCtx) G._traceCtx.clearRect(0, 0, G._traceCanvas.width, G._traceCanvas.height);
-    if (G._fadeTraceCtx) G._fadeTraceCtx.clearRect(0, 0, G._fadeTraceCanvas.width, G._fadeTraceCanvas.height);
     showOverlay(null);
     G.level=1; G.score=0; initStats();
     G.stageColors = null;
@@ -33,7 +32,6 @@ export function startGameFromMenu(){
 
 function doStartGame() {
     if (G._traceCtx) G._traceCtx.clearRect(0, 0, G._traceCanvas.width, G._traceCanvas.height);
-    if (G._fadeTraceCtx) G._fadeTraceCtx.clearRect(0, 0, G._fadeTraceCanvas.width, G._fadeTraceCanvas.height);
     if(G.gameMode==='single'){
         log('info','START','Starting single player game');
         G.level=1; G.score=0; initStats();

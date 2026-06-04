@@ -335,16 +335,16 @@ export function updateTutorial(dt) {
             const liveMines = G.mines.filter(m => !m.exploded).length;
             if (liveMines > 0) mineTimer += dt;
 
-            if (mineTimer > 0 && mineTimer < 2 && G.enemies.length === 0) {
-                const firstMine = G.mines.find(m => !m.exploded);
-                if (firstMine && G.player) {
+            const armedMine = G.mines.find(m => m.armed && !m.exploded);
+            if (armedMine && G.enemies.length === 0) {
+                if (G.player) {
                     // Spawn enemy on the far side of the mine from the player,
                     // so it must run through the mine to reach the player.
-                    const dx = firstMine.pos.x - G.player.pos.x;
-                    const dy = firstMine.pos.y - G.player.pos.y;
+                    const dx = armedMine.pos.x - G.player.pos.x;
+                    const dy = armedMine.pos.y - G.player.pos.y;
                     const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-                    const spawnX = firstMine.pos.x + (dx / dist) * 80;
-                    const spawnY = firstMine.pos.y + (dy / dist) * 80;
+                    const spawnX = armedMine.pos.x + (dx / dist) * 80;
+                    const spawnY = armedMine.pos.y + (dy / dist) * 80;
                     const e = new Enemy(spawnX, spawnY, 1);
                     e.health = 1;
                     e.maxHealth = 1;

@@ -217,6 +217,7 @@
                 <div class="dash-tab" data-tab="lobbies" onclick="switchTab('lobbies')">🎮 LOBBIES</div>
                 <div class="dash-tab" data-tab="controls" onclick="switchTab('controls')">🛠️ CONTROLS</div>
                 <div class="dash-tab" data-tab="raw" onclick="switchTab('raw')">🔧 RAW</div>
+                <div class="dash-tab" data-tab="feedback" onclick="switchTab('feedback')">💬 FEEDBACK</div>
             </div>
 
             <div id="dashContent">
@@ -243,7 +244,7 @@
                         <button class="user-filter-btn" data-filter="test" onclick="setUserFilter('test')" style="flex:1;min-width:60px;padding:5px 8px;border-radius:4px;border:1px solid #555;background:transparent;color:#999;font-size:9px;font-family:'Orbitron',monospace;cursor:pointer;transition:all 0.2s;">TEST PROFILES</button>
                     </div>
                     <div class="search-bar">
-                        <input id="usersSearch" type="text" placeholder="Search by email, UID, or name..." oninput="renderUsers()">
+                        <input id="usersSearch" type="text" placeholder="Search by email, ID, or name..." oninput="renderUsers()">
                     </div>
                     <div id="bulkActionBar" style="display:none;align-items:center;gap:10px;margin-bottom:8px;padding:6px 10px;border-radius:4px;border:1px solid #e94560;background:rgba(233,69,96,0.08);">
                         <span id="bulkCount" style="color:#e94560;font-size:10px;letter-spacing:1px;">0 SELECTED</span>
@@ -254,7 +255,7 @@
                         <table class="data-table" id="usersTable">
                             <thead><tr>
                                 <th style="width:24px;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this.checked)" style="accent-color:#f39c12;"></th>
-                                <th>UID</th><th>Email</th><th>Name</th><th>Online</th><th>Last Login</th><th>Progression</th><th>Actions</th>
+                                <th>ID</th><th>Email</th><th>Name</th><th>Online</th><th>Last Login</th><th>Progression</th><th>Actions</th>
                             </tr></thead>
                             <tbody id="usersBody"></tbody>
                         </table>
@@ -263,12 +264,19 @@
 
                 <!-- LEADERBOARD TAB -->
                 <div class="tab-panel" id="panel-leaderboard">
+                    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px;">
+                        <button class="admin-lb-mode" data-mode="all" onclick="setLBMode('all')" style="flex:1;min-width:50px;padding:4px 5px;border-radius:4px;border:1px solid #555;background:rgba(52,152,219,0.3);color:#f39c12;font-size:9px;cursor:pointer;">ALL</button>
+                        <button class="admin-lb-mode" data-mode="campaign" onclick="setLBMode('campaign')" style="flex:1;min-width:50px;padding:4px 5px;border-radius:4px;border:1px solid #555;background:transparent;color:#999;font-size:9px;cursor:pointer;">CAMPAIGN</button>
+                        <button class="admin-lb-mode" data-mode="solo" onclick="setLBMode('solo')" style="flex:1;min-width:50px;padding:4px 5px;border-radius:4px;border:1px solid #555;background:transparent;color:#999;font-size:9px;cursor:pointer;">SOLO</button>
+                        <button class="admin-lb-mode" data-mode="arcade" onclick="setLBMode('arcade')" style="flex:1;min-width:50px;padding:4px 5px;border-radius:4px;border:1px solid #555;background:transparent;color:#999;font-size:9px;cursor:pointer;">ARCADE</button>
+                        <button class="admin-lb-mode" data-mode="vs_ai" onclick="setLBMode('vs_ai')" style="flex:1;min-width:50px;padding:4px 5px;border-radius:4px;border:1px solid #555;background:transparent;color:#999;font-size:9px;cursor:pointer;">VS AI</button>
+                    </div>
                     <div class="search-bar">
-                        <input id="lbSearch" type="text" placeholder="Search by name or UID..." oninput="renderLeaderboard()">
+                        <input id="lbSearch" type="text" placeholder="Search by name or ID..." oninput="renderLeaderboard()">
                     </div>
                     <div style="overflow-x:auto;">
                         <table class="data-table" id="lbTable">
-                            <thead><tr><th>UID</th><th>Name</th><th>Score</th><th>Level</th><th>Timestamp</th><th>Actions</th></tr></thead>
+                            <thead><tr><th>ID</th><th>Name</th><th>Mode</th><th>Score</th><th>Level</th><th>Timestamp</th><th>Actions</th></tr></thead>
                             <tbody id="lbBody"></tbody>
                         </table>
                     </div>
@@ -297,17 +305,18 @@
                 <!-- CONTROLS TAB -->
                 <div class="tab-panel" id="panel-controls">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-                        <p style="color:#888;font-size:9px;letter-spacing:1px;">Inline edit any user's gems, coins, and upgrades — changes save to Firebase immediately per row.</p>
+                        <p style="color:#888;font-size:9px;letter-spacing:1px;">Full control: gems, coins, XP, upgrades, campaign stage, skins, weapons — save per row.</p>
                         <button class="btn-sm" onclick="loadControlsData()" style="border-color:#666;">REFRESH</button>
                     </div>
                     <div class="search-bar">
-                        <input id="controlsSearch" type="text" placeholder="Search by UID or name..." oninput="renderControls()">
+                        <input id="controlsSearch" type="text" placeholder="Search by ID or name..." oninput="renderControls()">
                     </div>
                     <div style="overflow-x:auto;">
                         <table class="data-table" id="controlsTable">
                             <thead><tr>
-                                <th>UID</th><th>Name</th><th>Gems</th><th>Coins</th><th>XP</th>
-                                <th>Speed</th><th>Fuel</th><th>Mine Radius</th><th>Upgrade Pts</th><th>Actions</th>
+                                <th>ID</th><th>Name</th><th>Gems</th><th>Coins</th><th>XP</th>
+                                <th>Speed</th><th>Fuel</th><th>Mine Radius</th><th>Up. Pts</th><th>Stage</th>
+                                <th>Owned Skins</th><th>Eq. Skin</th><th>Owned Weapons</th><th>Eq. Weapon</th><th>Actions</th>
                             </tr></thead>
                             <tbody id="controlsBody"></tbody>
                         </table>
@@ -321,6 +330,39 @@
                         <button class="btn-sm success" onclick="loadRaw()">LOAD</button>
                     </div>
                     <pre id="rawOutput" style="background:rgba(0,0,0,0.3);border:1px solid #222;border-radius:4px;padding:10px;font-size:9px;color:#bdc3c7;overflow:auto;max-height:60vh;white-space:pre-wrap;word-break:break-all;"></pre>
+                </div>
+
+                <!-- FEEDBACK TAB -->
+                <div class="tab-panel" id="panel-feedback">
+                    <div style="display:flex;gap:10px;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <input id="feedbackSearch" type="text" placeholder="Search feedback..." oninput="renderFeedback()" style="padding:8px 12px;border-radius:4px;border:1px solid #333;background:#1a1a2e;color:#eaeaea;font-size:11px;width:200px;font-family:inherit;">
+                            <span id="feedbackCount" style="color:#666;font-size:10px;"></span>
+                        </div>
+                        <div style="display:flex;gap:8px;">
+                            <button class="btn-sm danger" onclick="clearAllFeedback()">🗑️ CLEAR ALL</button>
+                        </div>
+                    </div>
+                    <div style="overflow-x:auto;">
+                        <table class="data-table" id="feedbackTable">
+                            <thead><tr>
+                                <th>Date</th>
+                                <th>User</th>
+                                <th>Type</th>
+                                <th>Message</th>
+                                <th>Actions</th>
+                            </tr></thead>
+                            <tbody id="feedbackBody"></tbody>
+                        </table>
+                    </div>
+                    <div style="margin-top:16px;border-top:1px solid #222;padding-top:16px;">
+                        <p style="color:#888;font-size:9px;letter-spacing:1px;margin-bottom:8px;">🤖 AI ANALYSIS</p>
+                        <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+                            <input id="nvidiaApiKey" type="password" placeholder="NVIDIA API Key" oninput="saveNvidiaKey()" style="padding:8px 12px;border-radius:4px;border:1px solid #333;background:#1a1a2e;color:#eaeaea;font-size:11px;width:280px;font-family:inherit;">
+                            <button class="btn-sm success" onclick="analyzeFeedback()" id="analyzeBtn">🔍 ANALYZE WITH AI</button>
+                        </div>
+                        <div id="aiAnalysisResult" style="background:rgba(0,0,0,0.3);border:1px solid #222;border-radius:4px;padding:12px;font-size:9px;color:#bdc3c7;min-height:40px;white-space:pre-wrap;line-height:1.6;"></div>
+                    </div>
                 </div>
             </div>
         </div>

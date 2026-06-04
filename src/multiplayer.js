@@ -502,7 +502,6 @@ window.startMultiplayerGame = function() {
     G.isMultiplayerGame = true;
     G.gameState = GameState.LOADING;
     if (G._traceCtx) G._traceCtx.clearRect(0, 0, G._traceCanvas.width, G._traceCanvas.height);
-if (G._fadeTraceCtx) G._fadeTraceCtx.clearRect(0, 0, G._fadeTraceCanvas.width, G._fadeTraceCanvas.height);
 
     // Set up Firebase bullet listener
     const bulletsRef = ref(db, 'lobbies/' + G.lobbyId + '/bullets');

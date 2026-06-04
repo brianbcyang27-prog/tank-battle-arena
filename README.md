@@ -24,6 +24,14 @@ A fast-paced 2D top-down tank battle game inspired by Wii Play. Navigate maze-li
 
 ## ✨ Features
 
+### Season Pass (Battle Pass)
+- **30 free tiers** — all rewards unlockable through gameplay, no premium track
+- **Earn XP passively** — 10% of match XP from all game modes goes toward season progress
+- **Exclusive rewards** — session-exclusive skins and weapons that never appear in the regular shop
+- **Tier milestones** — major rewards every 5 tiers including skins (Blaze, Magma), weapons (Flamethrower, Plasma Cannon), and a title bundle
+- **Individual or bulk claim** — claim rewards one at a time or use CLAIM ALL
+- **Season 1: Ignition** — live now with 30 tiers of coins, gems, skins, weapons, and titles
+
 ### Solo Campaign
 - **4-tier enemy AI** — speed, fire rate, accuracy, and HP scale with each tier
 - **Procedurally generated mazes** — every level is different with spawn validation
@@ -50,9 +58,10 @@ A fast-paced 2D top-down tank battle game inspired by Wii Play. Navigate maze-li
 - Friend invitations with notification toast
 - Online leaderboard
 
-### Leaderboard System
+### Leaderboard & Rank System
 - **Automatic** — every solo game saves your score
 - **One entry per user** — only your best score counts
+- **9 ranks** — Bronze III through Gold III with progress bar tracking
 - **Accessible from home screen** — view top 20 scores with medals
 - Shown in game-over overlay with match stats
 
@@ -65,6 +74,15 @@ A fast-paced 2D top-down tank battle game inspired by Wii Play. Navigate maze-li
 - **Staggered card entrance** on home screen
 - **Button glow effects** on hover
 - **Keyboard shortcuts** — Enter to submit login, Escape to close any overlay
+- **3D weapon preview** — inspect weapons with Three.js rotation viewer
+
+## 📦 What's New in v5.0
+
+- **Season Pass system** — 30 tiers of free rewards with XP progression
+- **Session-exclusive content** — 3 unique skins (Blaze, Magma, Ignition Overlord) and 2 weapons (Flamethrower, Plasma Cannon)
+- **Streamlined home navigation** — 6 primary buttons with a MORE dropdown (Settings, Tutorial, Stats, Progression, Leaderboard, About, Feedback, Log)
+- **Rank display fix** — rank titles now visible on dark background
+- **Cleaner project root** — removed accumulated test snapshots and artifacts
 
 ## 🚀 Quick Start
 
@@ -83,37 +101,31 @@ Or simply open `index.html` in any modern browser.
 - **Pure HTML5 Canvas + Vanilla JavaScript** — no frameworks, no build tools
 - **Firebase Realtime Database** — multiplayer sync, auth, online leaderboard
 - **60 FPS gameplay** with requestAnimationFrame game loop
-- **Modular ES6 architecture** — 13 source files with clear separation of concerns
+- **Modular ES6 architecture** — 16 source files with clear separation of concerns
 
 ## 📁 Project Structure
 
 ```
 src/
-├── main.js          — Game loop, input handling, initialization, welcome animation
-├── engine.js        — Vector2, Bullet, Tank, Player, Enemy, LandMine, Particle, Wall
-├── game.js          — Game flow: start, level complete, game over, round management
-├── adaptive-ai.js   — PlayerBehaviorTracker + counter-strategy engine
-├── levels.js        — Procedural level generation with wall mazes
-├── state.js         — Shared mutable game state (G)
-├── config.js        — Constants, colors, GameState enum, defaults
-├── ui.js            — All overlays, settings, leaderboard, navigation
-├── stats.js         — Per-game + lifetime stats tracking (localStorage)
-├── multiplayer.js   — Lobby creation/joining, Firebase sync, rematch
-├── firebase.js      — Firebase init, auth, database helpers
-├── friends.js       — Friend codes, requests, invitations
-└── log.js           — Console logging with timestamps
+├── main.js           — Game loop, input handling, initialization, welcome animation
+├── engine.js         — Vector2, Bullet, Tank, Player, Enemy, LandMine, Particle, Wall
+├── game.js           — Game flow: start, level complete, game over, round management
+├── adaptive-ai.js    — PlayerBehaviorTracker + counter-strategy engine
+├── levels.js         — Procedural level generation with wall mazes
+├── state.js          — Shared mutable game state (G)
+├── config.js         — Constants, colors, GameState enum, defaults, rank definitions
+├── progression.js    — Player progression, missions, rank system, season pass
+├── sessionConfig.js  — Season/battle pass tier definitions and reward tables
+├── ui.js             — All overlays, settings, leaderboard, navigation, season pass UI
+├── stats.js          — Per-game + lifetime stats tracking (localStorage)
+├── multiplayer.js    — Lobby creation/joining, Firebase sync, rematch
+├── firebase.js       — Firebase init, auth, database helpers
+├── friends.js        — Friend codes, requests, invitations
+├── audio.js          — Web Audio API sound effects and music
+├── admin.js          — Admin panel for game management
+├── tutorial.js       — Interactive tutorial system
+└── log.js            — Console logging with timestamps
 ```
-
-## 🐛 Bug Fixes (v2.0)
-
-- Own mines no longer explode instantly on placement
-- Mine deaths now properly trigger game over
-- Profile data no longer wiped on page refresh
-- Remote bullet positions stay synced correctly
-- Play Again requires both players to confirm
-- Profile overlay only shows on explicit sign-in (not session restore)
-- All game-over paths work correctly in VS AI mode
-- Score flickering eliminated in game-over transitions
 
 ## 📄 License
 
