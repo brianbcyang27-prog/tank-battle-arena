@@ -1,6 +1,6 @@
 import { G } from './state.js';
 import { log } from './log.js';
-import { GameState, WEAPONS, SKINS, GADGETS, TRAILS, KILL_EFFECTS, STAGES, STAGE_COUNT, LEVELS_PER_STAGE } from './config.js';
+import { GameState, WEAPONS, SKINS, GADGETS, TRAILS, KILL_EFFECTS, WEAPON_SKINS, STAGES, STAGE_COUNT, LEVELS_PER_STAGE } from './config.js';
 import { getPlayerData, getCampaignData, getStageProgress, isStageUnlocked, getGlobalLevel, getGems, getCoins, getRank, getRankProgress, getOwnedWeapons, getOwnedSkins, getEquippedWeapon, getEquippedSkin, getWeaponData, equipWeapon, equipSkin, equipTitle, equipItem, isItemOwned, buyItem,
     getSessionTier, getSessionProgressInTier, getSessionLifetimeXp, getSessionRewards, getClaimedRewards, claimReward, claimAllAvailableRewards, getBackpackByType } from './progression.js';
 import { SESSION } from './sessionConfig.js';
@@ -1145,14 +1145,11 @@ window.showMissions = function() {
                         <button class="mission-claim-btn ${btnClass}" onclick="${btnClick}" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
         </div>
     </div>`;
-
-    grid.innerHTML = html;
-
-    refreshSpBadge();
-}
+            }
             container.innerHTML = html;
         }
         updateCurrencyDisplay();
+        refreshSpBadge();
     });
     showOverlay('missionsOverlay');
     log('info','UI','Opening missions panel');
