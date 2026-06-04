@@ -3,7 +3,56 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tank Battle Arena</title>
+    <meta name="description" content="Tank Battle Arena — a fast-paced 2D top-down tank battle game inspired by Wii Play. Play solo campaign, arcade wave survival with ML enemies, VS AI adaptive battles, and online multiplayer. Free browser game, no download required.">
+    <meta name="keywords" content="tank game, wii tank, tank battle arena, tank battle game, 2d tank game, browser tank game, free tank game, online tank game, multiplayer tank game, arcade tank game">
+    <meta name="robots" content="index, follow">
+    <meta name="application-name" content="Tank Battle Arena">
+    <meta name="theme-color" content="#0d0d1a">
+
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Tank Battle Arena — Free 2D Tank Battle Game">
+    <meta property="og:description" content="A fast-paced 2D top-down tank battle game inspired by Wii Play. Solo campaign, arcade wave survival with ML-powered enemies, VS AI battles, and online multiplayer.">
+    <meta property="og:image" content="https://tank-battle-arena-897c0.web.app/og-image.png">
+    <meta property="og:url" content="https://tank-battle-arena-897c0.web.app/">
+    <meta property="og:site_name" content="Tank Battle Arena">
+    <meta property="og:locale" content="en_US">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Tank Battle Arena — Free 2D Tank Battle Game">
+    <meta name="twitter:description" content="Fast-paced 2D top-down tank battles inspired by Wii Play. Solo, arcade, VS AI, and multiplayer modes. Play free in your browser.">
+    <meta name="twitter:image" content="https://tank-battle-arena-897c0.web.app/og-image.png">
+
+    <title>Tank Battle Arena — Free 2D Tank Battle Game (Wii Play Inspired)</title>
+
+    <!-- JSON-LD Structured Data (Schema.org VideoGame) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "VideoGame",
+      "name": "Tank Battle Arena",
+      "description": "A fast-paced 2D top-down tank battle game inspired by Wii Play. Navigate maze-like arenas, eliminate enemy tanks, and compete in solo campaign, arcade wave survival, VS AI practice, or real-time online multiplayer. Free browser game with no download required.",
+      "url": "https://tank-battle-arena-897c0.web.app/",
+      "genre": ["Action", "Arcade", "Strategy"],
+      "gamePlatform": ["Web Browser", "Desktop", "Mobile"],
+      "applicationCategory": "Game",
+      "operatingSystem": "Any",
+      "browserRequirements": "Requires JavaScript and HTML5 Canvas",
+      "author": {
+        "@type": "Person",
+        "name": "Tank Battle Arena Dev"
+      },
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD",
+        "availability": "https://schema.org/InStock"
+      },
+      "keywords": "tank game, wii tank, tank battle, 2d tank game, browser game, free game, multiplayer tank game, arcade game",
+      "playMode": ["SinglePlayer", "MultiPlayer"]
+    }
+    </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
 
@@ -70,7 +119,8 @@
         #loginOverlay.overlay-home { padding-top: 56px !important; }
         .home-top-right { display:flex; align-items:center; gap:18px; }
         .home-rank-block { display:flex; flex-direction:column; align-items:center; gap:3px; }
-        .home-rank-block > span { font-size:20px; cursor:help; }
+        .home-rank-block > span { font-size:20px; cursor:help; color:#eaeaea; }
+        .rank-title { color:#f1c40f; }
         .home-rank-bar-bg { width:34px; height:3px; background:rgba(255,255,255,0.06); border-radius:3px; overflow:hidden; }
         .home-rank-bar-fill { height:100%; width:0%; background:linear-gradient(90deg,#f39c12,#e94560); border-radius:3px; }
         .home-currency-block { display:flex; gap:10px; border-left:1px solid rgba(255,255,255,0.08); padding-left:16px; }
@@ -116,66 +166,328 @@
         .home-card.versus .card-play { background: linear-gradient(135deg,#e74c3c,#c0392b); }
         .home-card.versus:hover .card-play { box-shadow: 0 0 20px rgba(231,76,60,0.4); }
         /* Campaign Map */
-        .campaign-map-overlay { padding-top: 30px !important; }
-        .campaign-map-overlay h1 { font-size: 32px; letter-spacing: 4px; margin-bottom: 4px; }
-        .campaign-map-sub { color: #888; font-size: 11px; letter-spacing: 2px; margin-bottom: 16px; }
-        .campaign-level-grid {
-            display: flex; flex-direction: column; gap: 6px;
-            max-height: 55vh; overflow-y: auto;
-            padding: 10px 16px; margin-bottom: 14px;
-            width: 100%; max-width: 540px;
+        .campaign-map-overlay {
+            padding: 20px 32px !important;
+            gap: 8px;
+            max-width: none !important;
+            width: 100% !important;
+            box-sizing: border-box;
         }
-        .campaign-level-grid::-webkit-scrollbar { width: 4px; }
-        .campaign-level-grid::-webkit-scrollbar-track { background: transparent; }
-        .campaign-level-grid::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
-        .campaign-row {
-            display: flex; gap: 6px; justify-content: center;
+        .campaign-header { text-align: center; margin-bottom: 0; }
+        .campaign-header h1 { font-size: 28px; letter-spacing: 8px; margin: 0; display: inline; }
+        .campaign-title-icon { font-size: 24px; margin-right: 8px; }
+        .campaign-map-sub { color: #888; font-size: 10px; letter-spacing: 2px; margin: 2px 0 0; }
+
+        /* Campaign Body — split layout */
+        .campaign-body {
+            display: flex;
+            gap: 24px;
+            width: 100%;
+            flex: 1;
+            justify-content: center;
+            align-items: flex-start;
         }
-        .campaign-row.reverse { flex-direction: row-reverse; }
-        .campaign-node {
-            display: flex; flex-direction: column; align-items: center; justify-content: center;
-            width: 46px; height: 46px; border-radius: 10px;
-            background: rgba(255,255,255,0.04); border: 1.5px solid #333;
-            font-size: 11px; font-weight: 700; color: #555;
-            cursor: default; transition: all 0.3s;
+        .campaign-left {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        /* Stage Carousel */
+        .stage-carousel {
+            display: flex; gap: 8px; overflow-x: auto;
+            padding: 6px 2px 10px;
+            scroll-snap-type: x proximity;
+            -webkit-overflow-scrolling: touch;
+            width: 100%;
+        }
+        .stage-carousel::-webkit-scrollbar { height: 3px; }
+        .stage-carousel::-webkit-scrollbar-track { background: transparent; }
+        .stage-carousel::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
+        .stage-card {
+            flex: 0 0 auto; scroll-snap-align: start;
+            display: flex; flex-direction: column; align-items: center;
+            width: 100px; padding: 12px 8px 10px;
+            border-radius: 12px;
+            background: rgba(255,255,255,0.03);
+            border: 1.5px solid #333;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            opacity: 0; transform: translateY(10px);
             position: relative;
+            gap: 4px;
         }
-        .campaign-node .node-level { font-size: 10px; }
-        .campaign-node .node-icon { font-size: 14px; line-height: 1; }
-        .campaign-node.completed {
-            border-color: #27ae60; background: rgba(39,174,96,0.08);
-            color: #2ecc71;
+        .stage-card:hover { border-color: var(--stage-accent); background: rgba(255,255,255,0.06); }
+        .stage-card.active {
+            border-color: var(--stage-accent);
+            background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+            box-shadow: 0 0 20px color-mix(in srgb, var(--stage-accent) 30%, transparent);
         }
-        .campaign-node.completed .node-level { color: #2ecc71; }
-        .campaign-node.current {
-            border-color: #f1c40f; background: rgba(241,196,15,0.1);
-            color: #f1c40f;
-            box-shadow: 0 0 16px rgba(241,196,15,0.25);
-            animation: campaign-pulse 1.5s ease-in-out infinite;
+        .stage-card.locked { opacity: 0.4; cursor: not-allowed; filter: grayscale(0.7); }
+        .stage-card.locked:hover { border-color: #333; }
+        .stage-card-icon { font-size: 22px; line-height: 1; }
+        .stage-card-name { font-size: 9px; font-weight: 600; letter-spacing: 1px; text-align: center; color: #ccc; line-height: 1.2; }
+        .stage-card-progress { font-size: 9px; color: #888; }
+        .stage-card-bar {
+            width: 60px; height: 3px; border-radius: 2px;
+            background: rgba(255,255,255,0.08); overflow: hidden;
         }
-        .campaign-node.current .node-level { color: #f1c40f; }
-        .campaign-node.locked {
-            border-color: #2a2a2a; background: rgba(255,255,255,0.02);
-            color: #333;
+        .stage-card-bar-fill {
+            height: 100%; border-radius: 2px;
+            background: var(--stage-accent);
+            transition: width 0.4s ease;
         }
-        .campaign-node.locked .node-level { color: #333; }
-        .campaign-connector {
-            width: 8px; height: 6px; margin: 0 auto;
-            color: #333; font-size: 6px; text-align: center;
+        .stage-card-lock {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 20px;
         }
-        .campaign-connector.done { color: #27ae60; }
-        .campaign-connector.active { color: #f1c40f; }
-        @keyframes campaign-pulse {
-            0%, 100% { box-shadow: 0 0 8px rgba(241,196,15,0.15); }
-            50% { box-shadow: 0 0 20px rgba(241,196,15,0.4); }
+
+        /* Level Grid */
+        .campaign-level-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            padding: 6px;
+            width: 100%;
+            max-width: 380px;
+        }
+        .level-node {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            aspect-ratio: 1;
+            border-radius: 10px;
+            background: rgba(255,255,255,0.03);
+            border: 1.5px solid #2a2a2a;
+            cursor: default;
+            transition: all 0.25s ease;
+            position: relative;
+            gap: 2px;
+            min-height: 44px;
+        }
+        .level-node .level-node-num { font-size: 12px; font-weight: 800; color: #555; line-height: 1; }
+        .level-node .level-node-status { font-size: 11px; line-height: 1; }
+        .level-node .level-node-record {
+            position: absolute; bottom: -14px;
+            font-size: 6.5px; color: #666; white-space: nowrap;
+            letter-spacing: 0.5px;
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+        }
+        .level-node:hover .level-node-record { opacity: 1; }
+        .level-node.completed {
+            border-color: #27ae60;
+            background: rgba(39,174,96,0.08);
+            cursor: pointer;
+        }
+        .level-node.completed:hover {
+            border-color: #2ecc71;
+            background: rgba(46,204,113,0.14);
+            box-shadow: 0 0 16px rgba(46,204,113,0.2);
+            transform: scale(1.05);
+        }
+        .level-node.completed .level-node-num { color: #2ecc71; }
+        .level-node.completed .level-node-status { color: #2ecc71; }
+        .level-node.available {
+            border-color: #f39c12;
+            background: rgba(243,156,18,0.06);
+            cursor: pointer;
+        }
+        .level-node.available:hover {
+            border-color: #f1c40f;
+            background: rgba(241,196,15,0.12);
+            box-shadow: 0 0 16px rgba(241,196,15,0.2);
+            transform: scale(1.05);
+        }
+        .level-node.available .level-node-num { color: #f39c12; }
+        .level-node.available .level-node-status { color: #f1c40f; }
+        .level-node.locked { opacity: 0.4; }
+        .level-node.locked .level-node-num { color: #333; }
+        .level-node.locked .level-node-status { font-size: 9px; }
+        .level-node.selected {
+            border-color: #3498db !important;
+            background: rgba(52,152,219,0.12) !important;
+            box-shadow: 0 0 20px rgba(52,152,219,0.3), 0 0 40px rgba(52,152,219,0.1);
+            transform: scale(1.08);
+            cursor: pointer;
+            animation: level-select-pulse 2s ease-in-out infinite;
+        }
+        @keyframes level-select-pulse {
+            0%, 100% { box-shadow: 0 0 20px rgba(52,152,219,0.3), 0 0 40px rgba(52,152,219,0.1); }
+            50% { box-shadow: 0 0 24px rgba(52,152,219,0.45), 0 0 50px rgba(52,152,219,0.15); }
+        }
+        .level-node.selected .level-node-num { color: #3498db !important; }
+        .level-node.selected .level-node-status { color: #3498db !important; }
+        .level-node.selected.completed:hover,
+        .level-node.selected.available:hover { transform: scale(1.08); }
+
+        @keyframes level-node-pop {
+            0% { transform: scale(0.6); opacity: 0; }
+            60% { transform: scale(1.08); }
+            100% { transform: scale(1); opacity: 1; }
         }
         .campaign-actions { display: flex; gap: 14px; justify-content: center; margin-top: 4px; }
+        .campaign-actions .btn { padding: 10px 32px; font-size: 12px; }
+
+        /* Stage Detail Panel */
+        .stage-detail-panel {
+            width: 320px;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding: 18px;
+            border-radius: 14px;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.06);
+            backdrop-filter: blur(4px);
+            min-height: 200px;
+            transition: border-color 0.4s ease, box-shadow 0.4s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        .stage-detail-panel::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 14px;
+            opacity: 0.04;
+            background: radial-gradient(ellipse at 50% 0%, var(--stage-accent, #333), transparent 70%);
+            pointer-events: none;
+        }
+        .stage-detail-panel.isEmpty {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #555;
+            font-size: 11px;
+            letter-spacing: 1px;
+        }
+        .stage-detail-header {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            gap: 2px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        .stage-detail-icon { font-size: 32px; line-height: 1; }
+        .stage-detail-name {
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            margin: 2px 0 0;
+            color: var(--stage-accent, #ccc);
+        }
+        .stage-detail-level-label {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 3px;
+            color: #888;
+            margin-top: 2px;
+        }
+        .stage-detail-desc {
+            font-size: 9px;
+            color: #777;
+            letter-spacing: 0.5px;
+            margin: 0;
+            line-height: 1.3;
+        }
+        .detail-card {
+            background: rgba(0,0,0,0.3);
+            border-radius: 10px;
+            padding: 8px 10px;
+            border: 1px solid rgba(255,255,255,0.04);
+        }
+        .detail-card h3 {
+            font-size: 9px;
+            font-weight: 600;
+            letter-spacing: 1.5px;
+            color: #888;
+            margin: 0 0 6px;
+            text-transform: uppercase;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 3px 0;
+            font-size: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+        }
+        .detail-row:last-child { border-bottom: none; }
+        .detail-row .label { color: #777; }
+        .detail-row .value {
+            color: #ccc;
+            font-weight: 500;
+            text-align: right;
+        }
+        .detail-row .value.highlight { color: var(--stage-accent, #f39c12); }
+        .detail-grip-bar {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+        }
+        .detail-grip-dot {
+            width: 6px; height: 6px;
+            border-radius: 50%;
+            background: #333;
+            transition: background 0.3s;
+        }
+        .detail-grip-dot.filled { background: var(--stage-accent, #888); }
+        .detail-hazard-tag {
+            display: inline-block;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 8px;
+            letter-spacing: 0.5px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .stage-detail-play {
+            margin-top: auto;
+            width: 100%;
+            padding: 12px !important;
+            font-size: 13px !important;
+            font-weight: 700;
+            letter-spacing: 3px;
+            background: linear-gradient(135deg, #f39c12, #e67e22) !important;
+            border: none !important;
+            border-radius: 8px !important;
+            color: #1a1a2e !important;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 24px rgba(243,156,18,0.3);
+        }
+        .stage-detail-play:hover {
+            filter: brightness(1.15);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 32px rgba(243,156,18,0.5);
+        }
+        .stage-detail-play:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 12px rgba(243,156,18,0.3);
+        }
+        .stage-detail-wr-loading {
+            font-size: 9px;
+            color: #555;
+            font-style: italic;
+        }
+
+        /* ARCADE — cyan glow */
+        .home-card.arcade { border-color: #0a3a3a; }
+        .home-card.arcade:hover { border-color: #1abc9c; box-shadow: 0 0 30px rgba(26,188,156,0.25), 0 0 60px rgba(26,188,156,0.08); }
+        .home-card.arcade .card-play { background: linear-gradient(135deg,#16a085,#1abc9c); }
+        .home-card.arcade:hover .card-play { box-shadow: 0 0 20px rgba(26,188,156,0.4); }
 
         /* VS AI — purple glow */
         .home-card.vsai { border-color: #2a1a3a; }
         .home-card.vsai:hover { border-color: #9b59b6; box-shadow: 0 0 30px rgba(155,89,182,0.25), 0 0 60px rgba(155,89,182,0.08); }
         .home-card.vsai .card-play { background: linear-gradient(135deg,#8e44ad,#9b59b6); }
-.home-card.vsai:hover .card-play { box-shadow: 0 0 20px rgba(155,89,182,0.4); }
+        .home-card.vsai:hover .card-play { box-shadow: 0 0 20px rgba(155,89,182,0.4); }
 
 .home-card.campaign { border-color: #1a2a3a; }
 .home-card.campaign:hover { border-color: #3498db; box-shadow: 0 0 30px rgba(52,152,219,0.25), 0 0 60px rgba(52,152,219,0.08); }
@@ -194,25 +506,45 @@
         .versus-or-row .versus-or-line { flex:1; height:1px; background:#444; }
         .versus-or-row span { color:#666; font-size:10px; }
 
-        /* === HOME BOTTOM BAR — floating corner buttons === */
+        /* === HOME BOTTOM BAR — centered wrap nav === */
         .home-bottom-bar {
-            height: 0; min-height: 0; flex-shrink: 0;
-            position: relative;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 20px 14px;
+            flex-shrink: 0;
             background: transparent;
-            border-top: none;
         }
-        .home-bottom-left {
-            position: absolute;
-            bottom: 24px;
-            left: 40px;
-            display: flex; gap: 6px; flex-wrap: wrap;
+        .more-wrap {
+            position: relative;
+            display: inline-flex;
         }
-        .home-bottom-right {
+        .more-menu {
+            display: none;
             position: absolute;
-            bottom: 24px;
-            right: 40px;
-            display: flex; gap: 6px; flex-wrap: wrap;
-            justify-content: flex-end;
+            bottom: 100%;
+            right: 0;
+            margin-bottom: 8px;
+            background: rgba(20,20,40,0.97);
+            border: 1px solid #3a3a5a;
+            border-radius: 8px;
+            padding: 6px;
+            display: none;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 160px;
+            z-index: 100;
+            box-shadow: 0 -4px 24px rgba(0,0,0,0.5);
+        }
+        .more-menu.open {
+            display: flex;
+        }
+        .more-menu .nav-btn {
+            width: 100%;
+            text-align: left;
+            padding: 8px 14px;
         }
         .nav-btn {
             background: rgba(255,255,255,0.04); border: 1px solid #2a2a2a;
@@ -239,6 +571,7 @@
 .home-card:nth-child(2) { animation-delay:0.2s; }
 .home-card:nth-child(3) { animation-delay:0.3s; }
 .home-card:nth-child(4) { animation-delay:0.4s; }
+.home-card:nth-child(5) { animation-delay:0.5s; }
         @keyframes card-in {
             0% { opacity:0; transform:translateY(24px) scale(0.95); }
             100% { opacity:1; transform:translateY(0) scale(1); }
@@ -348,6 +681,116 @@
         @keyframes rec-pulse {
             0%,100% { opacity:0.6; transform:scale(1); }
             50% { opacity:1; transform:scale(1.04); }
+        }
+
+        /* ==================== VERSUS COUNTDOWN ==================== */
+        @keyframes vs-slideInLeft {
+            0% { opacity:0; transform:translateX(-120px) scale(0.9); }
+            100% { opacity:1; transform:translateX(0) scale(1); }
+        }
+        @keyframes vs-slideInRight {
+            0% { opacity:0; transform:translateX(120px) scale(0.9); }
+            100% { opacity:1; transform:translateX(0) scale(1); }
+        }
+        @keyframes vs-scaleIn {
+            0% { opacity:0; transform:scale(0) rotate(-15deg); }
+            50% { opacity:1; transform:scale(1.3) rotate(3deg); }
+            100% { opacity:1; transform:scale(1) rotate(0deg); }
+        }
+        @keyframes vs-countPulse {
+            0%,100% { transform:scale(1); opacity:0.8; }
+            50% { transform:scale(1.15); opacity:1; }
+        }
+        @keyframes vs-fadeInUp {
+            0% { opacity:0; transform:translateY(20px); }
+            100% { opacity:1; transform:translateY(0); }
+        }
+        @keyframes vs-fightFlash {
+            0% { opacity:0; transform:scale(2); filter:blur(10px); }
+            40% { opacity:1; transform:scale(1); filter:blur(0); }
+            100% { opacity:1; transform:scale(1); filter:blur(0); }
+        }
+        @keyframes vs-barFill {
+            0% { width:0; }
+        }
+        .vs-player-card {
+            background: rgba(0,0,0,0.45);
+            border: 1.5px solid rgba(255,255,255,0.08);
+            border-radius: 14px;
+            padding: 18px 22px;
+            width: 280px;
+            backdrop-filter: blur(6px);
+        }
+        .vs-player-card.p1 { border-color: rgba(233,69,96,0.3); }
+        .vs-player-card.p2 { border-color: rgba(52,152,219,0.3); }
+        .vs-player-name {
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 3px;
+            margin-bottom: 10px;
+        }
+        .vs-weapon-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255,255,255,0.04);
+            border-radius: 8px;
+            padding: 6px 10px;
+            margin-bottom: 10px;
+        }
+        .vs-weapon-icon { font-size: 22px; }
+        .vs-weapon-name { font-size: 11px; color: #ccc; letter-spacing: 1px; }
+        .vs-upgrade-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 5px 0;
+        }
+        .vs-upgrade-icon { font-size: 14px; width: 18px; text-align: center; }
+        .vs-upgrade-label { font-size: 9px; color: #888; width: 60px; letter-spacing: 1px; flex-shrink:0; }
+        .vs-upgrade-bar-bg {
+            flex: 1;
+            height: 6px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .vs-upgrade-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.8s ease;
+        }
+        .vs-upgrade-bar-fill.speed { background: linear-gradient(90deg,#f1c40f,#f39c12); }
+        .vs-upgrade-bar-fill.fuel { background: linear-gradient(90deg,#27ae60,#2ecc71); }
+        .vs-upgrade-bar-fill.mine { background: linear-gradient(90deg,#e74c3c,#e94560); }
+        .vs-upgrade-level {
+            font-size: 10px;
+            color: #aaa;
+            width: 28px;
+            text-align: right;
+        }
+        .vs-countdown-number {
+            font-size: 72px;
+            font-weight: 900;
+            color: #f1c40f;
+            text-shadow: 0 0 40px rgba(241,196,15,0.5), 0 0 80px rgba(241,196,15,0.2);
+            animation: vs-countPulse 0.8s ease-in-out infinite;
+        }
+        .vs-fight-text {
+            font-size: 80px;
+            font-weight: 900;
+            color: #e94560;
+            text-shadow: 0 0 50px rgba(233,69,96,0.6), 0 0 100px rgba(233,69,96,0.3);
+            animation: vs-fightFlash 0.5s ease-out forwards;
+        }
+        .vs-vs-text {
+            font-size: 48px;
+            font-weight: 900;
+            color: #e94560;
+            text-shadow: 0 0 30px rgba(233,69,96,0.4);
+            letter-spacing: 6px;
+            opacity: 0;
+            animation: vs-scaleIn 0.6s ease-out 0.3s forwards;
         }
 
         /* Welcome animation */
@@ -569,6 +1012,17 @@
 
         /* Shop items grid */
         .shop-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(155px,1fr)); gap:10px; }
+        .skin-preview-canvas { display:block; margin:4px auto 6px; border-radius:4px; background:rgba(0,0,0,0.3); }
+        /* Purchase celebration */
+        #celebrationOverlay { position:fixed; inset:0; z-index:300; background:rgba(0,0,0,0.85); display:none; align-items:center; justify-content:center; }
+        #celebrationOverlay.open { display:flex; }
+        #celebrationCanvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+        #celebrationContent { position:relative; text-align:center; z-index:1; }
+        #celebrationTitle { font-size:36px; font-weight:900; letter-spacing:4px; text-shadow:0 0 30px currentColor; margin-bottom:8px; }
+        #celebrationName { font-size:22px; letter-spacing:3px; margin-bottom:20px; }
+        #celebrationTankBox { width:120px; height:100px; margin:0 auto 16px; background:rgba(0,0,0,0.4); border-radius:12px; border:1px solid #333; }
+        #celebrationBtn { padding:12px 32px; border:2px solid #f39c12; border-radius:8px; background:transparent; color:#f39c12; font-family:'Orbitron',monospace; font-size:14px; letter-spacing:2px; cursor:pointer; transition:all 0.2s; }
+        #celebrationBtn:hover { background:rgba(243,156,18,0.15); transform:scale(1.05); }
         .shop-item { background:rgba(0,0,0,0.3); border:1px solid #333; border-radius:8px; padding:14px 10px; text-align:center; transition:all 0.25s; }
         .shop-item:hover { border-color:#555; transform:translateY(-2px); }
         .shop-item.owned { border-color:#27ae60; background:rgba(39,174,96,0.06); }
@@ -660,9 +1114,175 @@
         .shop-item-price .gem { color:#ff6b9d; }
         .shop-item-price .coin { color:#f1c40f; }
         .shop-item-price .free { color:#27ae60; }
+
+        /* ==================== SEASON PASS ==================== */
+        .sp-container {
+            width: 95%; max-width: 820px; max-height: 88vh;
+            display: flex; flex-direction: column; align-items: center;
+            gap: 10px; padding: 10px 0;
+        }
+        .sp-header {
+            width: 100%; text-align: center;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid #2a2a2a; border-radius: 12px;
+            padding: 14px 20px 12px;
+        }
+        .sp-header-top {
+            display: flex; align-items: center; justify-content: center;
+            gap: 10px; margin-bottom: 4px;
+        }
+        .sp-season-icon { font-size: 32px; }
+        .sp-season-name { font-size: 22px; font-weight: 700; color: #ff6a00; letter-spacing: 2px; text-shadow: 0 0 20px rgba(255,106,0,0.3); }
+        .sp-season-desc { font-size: 10px; color: #888; letter-spacing: 1px; margin-bottom: 10px; }
+        .sp-progress-bar {
+            width: 100%; max-width: 480px; height: 8px;
+            background: rgba(255,255,255,0.06); border-radius: 6px;
+            overflow: hidden; margin: 6px auto;
+        }
+        .sp-progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6a00, #ffd700);
+            border-radius: 6px; transition: width 0.5s ease;
+            box-shadow: 0 0 12px rgba(255,106,0,0.3);
+        }
+        .sp-progress-stats {
+            display: flex; justify-content: center; gap: 20px;
+            font-size: 10px; color: #888; letter-spacing: 0.5px;
+        }
+        .sp-progress-stats strong { color: #f1c40f; }
+        .sp-grid {
+            width: 100%; flex: 1; overflow-y: auto;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px; padding: 4px;
+        }
+        .sp-grid::-webkit-scrollbar { width: 4px; }
+        .sp-grid::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+        .sp-tier {
+            display: flex; flex-direction: column; align-items: center;
+            gap: 4px; padding: 8px 6px; border-radius: 8px;
+            border: 1.5px solid #222; background: rgba(255,255,255,0.02);
+            transition: all 0.25s; position: relative; overflow: hidden;
+            min-height: 72px;
+        }
+        .sp-tier.locked { opacity: 0.45; }
+        .sp-tier.unlocked {
+            border-color: #2a5a2a; background: rgba(46,204,113,0.04);
+        }
+        .sp-tier.claimed {
+            border-color: #555; background: rgba(255,255,255,0.02);
+        }
+        .sp-tier.milestone {
+            border-color: #ff6a00;
+            background: linear-gradient(135deg, rgba(255,106,0,0.06), rgba(255,215,0,0.03));
+        }
+        .sp-tier.milestone::before {
+            content: '★'; position: absolute; top: 2px; right: 6px;
+            font-size: 10px; color: #ff6a00; opacity: 0.5;
+        }
+        .sp-tier.unlocked.milestone { border-color: #ff6a00; box-shadow: 0 0 12px rgba(255,106,0,0.12); }
+        .sp-tier.claimed.milestone { border-color: #6a3a00; }
+        .nav-badge {
+            position: absolute; top: -6px; right: -6px;
+            min-width: 18px; height: 18px;
+            background: #e74c3c; color: #fff;
+            border-radius: 10px; font-size: 10px;
+            font-weight: 700; display: flex; align-items: center; justify-content: center;
+            padding: 0 5px; box-shadow: 0 0 8px rgba(231,76,60,0.5);
+            animation: badgePulse 1.5s ease-in-out infinite;
+        }
+        @keyframes badgePulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); box-shadow: 0 0 14px rgba(231,76,60,0.7); }
+        }
+        @keyframes claimPop {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.15); opacity: 0.9; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .sp-tier.claiming {
+            animation: claimPop 0.4s ease;
+            border-color: #f1c40f !important;
+            box-shadow: 0 0 24px rgba(241,196,15,0.3) !important;
+        }
+        .sp-tier.unlocked:not(.claimed) {
+            animation: unlockGlow 2s ease-in-out infinite;
+        }
+        @keyframes unlockGlow {
+            0%, 100% { box-shadow: 0 0 6px rgba(46,204,113,0.1); }
+            50% { box-shadow: 0 0 16px rgba(46,204,113,0.25); }
+        }
+        .sp-tier.claimed.milestone { border-color: #6a3a00; }
+
+        /* ===== LOADOUT OVERLAY ===== */
+        .lo-container {
+            width: 95%; max-width: 700px; max-height: 88vh;
+            display: flex; flex-direction: column; align-items: center;
+            gap: 10px; padding: 10px 0;
+        }
+        .lo-header { text-align: center; display: flex; flex-direction: column; gap: 2px; }
+        .lo-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px; width: 100%;
+            padding: 4px;
+        }
+        .lo-slot {
+            display: flex; flex-direction: column; align-items: center;
+            background: rgba(0,0,0,0.3); border: 1px solid #333;
+            border-radius: 8px; padding: 10px 8px; cursor: pointer;
+            transition: all 0.2s; gap: 4px;
+            min-height: 80px;
+        }
+        .lo-slot:hover { border-color: #f39c12; background: rgba(0,0,0,0.45); }
+        .lo-slot-icon { font-size: 24px; }
+        .lo-slot-label { font-size: 9px; color: #888; letter-spacing: 1px; text-transform: uppercase; }
+        .lo-slot-name { font-size: 12px; color: #f1c40f; text-align: center; line-height: 1.2; }
+        .lo-slot-empty { font-size: 10px; color: #555; font-style: italic; }
+        .lo-item-grid {
+            width: 100%; max-width: 600px;
+            display: flex; flex-direction: column; align-items: center;
+            background: rgba(0,0,0,0.25); border: 1px solid #333;
+            border-radius: 8px; padding: 12px;
+        }
+        .lo-item-btn {
+            padding: 8px 14px; font-size: 11px; cursor: pointer;
+            border-radius: 6px; border: 2px solid #444;
+            background: rgba(60,60,60,0.3); color: #ccc;
+            font-family: 'Orbitron', monospace; transition: all 0.2s;
+        }
+        .lo-item-btn:hover { border-color: #f39c12; }
+        .lo-item-btn.equipped { border-color: #f1c40f; background: rgba(241,196,15,0.15); color: #f1c40f; }
+        .lo-item-btn.owned { border-color: #555; background: rgba(46,204,113,0.1); }
+        .lo-item-btn.locked { opacity: 0.4; cursor: not-allowed; }
     </style>
 </head>
 <body>
+    <!-- SEO-accessible game description (visually hidden, readable by search engines) -->
+    <div style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;" aria-hidden="false">
+        <h1>Tank Battle Arena — Free 2D Tank Battle Game</h1>
+        <p>Tank Battle Arena is a fast-paced 2D top-down tank battle game inspired by Wii Play. Navigate maze-like arenas, eliminate enemy tanks, and compete across multiple game modes.</p>
+        <h2>Game Modes</h2>
+        <ul>
+            <li><strong>Solo Campaign</strong> — Progress through procedurally generated levels with increasing enemy difficulty. Beat your personal best score across 60+ levels.</li>
+            <li><strong>Arcade Wave Survival</strong> — Fight waves of AI enemies powered by Q-learning machine learning. Each wave gets harder as enemies adapt to your tactics.</li>
+            <li><strong>VS AI</strong> — Best-of-9 match against a self-learning adaptive opponent that studies your playstyle across rounds.</li>
+            <li><strong>Multiplayer</strong> — Real-time online tank battles with friends via Firebase. Create or join lobbies with room codes.</li>
+        </ul>
+        <h2>Features</h2>
+        <ul>
+            <li>4 tiers of enemy AI with increasing difficulty</li>
+            <li>5 weapon types: standard, rapid-fire, cannon, shotgun, sniper</li>
+            <li>Deployable mines with 120px blast radius</li>
+            <li>Procedurally generated maze arenas</li>
+            <li>Upgrade system: speed, fuel capacity, mine radius</li>
+            <li>Online leaderboard with Firebase integration</li>
+            <li>Guest sign-in or email authentication</li>
+            <li>Friend codes and invitation system</li>
+        </ul>
+        <h2>Controls</h2>
+        <p>WASD to move, mouse to aim, left-click to fire, C to place mines, Escape to pause. Free browser game with no download required — works on desktop and mobile browsers.</p>
+    </div>
     <div id="logPanel"></div>
 
     <div id="notificationToast" style="display:none;position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:200;background:rgba(13,13,26,0.95);border:1px solid #f39c12;border-radius:8px;padding:12px 20px;min-width:300px;max-width:450px;text-align:center;pointer-events:all;">
@@ -722,11 +1342,26 @@
                         <span id="homeGems" class="home-gems">💎 0</span>
                         <span id="homeCoins" class="home-coins">🪙 0</span>
                     </div>
+                    <button class="nav-btn" onclick="signOut()" style="background:rgba(231,76,60,0.2);border-color:#e74c3c;color:#e74c3c;font-size:10px;padding:6px 12px;">LOGOUT</button>
                 </div>
             </div>
             <h1>TANK BATTLE</h1>
             <h2>ARENA</h2>
-            <div id="loginForm" style="display:none;"></div>
+            <div id="loginForm" style="display:none;width:100%;flex-direction:column;align-items:center;">
+                <h3 style="color:#eaeaea;margin:10px 0 5px;font-size:18px;">Sign in to save progress</h3>
+                <input type="email" id="emailInput" placeholder="Email" style="width:260px;padding:12px;margin:5px 0;border-radius:6px;border:1px solid #444;background:#2a2a4a;color:#eaeaea;font-size:14px;">
+                <input type="password" id="passwordInput" placeholder="Password" style="width:260px;padding:12px;margin:5px 0;border-radius:6px;border:1px solid #444;background:#2a2a4a;color:#eaeaea;font-size:14px;">
+                <div id="authError" style="color:#e74c3c;font-size:12px;display:none;margin:5px 0;"></div>
+                <button onclick="signIn()" style="width:260px;padding:12px;margin:8px 0 5px;background:#27ae60;border:none;border-radius:6px;color:white;font-size:14px;cursor:pointer;">SIGN IN</button>
+                <button onclick="signUp()" style="width:260px;padding:12px;margin:5px 0;background:#3498db;border:none;border-radius:6px;color:white;font-size:14px;cursor:pointer;">SIGN UP</button>
+                <div style="display:flex;align-items:center;gap:10px;margin:10px 0;width:260px;">
+                    <div style="flex:1;height:1px;background:#444;"></div>
+                    <span style="color:#666;font-size:12px;">OR</span>
+                    <div style="flex:1;height:1px;background:#444;"></div>
+                </div>
+                <button onclick="signInWithGoogle()" style="width:260px;padding:12px;margin:5px 0;background:#fff;border:none;border-radius:6px;color:#333;font-size:14px;cursor:pointer;font-weight:bold;">Continue with Google</button>
+                <button onclick="signInAsGuest()" style="width:260px;padding:12px;margin:5px 0 15px;background:transparent;border:1px solid #555;border-radius:6px;color:#888;font-size:12px;cursor:pointer;">Continue as Guest</button>
+            </div>
             <div id="loggedInPanel" style="display:none;width:100%;flex-direction:column;">
                 <!-- CENTER: game mode cards -->
                 <div class="home-center">
@@ -743,10 +1378,16 @@
                             <div class="card-desc">Multiplayer Battle</div>
                             <div class="card-play">PLAY</div>
                         </div>
+                        <div class="home-card arcade" onclick="startArcade()">
+                            <div class="card-icon">🧠</div>
+                            <div class="card-title">ARCADE</div>
+                            <div class="card-desc">Wave Survival — ML Enemies</div>
+                            <div class="card-play">FIGHT</div>
+                        </div>
                         <div class="home-card vsai" onclick="startVersusAI()">
                             <div class="card-icon">🤖</div>
-                            <div class="card-title">ARCADE</div>
-                            <div class="card-desc">Quick Play — Adaptive Bot</div>
+                            <div class="card-title">VS AI</div>
+                            <div class="card-desc">Best-of-9 Adaptive Bot</div>
                             <div class="card-play">FIGHT</div>
                         </div>
                         <div class="home-card campaign" onclick="startCampaign()">
@@ -772,23 +1413,49 @@
                     </div>
                 </div>
 
-                <!-- BOTTOM CORNERS: split navigation -->
+                <!-- BOTTOM NAV: streamlined -->
                 <div class="home-bottom-bar">
-                    <div class="home-bottom-left">
-                        <button class="nav-btn" onclick="showSettings()">⚙ SETTINGS</button>
-                        <button class="nav-btn" onclick="showAbout()">ℹ ABOUT</button>
-                        <button class="nav-btn" onclick="showTutorial()">🎮 TUTORIAL</button>
+                    <button class="nav-btn" onclick="showMissions()">🎯 MISSIONS</button>
+                    <button class="nav-btn" onclick="showShop()">🛒 SHOP</button>
+                    <button class="nav-btn" onclick="showUpgrades()">🔧 UPGRADE</button>
+                    <button class="nav-btn" onclick="showFriends()">👥 FRIENDS</button>
+                    <button class="nav-btn" onclick="showSeasonPass()" id="seasonPassBtn" style="border-color:#ff6a00;color:#ff6a00;position:relative;">🔥 SEASON<span id="spBadge" class="nav-badge" style="display:none;"></span></button>
+                    <div class="more-wrap">
+                        <button class="nav-btn more-btn" onclick="toggleMoreMenu()">☰ MORE</button>
+                        <div id="moreMenu" class="more-menu">
+                            <button class="nav-btn" onclick="showLoadout();toggleMoreMenu()">⚙️ LOADOUT</button>
+                            <button class="nav-btn" onclick="showSettings();toggleMoreMenu()">⚙ SETTINGS</button>
+                            <button class="nav-btn" onclick="showTutorial();toggleMoreMenu()">🎮 TUTORIAL</button>
+                            <button class="nav-btn" onclick="showStats();toggleMoreMenu()">📊 STATS</button>
+                            <button class="nav-btn" onclick="showProgression();toggleMoreMenu()">📈 PROGRESSION</button>
+                            <button class="nav-btn" onclick="showLeaderboard();toggleMoreMenu()">🏆 LEADERBOARD</button>
+                            <button class="nav-btn" onclick="showAbout();toggleMoreMenu()">ℹ ABOUT</button>
+                            <button class="nav-btn" onclick="openFeedback();toggleMoreMenu()">💬 FEEDBACK</button>
+                            <button class="nav-btn" onclick="toggleLog()">📋 LOG</button>
+                        </div>
                     </div>
-                    <div class="home-bottom-right">
-                        <button class="nav-btn" onclick="showMissions()">🎯 MISSIONS</button>
-                        <button class="nav-btn" onclick="showShop()">🛒 SHOP</button>
-                        <button class="nav-btn" onclick="showUpgrades()">🔧 UPGRADE</button>
-                        <button class="nav-btn" onclick="showFriends()">👥 FRIENDS</button>
-<button class="nav-btn" onclick="showStats()">📊 STATS</button>
-            <button class="nav-btn" onclick="showProgression()">📈 PROGRESSION</button>
-            <button class="nav-btn" onclick="showLeaderboard()">🏆 LEADERBOARD</button>
-                        <button id="logToggle" class="nav-btn log-btn" onclick="let lp=document.getElementById('logPanel');lp.style.display=lp.style.display==='none'?'block':'none'">LOG</button>
-                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- LOADOUT SELECTOR -->
+        <div id="loadoutOverlay" class="overlay" style="display:none;">
+            <div class="lo-container">
+                <div class="lo-header">
+                    <span style="font-size:24px;">⚙️ LOADOUT</span>
+                    <span style="color:#888;font-size:11px;">Customize your tank's equipment and appearance</span>
+                </div>
+                <div id="loadoutSlotGrid" class="lo-grid">
+                    <!-- Slots rendered by JS -->
+                </div>
+                <div id="loadoutItemGrid" class="lo-item-grid" style="display:none;">
+                    <div id="loadoutItemHeader" style="color:#f39c12;font-size:14px;margin-bottom:8px;"></div>
+                    <div id="loadoutItemList" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-height:280px;overflow-y:auto;padding:4px;"></div>
+                    <button onclick="closeLoadoutPicker()" style="margin-top:10px;padding:8px 24px;font-size:12px;cursor:pointer;background:#555;border:none;border-radius:6px;color:white;">BACK TO LOADOUT</button>
+                </div>
+                <div style="display:flex;gap:12px;margin-top:10px;">
+                    <button onclick="closeLoadout()" class="btn btn-danger" style="padding:10px 32px;">CLOSE</button>
+                    <button onclick="saveLoadout()" class="btn btn-success" style="padding:10px 32px;">SAVE & CLOSE</button>
                 </div>
             </div>
         </div>
@@ -810,6 +1477,10 @@
             <h2 style="font-size:32px;margin-bottom:5px;">WELCOME!</h2>
             <p style="color:#888;font-size:12px;margin-bottom:20px;">Complete your profile to continue</p>
             <div style="display:flex;flex-direction:column;gap:12px;width:300px;text-align:left;">
+                <div>
+                    <label style="color:#888;font-size:10px;letter-spacing:1px;display:block;margin-bottom:4px;">USERNAME</label>
+                    <input type="text" id="profileDisplayName" placeholder="Enter your display name" style="width:-webkit-fill-available;padding:10px;border-radius:6px;border:1px solid #666;background:#2a2a4a;color:#eaeaea;font-size:13px;font-family:'Orbitron',monospace;">
+                </div>
                 <div>
                     <label style="color:#888;font-size:10px;letter-spacing:1px;display:block;margin-bottom:4px;">BIRTHDAY</label>
                     <input type="date" id="profileBirthday" style="width:-webkit-fill-available;padding:10px;border-radius:6px;border:1px solid #666;background:#2a2a4a;color:#eaeaea;font-size:13px;font-family:'Orbitron',monospace;color-scheme:dark;">
@@ -933,12 +1604,61 @@
 
         <!-- CAMPAIGN MAP OVERLAY -->
         <div id="campaignMapOverlay" class="overlay campaign-map-overlay">
-            <h1 style="font-size:32px;letter-spacing:4px;">🎯 CAMPAIGN</h1>
-            <p class="campaign-map-sub" id="campaignMapSub">LOADING YOUR PROGRESS...</p>
-            <div class="campaign-level-grid" id="campaignLevelGrid"></div>
+            <div class="campaign-header">
+                <span class="campaign-title-icon">🎯</span>
+                <h1>CAMPAIGN</h1>
+                <p class="campaign-map-sub" id="campaignMapSub">LOADING YOUR PROGRESS...</p>
+            </div>
+            <div class="campaign-body">
+                <div class="campaign-left">
+                    <div class="stage-carousel" id="stageCarousel"></div>
+                    <div class="campaign-level-grid" id="campaignLevelGrid"></div>
+                </div>
+                <div class="stage-detail-panel" id="stageDetailPanel"></div>
+            </div>
             <div class="campaign-actions">
-                <button class="btn btn-warning" id="campaignStartBtn" onclick="startCampaignGame()" style="padding:14px 40px;font-size:14px;">CONTINUE</button>
-                <button class="btn btn-info" onclick="closeCampaignMap()" style="padding:14px 30px;font-size:12px;">BACK</button>
+                <button class="btn btn-info" onclick="closeCampaignMap()">BACK</button>
+            </div>
+        </div>
+
+        <!-- SEASON PASS OVERLAY -->
+        <div id="seasonPassOverlay" class="overlay">
+            <div class="sp-container">
+                <div class="sp-header" id="seasonPassHeader">
+                    <!-- populated by JS -->
+                </div>
+                <div class="sp-grid" id="seasonPassGrid">
+                    <!-- populated by JS -->
+                </div>
+                <button class="btn btn-info" onclick="closeSeasonPass()" style="margin-top:14px;padding:12px 40px;">CLOSE</button>
+            </div>
+        </div>
+
+        <!-- FEEDBACK OVERLAY -->
+        <div id="feedbackOverlay" class="overlay" style="display:none;">
+            <h2 style="font-size:28px;margin-bottom:2px;">💬 FEEDBACK</h2>
+            <p style="color:#888;font-size:11px;margin-bottom:16px;">Help us improve — report bugs, suggest features, or share your thoughts</p>
+            <div style="display:flex;flex-direction:column;gap:10px;width:340px;text-align:left;">
+                <div>
+                    <label style="color:#888;font-size:10px;letter-spacing:1px;display:block;margin-bottom:3px;">TYPE</label>
+                    <select id="feedbackType" style="width:100%;padding:10px;border-radius:6px;border:1px solid #444;background:#2a2a4a;color:#eaeaea;font-size:13px;">
+                        <option value="suggestion">💡 Suggestion</option>
+                        <option value="bug">🐛 Bug Report</option>
+                        <option value="feature">✨ Feature Request</option>
+                        <option value="other">📝 Other</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="color:#888;font-size:10px;letter-spacing:1px;display:block;margin-bottom:3px;">MESSAGE</label>
+                    <textarea id="feedbackMessage" rows="4" placeholder="Tell us what's on your mind..." style="width:100%;padding:10px;border-radius:6px;border:1px solid #444;background:#2a2a4a;color:#eaeaea;font-size:13px;resize:vertical;font-family:inherit;box-sizing:border-box;"></textarea>
+                </div>
+                <div>
+                    <label style="color:#888;font-size:10px;letter-spacing:1px;display:block;margin-bottom:3px;">EMAIL (optional — for follow-up)</label>
+                    <input type="email" id="feedbackEmail" placeholder="you@example.com" style="width:100%;padding:10px;border-radius:6px;border:1px solid #444;background:#2a2a4a;color:#eaeaea;font-size:13px;box-sizing:border-box;">
+                </div>
+                <div id="feedbackStatus" style="color:#2ecc71;font-size:11px;display:none;"></div>
+                <button id="feedbackSubmitBtn" onclick="submitFeedback()" style="padding:12px;background:linear-gradient(135deg,#3498db,#2980b9);border:none;border-radius:8px;color:white;font-size:14px;cursor:pointer;font-weight:600;">SUBMIT FEEDBACK</button>
+                <button onclick="closeFeedback()" style="background:transparent;border:1px solid #555;color:#888;padding:10px;border-radius:6px;cursor:pointer;font-size:12px;">CANCEL</button>
             </div>
         </div>
 
@@ -1012,6 +1732,79 @@
             <div style="display:flex;gap:10px;margin-top:20px;">
                 <button class="btn btn-info" onclick="closeTutorial()">BACK TO MENU</button>
                 <button class="btn" onclick="closeTutorial();startTutorial()" style="background:transparent;border:1px solid #555;color:#888;">REPLAY TUTORIAL</button>
+            </div>
+        </div>
+
+        <!-- VERSUS COUNTDOWN OVERLAY -->
+        <div id="vsCountdownOverlay" class="overlay" style="z-index:150;background:radial-gradient(ellipse at 50% 40%,#0d0d1a 0%,#050510 100%);">
+            <div style="display:flex;align-items:center;justify-content:center;gap:60px;flex:1;width:100%;padding-top:30px;">
+                <!-- Player 1 Card -->
+                <div id="vsP1Card" class="vs-player-card p1" style="opacity:0;">
+                    <div class="vs-player-name" id="vsP1Name" style="color:#e94560;">YOU</div>
+                    <div class="vs-weapon-row">
+                        <span class="vs-weapon-icon" id="vsP1WeaponIcon">🔫</span>
+                        <span class="vs-weapon-name" id="vsP1WeaponName">Standard Cannon</span>
+                    </div>
+                    <div id="vsP1Upgrades">
+                        <div class="vs-upgrade-row">
+                            <span class="vs-upgrade-icon">⚡</span>
+                            <span class="vs-upgrade-label">SPEED</span>
+                            <div class="vs-upgrade-bar-bg"><div class="vs-upgrade-bar-fill speed" id="vsP1Speed" style="width:0%;"></div></div>
+                            <span class="vs-upgrade-level" id="vsP1SpeedLv">0/10</span>
+                        </div>
+                        <div class="vs-upgrade-row">
+                            <span class="vs-upgrade-icon">⛽</span>
+                            <span class="vs-upgrade-label">FUEL</span>
+                            <div class="vs-upgrade-bar-bg"><div class="vs-upgrade-bar-fill fuel" id="vsP1Fuel" style="width:0%;"></div></div>
+                            <span class="vs-upgrade-level" id="vsP1FuelLv">0/10</span>
+                        </div>
+                        <div class="vs-upgrade-row">
+                            <span class="vs-upgrade-icon">💥</span>
+                            <span class="vs-upgrade-label">MINE</span>
+                            <div class="vs-upgrade-bar-bg"><div class="vs-upgrade-bar-fill mine" id="vsP1Mine" style="width:0%;"></div></div>
+                            <span class="vs-upgrade-level" id="vsP1MineLv">0/10</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- VS Center -->
+                <div style="display:flex;flex-direction:column;align-items:center;gap:12px;">
+                    <div class="vs-vs-text">VS</div>
+                    <div id="vsCountdownNumber" class="vs-countdown-number">5</div>
+                    <div id="vsCountdownLabel" style="color:#888;font-size:11px;letter-spacing:3px;opacity:0;animation:vs-fadeInUp 0.5s ease-out 0.5s forwards;">GET READY</div>
+                </div>
+
+                <!-- Player 2 Card -->
+                <div id="vsP2Card" class="vs-player-card p2" style="opacity:0;">
+                    <div class="vs-player-name" id="vsP2Name" style="color:#3498db;">OPPONENT</div>
+                    <div class="vs-weapon-row">
+                        <span class="vs-weapon-icon" id="vsP2WeaponIcon">🔫</span>
+                        <span class="vs-weapon-name" id="vsP2WeaponName">Standard Cannon</span>
+                    </div>
+                    <div id="vsP2Upgrades">
+                        <div class="vs-upgrade-row">
+                            <span class="vs-upgrade-icon">⚡</span>
+                            <span class="vs-upgrade-label">SPEED</span>
+                            <div class="vs-upgrade-bar-bg"><div class="vs-upgrade-bar-fill speed" id="vsP2Speed" style="width:0%;"></div></div>
+                            <span class="vs-upgrade-level" id="vsP2SpeedLv">0/10</span>
+                        </div>
+                        <div class="vs-upgrade-row">
+                            <span class="vs-upgrade-icon">⛽</span>
+                            <span class="vs-upgrade-label">FUEL</span>
+                            <div class="vs-upgrade-bar-bg"><div class="vs-upgrade-bar-fill fuel" id="vsP2Fuel" style="width:0%;"></div></div>
+                            <span class="vs-upgrade-level" id="vsP2FuelLv">0/10</span>
+                        </div>
+                        <div class="vs-upgrade-row">
+                            <span class="vs-upgrade-icon">💥</span>
+                            <span class="vs-upgrade-label">MINE</span>
+                            <div class="vs-upgrade-bar-bg"><div class="vs-upgrade-bar-fill mine" id="vsP2Mine" style="width:0%;"></div></div>
+                            <span class="vs-upgrade-level" id="vsP2MineLv">0/10</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="vsFightContainer" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:none;">
+                <div class="vs-fight-text">FIGHT!</div>
             </div>
         </div>
 
@@ -1139,6 +1932,13 @@
                         oninput="applyLBFilter()"
                         style="width:100%;padding:7px 10px;border-radius:6px;border:1px solid #444;background:rgba(0,0,0,0.5);color:#eaeaea;font-size:11px;font-family:'Orbitron',monospace;margin-bottom:6px;box-sizing:border-box;outline:none;">
                     <div id="lbFilters" style="display:flex;gap:4px;flex-wrap:wrap;">
+                        <button class="lb-mode" data-mode="all" onclick="setLBMode('all')" style="flex:1;min-width:60px;padding:5px 6px;border-radius:4px;border:1px solid #555;background:rgba(52,152,219,0.3);color:#f39c12;font-size:9px;font-family:'Orbitron',monospace;cursor:pointer;transition:all 0.2s;">ALL</button>
+                        <button class="lb-mode" data-mode="campaign" onclick="setLBMode('campaign')" style="flex:1;min-width:60px;padding:5px 6px;border-radius:4px;border:1px solid #555;background:transparent;color:#999;font-size:9px;font-family:'Orbitron',monospace;cursor:pointer;transition:all 0.2s;">CAMPAIGN</button>
+                        <button class="lb-mode" data-mode="solo" onclick="setLBMode('solo')" style="flex:1;min-width:60px;padding:5px 6px;border-radius:4px;border:1px solid #555;background:transparent;color:#999;font-size:9px;font-family:'Orbitron',monospace;cursor:pointer;transition:all 0.2s;">SOLO</button>
+                        <button class="lb-mode" data-mode="arcade" onclick="setLBMode('arcade')" style="flex:1;min-width:60px;padding:5px 6px;border-radius:4px;border:1px solid #555;background:transparent;color:#999;font-size:9px;font-family:'Orbitron',monospace;cursor:pointer;transition:all 0.2s;">ARCADE</button>
+                        <button class="lb-mode" data-mode="vs_ai" onclick="setLBMode('vs_ai')" style="flex:1;min-width:60px;padding:5px 6px;border-radius:4px;border:1px solid #555;background:transparent;color:#999;font-size:9px;font-family:'Orbitron',monospace;cursor:pointer;transition:all 0.2s;">VS AI</button>
+                    </div>
+                    <div id="lbFilters2" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px;">
                         <button class="lb-filter" data-filter="all" onclick="setLBFilter('all')" style="flex:1;min-width:60px;padding:5px 6px;border-radius:4px;border:1px solid #555;background:rgba(52,152,219,0.3);color:#f39c12;font-size:9px;font-family:'Orbitron',monospace;cursor:pointer;transition:all 0.2s;">ALL</button>
                         <button class="lb-filter" data-filter="top10" onclick="setLBFilter('top10')" style="flex:1;min-width:60px;padding:5px 6px;border-radius:4px;border:1px solid #555;background:transparent;color:#999;font-size:9px;font-family:'Orbitron',monospace;cursor:pointer;transition:all 0.2s;">TOP 10</button>
                         <button class="lb-filter" data-filter="top50" onclick="setLBFilter('top50')" style="flex:1;min-width:60px;padding:5px 6px;border-radius:4px;border:1px solid #555;background:transparent;color:#999;font-size:9px;font-family:'Orbitron',monospace;cursor:pointer;transition:all 0.2s;">TOP 50</button>
@@ -1177,14 +1977,30 @@
             <p style="color:#888;font-size:11px;margin-bottom:12px;">
                 💎 <span id="shopGems">0</span> gems &nbsp;|&nbsp; 🪙 <span id="shopCoins">0</span> coins
             </p>
-            <div style="display:flex;gap:8px;margin-bottom:12px;">
-                <button class="mode-tab selected" id="shopTabSkins" onclick="switchShopTab('skins')" style="flex:1;">SKINS</button>
-                <button class="mode-tab" id="shopTabWeapons" onclick="switchShopTab('weapons')" style="flex:1;">WEAPONS</button>
+            <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;justify-content:center;">
+                <button class="mode-tab selected" id="shopTabSkins" onclick="switchShopTab('skins')" style="flex:1;min-width:60px;">SKINS</button>
+                <button class="mode-tab" id="shopTabWeapons" onclick="switchShopTab('weapons')" style="flex:1;min-width:60px;">WEAPONS</button>
+                <button class="mode-tab" id="shopTabGadgets" onclick="switchShopTab('gadgets')" style="flex:1;min-width:60px;">GADGETS</button>
+                <button class="mode-tab" id="shopTabTrails" onclick="switchShopTab('trails')" style="flex:1;min-width:60px;">TRAILS</button>
+                <button class="mode-tab" id="shopTabKillEffects" onclick="switchShopTab('killEffects')" style="flex:1;min-width:60px;">KILL FX</button>
+                <button class="mode-tab" id="shopTabWeaponSkins" onclick="switchShopTab('weaponSkins')" style="flex:1;min-width:60px;">W. SKINS</button>
             </div>
             <div id="shopContent" style="width:90%;max-width:520px;max-height:55vh;overflow-y:auto;background:rgba(0,0,0,0.25);border:1px solid #333;border-radius:8px;padding:12px;">
                 <p style="color:#666;text-align:center;">Loading shop...</p>
             </div>
             <button class="btn btn-danger" onclick="closeShop()" style="margin-top:12px;">CLOSE</button>
+        </div>
+    </div>
+
+    <!-- PURCHASE CELEBRATION OVERLAY -->
+    <div id="celebrationOverlay">
+        <canvas id="celebrationCanvas"></canvas>
+        <div id="celebrationContent">
+            <div id="celebrationTitle" style="color:#f39c12;">PURCHASED!</div>
+            <div id="celebrationName" style="color:#fff;">—</div>
+            <canvas id="celebrationTankBox" width="120" height="100"></canvas>
+            <div style="color:#888;font-size:11px;letter-spacing:1px;margin-bottom:16px;">New skin equipped and ready for battle!</div>
+            <button id="celebrationBtn" onclick="closeCelebration()">AWESOME!</button>
         </div>
     </div>
 
@@ -1203,5 +2019,28 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script type="module" src="src/main.js"></script>
+    <script>
+    // Home screen menu toggles (inline to avoid module import caching issues)
+    window.toggleMoreMenu = function() {
+        var menu = document.getElementById('moreMenu');
+        if (menu) menu.classList.toggle('open');
+    };
+    window.toggleLog = function() {
+        var lp = document.getElementById('logPanel');
+        if (lp) lp.style.display = lp.style.display === 'none' ? 'block' : 'none';
+        closeMoreMenu();
+    };
+    function closeMoreMenu() {
+        var menu = document.getElementById('moreMenu');
+        if (menu) menu.classList.remove('open');
+    }
+    document.addEventListener('click', function(e) {
+        var menu = document.getElementById('moreMenu');
+        var btn = document.querySelector('.more-btn');
+        if (menu && menu.classList.contains('open') && !menu.contains(e.target) && (!btn || !btn.contains(e.target))) {
+            menu.classList.remove('open');
+        }
+    });
+    </script>
 </body>
 </html>

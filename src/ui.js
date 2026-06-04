@@ -1,8 +1,8 @@
 import { G } from './state.js';
 import { log } from './log.js';
-import { GameState, WEAPONS, SKINS, STAGES, STAGE_COUNT, LEVELS_PER_STAGE } from './config.js';
-import { getCampaignData, getStageProgress, isStageUnlocked, getGlobalLevel, getGems, getCoins, getRank, getRankProgress, getOwnedWeapons, getOwnedSkins, getEquippedWeapon, getEquippedSkin, getWeaponData, equipWeapon, equipSkin,
-    getSessionTier, getSessionProgressInTier, getSessionLifetimeXp, getSessionRewards, getClaimedRewards, claimReward, claimAllAvailableRewards } from './progression.js';
+import { GameState, WEAPONS, SKINS, GADGETS, TRAILS, KILL_EFFECTS, STAGES, STAGE_COUNT, LEVELS_PER_STAGE } from './config.js';
+import { getPlayerData, getCampaignData, getStageProgress, isStageUnlocked, getGlobalLevel, getGems, getCoins, getRank, getRankProgress, getOwnedWeapons, getOwnedSkins, getEquippedWeapon, getEquippedSkin, getWeaponData, equipWeapon, equipSkin, equipTitle, equipItem, isItemOwned, buyItem,
+    getSessionTier, getSessionProgressInTier, getSessionLifetimeXp, getSessionRewards, getClaimedRewards, claimReward, claimAllAvailableRewards, getBackpackByType } from './progression.js';
 import { SESSION } from './sessionConfig.js';
 
 // ==================== SETTINGS ====================
@@ -1143,9 +1143,13 @@ window.showMissions = function() {
                     <div class="mission-progress">
                         <span class="mission-pct">${pct}%</span>
                         <button class="mission-claim-btn ${btnClass}" onclick="${btnClick}" ${btnDisabled ? 'disabled' : ''}>${btnText}</button>
-                    </div>
-                </div>`;
-            }
+        </div>
+    </div>`;
+
+    grid.innerHTML = html;
+
+    refreshSpBadge();
+}
             container.innerHTML = html;
         }
         updateCurrencyDisplay();
@@ -1256,8 +1260,28 @@ window.showSeasonPass = function() {
 
 window.closeSeasonPass = function() {
     showOverlay('loginOverlay');
+    refreshSpBadge();
     log('info','UI','Closing Season Pass');
 };
+
+export function refreshSpBadge() {
+    const badge = document.getElementById('spBadge');
+    if (!badge) return;
+    try {
+        const tier = getSessionTier();
+        const claimed = getClaimedRewards();
+        const allRewards = getSessionRewards();
+        const unclaimed = allRewards.filter(e => tier >= e.tier && !claimed.includes(e.tier)).length;
+        if (unclaimed > 0) {
+            badge.textContent = unclaimed > 99 ? '99+' : unclaimed;
+            badge.style.display = 'flex';
+        } else {
+            badge.style.display = 'none';
+        }
+    } catch (e) {
+        badge.style.display = 'none';
+    }
+}
 
 function renderSeasonPass() {
     const grid = document.getElementById('seasonPassGrid');
@@ -1374,6 +1398,15 @@ function renderSeasonPass() {
 window.claimBattlePassTier = function(tier) {
     const result = claimReward(tier);
     if (result.ok) {
+        // Brief pop animation on claimed card
+        const cards = document.querySelectorAll('.sp-tier');
+        cards.forEach(c => {
+            const numEl = c.querySelector('.sp-tier-num');
+            if (numEl && numEl.textContent.includes('TIER ' + tier)) {
+                c.classList.add('claiming');
+                setTimeout(() => c.classList.remove('claiming'), 500);
+            }
+        });
         renderSeasonPass();
         updateCurrencyDisplay();
         log('info','SESSION','Claimed tier ' + tier + ' reward');
@@ -1404,12 +1437,31 @@ window.showShop = function() {
 window.switchShopTab = function(tab) {
     document.getElementById('shopTabSkins').classList.toggle('selected', tab === 'skins');
     document.getElementById('shopTabWeapons').classList.toggle('selected', tab === 'weapons');
+    document.getElementById('shopTabGadgets').classList.toggle('selected', tab === 'gadgets');
+    document.getElementById('shopTabTrails').classList.toggle('selected', tab === 'trails');
+    document.getElementById('shopTabKillEffects').classList.toggle('selected', tab === 'killEffects');
+    document.getElementById('shopTabWeaponSkins').classList.toggle('selected', tab === 'weaponSkins');
     const content = document.getElementById('shopContent');
     import('./progression.js').then(m => {
-        if (tab === 'skins') {
-            renderShopItems(content, SKINS, 'skin', m);
-        } else {
-            renderShopItems(content, WEAPONS, 'weapon', m);
+        switch (tab) {
+            case 'skins':
+                renderShopItems(content, SKINS, 'skin', m);
+                break;
+            case 'weapons':
+                renderShopItems(content, WEAPONS, 'weapon', m);
+                break;
+            case 'gadgets':
+                renderShopItems(content, GADGETS, 'gadget', m);
+                break;
+            case 'trails':
+                renderShopItems(content, TRAILS, 'trail', m);
+                break;
+            case 'killEffects':
+                renderShopItems(content, KILL_EFFECTS, 'killEffect', m);
+                break;
+            case 'weaponSkins':
+                renderShopItems(content, WEAPON_SKINS, 'weaponSkin', m);
+                break;
         }
     });
 };
@@ -1424,8 +1476,13 @@ const WEAPON_ICONS = {
 };
 
 function renderShopItems(container, items, type, prog) {
-    const ownedList = type === 'skin' ? prog.getOwnedSkins() : prog.getOwnedWeapons();
-    const equippedId = type === 'skin' ? prog.getEquippedSkin() : prog.getEquippedWeapon();
+    const isBackpackType = ['gadget', 'trail', 'killEffect', 'weaponSkin'].includes(type);
+    const ownedList = isBackpackType
+        ? (prog.getBackpackByType ? prog.getBackpackByType(type) : [])
+        : type === 'skin' ? prog.getOwnedSkins() : prog.getOwnedWeapons();
+    const equippedId = isBackpackType
+        ? (prog.getEquippedItem ? prog.getEquippedItem(type) : null)
+        : type === 'skin' ? prog.getEquippedSkin() : prog.getEquippedWeapon();
     const rank = prog.getRank();
 
     let html = '<div class="shop-grid">';
@@ -1449,21 +1506,24 @@ function renderShopItems(container, items, type, prog) {
         if (equipped) {
             btnHtml = '<button class="shop-item-btn equipped">EQUIPPED</button>';
         } else if (owned) {
-            const fn = type === 'skin' ? 'equipShopSkin' : 'equipShopWeapon';
-            btnHtml = `<button class="shop-item-btn equip" onclick="${fn}('${item.id}')">EQUIP</button>`;
+            const fn = isBackpackType ? `equipShopItem('${type}','${item.id}')` : (type === 'skin' ? `equipShopSkin('${item.id}')` : `equipShopWeapon('${item.id}')`);
+            btnHtml = `<button class="shop-item-btn equip" onclick="${fn}">EQUIP</button>`;
         } else if (rankLocked) {
-            btnHtml = `<button class="shop-item-btn" style="color:#666;cursor:not-allowed;" disabled>🔒 ${item.minRank.title}</button>`;
-        } else if (item.cost === 0) {
-            const fn = type === 'skin' ? 'buyShopSkin' : 'buyShopWeapon';
-            btnHtml = `<button class="shop-item-btn buy" onclick="${fn}('${item.id}')">GET FREE</button>`;
+            btnHtml = `<button class="shop-item-btn" style="color:#666;cursor:not-allowed;" disabled>🔒 ${item.minRank.title || item.minRank}</button>`;
         } else {
-            const fn = type === 'skin' ? 'buyShopSkin' : 'buyShopWeapon';
-            btnHtml = `<button class="shop-item-btn buy" onclick="${fn}('${item.id}')">BUY</button>`;
+            const fn = isBackpackType ? `buyShopItem('${type}','${item.id}')` : (type === 'skin' ? `buyShopSkin('${item.id}')` : `buyShopWeapon('${item.id}')`);
+            const label = (item.cost === 0) ? 'GET FREE' : 'BUY';
+            btnHtml = `<button class="shop-item-btn buy" onclick="${fn}">${label}</button>`;
         }
 
-        const iconHtml = type === 'skin'
-            ? `<canvas class="skin-preview-canvas" data-skin-id="${item.id}" width="60" height="50"></canvas>`
-            : `<div class="shop-item-icon weapon-icon" onclick="showWeaponPreview3D('${item.id}')" style="cursor:pointer;" title="Click for 3D preview">${WEAPON_ICONS[item.id] || '🔫'}</div>`;
+        let iconHtml = '';
+        if (type === 'skin') {
+            iconHtml = `<canvas class="skin-preview-canvas" data-skin-id="${item.id}" width="60" height="50"></canvas>`;
+        } else if (type === 'weapon') {
+            iconHtml = `<div class="shop-item-icon weapon-icon" onclick="showWeaponPreview3D('${item.id}')" style="cursor:pointer;" title="Click for 3D preview">${WEAPON_ICONS[item.id] || '🔫'}</div>`;
+        } else {
+            iconHtml = `<div class="shop-item-icon" style="font-size:28px;text-align:center;">${item.icon || '•'}</div>`;
+        }
 
         html += `
         <div class="${itemClass}">
@@ -1609,6 +1669,22 @@ window.equipShopSkin = function(id) {
 };
 window.equipShopWeapon = function(id) {
     import('./progression.js').then(m => { m.equipWeapon(id); window.showShop(); });
+};
+
+// Generic shop helpers for backpack items
+window.buyShopItem = function(type, id) {
+    import('./progression.js').then(m => {
+        const result = m.buyItem(type, id);
+        if (result && result.ok) {
+            closeShop();
+            showCelebration(id);
+        } else {
+            window.showShop();
+        }
+    });
+};
+window.equipShopItem = function(type, id) {
+    import('./progression.js').then(m => { m.equipItem(type, id); window.showShop(); });
 };
 
 // ==================== UPGRADE SHOP ====================
@@ -1820,90 +1896,147 @@ window.showWeaponPreview3D = function(weaponId) {
     });
 };
 
-let _loadoutTimer = null;
-let _loadoutSeconds = 5;
-let _loadoutPhase = 'weapon';
-let _selectedWeapon = null;
-let _selectedSkin = null;
-let _pendingGameStart = null;
+// ===================== LOADOUT SYSTEM =====================
+
+let _loadoutConfirmCb = null;
 
 export function showLoadout(onConfirm) {
-    _selectedWeapon = null;
-    _selectedSkin = null;
-    _loadoutPhase = 'weapon';
-    _loadoutSeconds = 5;
-    _pendingGameStart = onConfirm;
-    document.getElementById('loadoutTitle').textContent = 'SELECT WEAPON';
-    renderLoadoutOptions();
+    _loadoutConfirmCb = onConfirm || null;
+    renderLoadoutSlots();
     showOverlay('loadoutOverlay');
-    startLoadoutTimer();
+    log('info', 'UI', 'Opening loadout');
+}
+window.showLoadout = showLoadout;
+
+function renderLoadoutSlots() {
+    const grid = document.getElementById('loadoutSlotGrid');
+    if (!grid) return;
+    const P = getPlayerData();
+    const loadout = P.loadout || {};
+
+    const slots = [
+        { type: 'weapon', label: 'Weapon', icon: '🔫', getEquipped: () => loadout.weapon || 'standard', getItems: () => { const own = getOwnedWeapons(); return WEAPONS.filter(w => own.includes(w.id)); }, getName: (id) => { const w = WEAPONS.find(x => x.id === id); return w ? w.name : id; } },
+        { type: 'skin', label: 'Skin', icon: '🎨', getEquipped: () => loadout.skin || 'classic', getItems: () => { const own = getOwnedSkins(); return SKINS.filter(s => own.includes(s.id)); }, getName: (id) => { const s = SKINS.find(x => x.id === id); return s ? s.name : id; } },
+        { type: 'title', label: 'Title', icon: '🏆', getEquipped: () => loadout.title || null, getItems: () => { const titles = P.titles || []; return titles.map(t => ({ id: t, name: t })); }, getName: (id) => id },
+        { type: 'gadget', label: 'Gadget', icon: '⚡', getEquipped: () => loadout.gadget || null, getItems: () => { return GADGETS.filter(g => isItemOwned('gadget', g.id)); }, getName: (id) => { const g = GADGETS.find(x => x.id === id); return g ? g.name : id; } },
+        { type: 'trail', label: 'Trail', icon: '🌊', getEquipped: () => loadout.trail || 'default', getItems: () => { return TRAILS.filter(t => isItemOwned('trail', t.id)); }, getName: (id) => { const t = TRAILS.find(x => x.id === id); return t ? t.name : id; } },
+        { type: 'killEffect', label: 'Kill Effect', icon: '💥', getEquipped: () => loadout.killEffect || 'default', getItems: () => { return KILL_EFFECTS.filter(k => isItemOwned('killEffect', k.id)); }, getName: (id) => { const k = KILL_EFFECTS.find(x => x.id === id); return k ? k.name : id; } },
+    ];
+
+    grid.innerHTML = slots.map(slot => {
+        const equippedId = slot.getEquipped();
+        const name = equippedId ? slot.getName(equippedId) : 'None';
+        return `<div class="lo-slot" onclick="selectLoadoutSlot('${slot.type}')">
+            <div class="lo-slot-icon">${slot.icon}</div>
+            <div class="lo-slot-label">${slot.label}</div>
+            <div class="lo-slot-name">${name}</div>
+        </div>`;
+    }).join('');
 }
 
-function startLoadoutTimer() {
-    if (_loadoutTimer) clearInterval(_loadoutTimer);
-    _loadoutTimer = setInterval(() => {
-        _loadoutSeconds--;
-        const timerEl = document.getElementById('loadoutTimer');
-        if (timerEl) timerEl.textContent = _loadoutSeconds;
-        if (_loadoutSeconds <= 0) {
-            clearInterval(_loadoutTimer);
-            _loadoutTimer = null;
-            if (_loadoutPhase === 'weapon') {
-                _selectedWeapon = _selectedWeapon || getWeaponData(getEquippedWeapon())?.id || 'standard';
-                _loadoutPhase = 'skin';
-                _loadoutSeconds = 5;
-                document.getElementById('loadoutTitle').textContent = 'SELECT SKIN';
-                renderLoadoutOptions();
-                const timerEl = document.getElementById('loadoutTimer');
-                if (timerEl) timerEl.textContent = _loadoutSeconds;
-                startLoadoutTimer();
-            } else {
-                confirmLoadout();
-            }
+function renderLoadoutPicker(type) {
+    const slotGrid = document.getElementById('loadoutSlotGrid');
+    const itemGrid = document.getElementById('loadoutItemGrid');
+    const itemHeader = document.getElementById('loadoutItemHeader');
+    const itemList = document.getElementById('loadoutItemList');
+    const P = getPlayerData();
+    const loadout = P.loadout || {};
+    if (!slotGrid || !itemGrid || !itemHeader || !itemList) return;
+
+    slotGrid.style.display = 'none';
+    itemGrid.style.display = 'flex';
+
+    let items = [];
+    let currentEquipped = null;
+
+    switch (type) {
+        case 'weapon': {
+            itemHeader.textContent = 'SELECT WEAPON';
+            const owned = getOwnedWeapons();
+            items = WEAPONS.filter(w => owned.includes(w.id));
+            currentEquipped = loadout.weapon || 'standard';
+            break;
         }
-    }, 1000);
-}
-
-function renderLoadoutOptions() {
-    const container = document.getElementById('loadoutContent');
-    if (!container) return;
-    container.innerHTML = '';
-    if (_loadoutPhase === 'weapon') {
-        const owned = getOwnedWeapons();
-        const equipped = _selectedWeapon || getEquippedWeapon();
-        WEAPONS.forEach(w => {
-            const isOwned = owned.includes(w.id);
-            const isSelected = equipped === w.id;
-            const btn = document.createElement('button');
-            btn.style.cssText = 'padding:12px 16px;font-size:13px;cursor:pointer;border-radius:8px;border:2px solid ' + (isSelected ? '#f39c12' : '#444') + ';background:' + (isOwned ? 'rgba(46,204,113,0.2)' : 'rgba(100,100,100,0.2)') + ';color:' + (isOwned ? '#eaeaea' : '#666') + ';opacity:' + (isOwned ? '1' : '0.5');
-            btn.textContent = w.name + (isSelected ? ' ✓' : '');
-            btn.disabled = !isOwned;
-            btn.onclick = () => { _selectedWeapon = w.id; renderLoadoutOptions(); };
-            container.appendChild(btn);
-        });
-    } else {
-        const owned = getOwnedSkins();
-        const equipped = _selectedSkin || getEquippedSkin();
-        SKINS.forEach(s => {
-            const isOwned = owned.includes(s.id);
-            const isSelected = equipped === s.id;
-            const btn = document.createElement('button');
-            btn.style.cssText = 'padding:12px 16px;font-size:13px;cursor:pointer;border-radius:8px;border:3px solid ' + (isSelected ? '#f39c12' : '#444') + ';background:' + (isOwned ? s.color + '33' : 'rgba(100,100,100,0.2)') + ';color:' + (isOwned ? s.color : '#666') + ';opacity:' + (isOwned ? '1' : '0.5');
-            btn.textContent = s.name + (isSelected ? ' ✓' : '');
-            btn.disabled = !isOwned;
-            btn.onclick = () => { _selectedSkin = s.id; renderLoadoutOptions(); };
-            container.appendChild(btn);
-        });
+        case 'skin': {
+            itemHeader.textContent = 'SELECT SKIN';
+            const owned = getOwnedSkins();
+            items = SKINS.filter(s => owned.includes(s.id));
+            currentEquipped = loadout.skin || 'classic';
+            break;
+        }
+        case 'title': {
+            itemHeader.textContent = 'SELECT TITLE';
+            const titles = P.titles || [];
+            items = [{ id: null, name: 'None' }, ...titles.map(t => ({ id: t, name: t }))];
+            currentEquipped = loadout.title || null;
+            break;
+        }
+        case 'gadget': {
+            itemHeader.textContent = 'SELECT GADGET';
+            items = [{ id: null, name: 'None' }, ...GADGETS.filter(g => isItemOwned('gadget', g.id))];
+            currentEquipped = loadout.gadget || null;
+            break;
+        }
+        case 'trail': {
+            itemHeader.textContent = 'SELECT TRAIL';
+            items = TRAILS.filter(t => isItemOwned('trail', t.id));
+            currentEquipped = loadout.trail || 'default';
+            break;
+        }
+        case 'killEffect': {
+            itemHeader.textContent = 'SELECT KILL EFFECT';
+            items = KILL_EFFECTS.filter(k => isItemOwned('killEffect', k.id));
+            currentEquipped = loadout.killEffect || 'default';
+            break;
+        }
     }
+
+    itemList.innerHTML = items.map(item => {
+        const isSelected = item.id === currentEquipped;
+        const cls = isSelected ? 'lo-item-btn equipped' : 'lo-item-btn owned';
+        const check = isSelected ? ' ✓' : '';
+        return `<button class="${cls}" onclick="equipLoadoutItem('${type}','${item.id || ''}')">${item.name}${check}</button>`;
+    }).join('');
 }
 
-window.confirmLoadout = function() {
-    if (_loadoutTimer) { clearInterval(_loadoutTimer); _loadoutTimer = null; }
+window.selectLoadoutSlot = function(type) {
+    renderLoadoutPicker(type);
+};
+
+window.closeLoadoutPicker = function() {
+    document.getElementById('loadoutSlotGrid').style.display = 'grid';
+    document.getElementById('loadoutItemGrid').style.display = 'none';
+    renderLoadoutSlots();
+};
+
+window.equipLoadoutItem = function(type, id) {
+    const actualId = id === '' ? null : id;
+    if (type === 'weapon') {
+        if (actualId) equipWeapon(actualId);
+    } else if (type === 'skin') {
+        if (actualId) equipSkin(actualId);
+    } else if (type === 'title') {
+        equipTitle(actualId || '');
+    } else {
+        equipItem(type, actualId);
+    }
+    closeLoadoutPicker();
+};
+
+window.saveLoadout = function() {
     showOverlay(null);
-    if (_selectedWeapon) equipWeapon(_selectedWeapon);
-    if (_selectedSkin) equipSkin(_selectedSkin);
-    if (_pendingGameStart) _pendingGameStart();
-    _pendingGameStart = null;
+    if (_loadoutConfirmCb) {
+        const cb = _loadoutConfirmCb;
+        _loadoutConfirmCb = null;
+        cb();
+    }
+    log('info', 'UI', 'Loadout saved');
+};
+
+window.closeLoadout = function() {
+    showOverlay(null);
+    _loadoutConfirmCb = null;
+    log('info', 'UI', 'Loadout closed');
 };
 
 // ===================== PURCHASE CELEBRATION =====================

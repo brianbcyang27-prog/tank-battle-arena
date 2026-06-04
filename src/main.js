@@ -22,12 +22,9 @@ G._traceCanvas.width = CANVAS_WIDTH;
 G._traceCanvas.height = CANVAS_HEIGHT;
 G._traceCtx = G._traceCanvas.getContext('2d');
 
-G._fadeTraceCanvas = document.createElement('canvas');
-G._fadeTraceCanvas.width = CANVAS_WIDTH;
-G._fadeTraceCanvas.height = CANVAS_HEIGHT;
-G._fadeTraceCtx = G._fadeTraceCanvas.getContext('2d');
 
 loadSettings();
+import('./ui.js').then(m => { if (m.refreshSpBadge) m.refreshSpBadge(); });
 
 // Start listening for friend invitations globally (shows notification toast)
 import('./friends.js').then(m => {
@@ -63,16 +60,8 @@ function gameLoop(ct) {
     const stageColors = G.stageColors;
     ctx.fillStyle = stageColors ? stageColors.bg : COLORS.background;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-    if (G._fadeTraceCtx) {
-        G._fadeTraceCtx.globalCompositeOperation = 'destination-out';
-        G._fadeTraceCtx.globalAlpha = 0.002;
-        G._fadeTraceCtx.fillStyle = '#000';
-        G._fadeTraceCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-        G._fadeTraceCtx.globalAlpha = 1;
-        G._fadeTraceCtx.globalCompositeOperation = 'source-over';
-    }
+
     if (G._traceCanvas) ctx.drawImage(G._traceCanvas, 0, 0);
-    if (G._fadeTraceCanvas) ctx.drawImage(G._fadeTraceCanvas, 0, 0);
     for (let w of G.walls) w.draw();
 
     // Screen shake transform
@@ -254,7 +243,7 @@ function gameLoop(ct) {
                         if (!b.pierceCount) b.alive = false;
                         e.takeDamage(b.damage||1);
                         recordHit(b.damage||1); if (G.aiTracker) G.aiTracker.recordHit();
-                        if (!e.alive) { recordKill(); trackKill(); if (G.aiTracker) G.aiTracker.recordKill(); G.score += 100 * (G.gameMode === 'arcade' ? G.arcadeWave : G.level); log('info', 'KILL', 'Enemy killed! Score: ' + G.score); }
+                        if (!e.alive) { recordKill(); trackKill(); if (G.aiTracker) G.aiTracker.recordKill(); G.score += 100 * (G.gameMode === 'arcade' ? G.arcadeWave : G.level); log('info', 'KILL', 'Enemy killed! Score: ' + G.score); if (G.player && G.player.killEffectId && G.player.killEffectId !== 'default') { import('./engine.js').then(m => m.spawnKillEffect(G.player.killEffectId, e.pos.x, e.pos.y, e.color)); } }
                         break;
                     }
                 }
@@ -573,6 +562,49 @@ function gameLoop(ct) {
             ctx.font = '7px Orbitron';
             ctx.fillStyle = '#666';
             ctx.fillText('BOOST', hudX + 12, boostBarY + 11);
+
+            // Gadget cooldown display
+            if (p.gadgetId) {
+                const gadgetX = hudX - 50;
+                const gadgetY = hudY;
+                const gadgetW = 42;
+                const gadgetH = 42;
+                const cd = p.gadgetCooldown;
+                const timer = p.gadgetTimer;
+                const ready = p.gadgetReady && !p.gadgetActive;
+                const cooldownPct = cd > 0 ? 1 - (timer / cd) : 1;
+
+                ctx.fillStyle = 'rgba(10,10,26,0.7)';
+                ctx.beginPath();
+                ctx.roundRect(gadgetX, gadgetY, gadgetW, gadgetH, 6);
+                ctx.fill();
+                ctx.strokeStyle = ready ? 'rgba(46,204,113,0.5)' : 'rgba(255,255,255,0.12)';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.roundRect(gadgetX, gadgetY, gadgetW, gadgetH, 6);
+                ctx.stroke();
+
+                ctx.textAlign = 'center';
+                ctx.font = '18px Orbitron';
+                ctx.fillStyle = ready ? '#2ecc71' : '#666';
+                ctx.fillText(ready ? 'Q' : '⚡', gadgetX + gadgetW / 2, gadgetY + 26);
+
+                if (!ready) {
+                    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+                    ctx.beginPath();
+                    ctx.roundRect(gadgetX + 4, gadgetY + gadgetH - 8, gadgetW - 8, 4, 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#3498db';
+                    ctx.beginPath();
+                    ctx.roundRect(gadgetX + 4, gadgetY + gadgetH - 8, (gadgetW - 8) * cooldownPct, 4, 2);
+                    ctx.fill();
+                }
+
+                ctx.textAlign = 'left';
+                ctx.font = '6px Orbitron';
+                ctx.fillStyle = '#555';
+                ctx.fillText('GADGET', gadgetX + 1, gadgetY - 2);
+            }
         }
     }
 
