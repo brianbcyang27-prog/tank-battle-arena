@@ -35,8 +35,9 @@ export const G = {
     lobbyId: null,
     gameMode: 'single',
     aiDifficulty: 2, // 1=easy, 2=medium, 3=hard (for vs AI mode)
-    currentUser: null,
-    remoteTanks: {},
+  currentUser: null,
+  userProfile: null,
+  remoteTanks: {},
     remoteBullets: {},
     _multiplayerStarting: false,
     _bulletSeq: 0,
@@ -62,5 +63,14 @@ export const G = {
 
     // Friends
     friendCode: null,
-    friendUids: new Set()
+    friendUids: [],
+
+    // ARCADE mode (wave-based Q-learning)
+    arcadeQL: null,       // QLearningAgent instance (set on arcade start)
+    arcadeLives: 3,       // remaining lives
+    arcadeMaxLives: 3,    // starting lives
+    arcadeWave: 1,        // current wave number
+    arcadeKills: 0,       // kills in this arcade game
+    arcadeWaveComplete: false,  // true while wave transition is happening
+    _arcadeWaveTimer: 0,  // countdown until next wave spawns
 };

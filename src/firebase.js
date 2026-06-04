@@ -39,6 +39,7 @@ export { auth, db };
 // ==================== AUTH ====================
 // Track whether the login was from an explicit user action vs session restore
 let _explicitSignIn = false;
+let _signingOut = false;
 let _progUnsub = null;
 
 onAuthStateChanged(auth, (user) => {
@@ -47,6 +48,13 @@ onAuthStateChanged(auth, (user) => {
 
     if (user) {
         log('info','AUTH','User logged in: ' + (user.email || 'guest'));
+        // Clear local data on explicit sign-in to prevent cross-user data leaks.
+        // Firebase sync will repopulate for the correct user.
+        if (_explicitSignIn) {
+            ['tankBattle_progression','tankBattle_campaign','tankBattle_lifetimeStats','tankBattle_personalBest','tankBattleLeaderboard'].forEach(k => {
+                try { localStorage.removeItem(k); } catch(_) {}
+            });
+        }
         document.getElementById('loginForm').style.display = 'none';
         document.getElementById('loggedInPanel').style.display = 'flex';
         document.getElementById('homeTopBar').style.display = 'flex';
@@ -57,38 +65,40 @@ onAuthStateChanged(auth, (user) => {
         const avatarEl = document.getElementById('homeAvatar');
         if (avatarEl) avatarEl.textContent = (dispName)[0].toUpperCase();
 
-        const userRefInAuth = ref(db, 'users/' + user.uid);
-        update(userRefInAuth, {
-            email: user.email || (user.displayName ? user.displayName + '@guest.local' : 'guest@local'),
-            lastLogin: Date.now(),
-            online: true
-        });
-        onDisconnect(userRefInAuth).update({ online: false });
-        log('info','AUTH','User data saved to database');
+  const userRefInAuth = ref(db, 'users/' + user.uid);
+  update(userRefInAuth, {
+    email: user.email || (user.displayName ? user.displayName + '@guest.local' : 'guest@local'),
+    lastLogin: Date.now(),
+    online: true
+  }).catch(e => log('warn','AUTH','Failed to update user data: ' + e.message));
+  onDisconnect(userRefInAuth).update({ online: false }).catch(e => log('warn','AUTH','Failed to set onDisconnect: ' + e.message));
+  log('info','AUTH','User data saved to database');
 
         // Initialize friend system (generates code once on first sign-in)
-        import('./friends.js').then(m => m.initFriendSystem()).then(code => {
-            if (code) document.getElementById('homeFriendCode').textContent = code;
-        });
+  import('./friends.js').then(m => m.initFriendSystem()).then(code => {
+    if (code) document.getElementById('homeFriendCode').textContent = code;
+  }).catch(e => log('warn','AUTH','Friend system init failed: ' + e.message));
 
-        get(ref(db, 'users/' + user.uid + '/profile')).then(snapshot => {
-            if (!snapshot.exists()) {
-                if (_explicitSignIn) {
-                    document.getElementById('loggedInPanel').style.display = 'none';
-                    document.getElementById('homeTopBar').style.display = 'none';
-                    const po = document.getElementById('profileOverlay');
-                    po.style.display = 'flex';
-                    po.classList.add('active');
-                    log('info','AUTH','New user — showing profile setup');
-                } else {
-                    log('info','AUTH','Session restored — user has no profile, skipping overlay');
-                }
-                _explicitSignIn = false;
-            } else {
-                G.userProfile = snapshot.val();
-                _explicitSignIn = false;
-            }
-        });
+  get(ref(db, 'users/' + user.uid + '/profile')).then(snapshot => {
+    if (!snapshot.exists()) {
+      if (_explicitSignIn) {
+        document.getElementById('loggedInPanel').style.display = 'none';
+        document.getElementById('homeTopBar').style.display = 'none';
+        document.getElementById('loginOverlay').classList.remove('active');
+        document.getElementById('loginOverlay').classList.remove('overlay-home');
+        const po = document.getElementById('profileOverlay');
+        po.style.display = 'flex';
+        po.classList.add('active');
+        log('info','AUTH','New user — showing profile setup');
+      } else {
+        log('info','AUTH','Session restored — user has no profile, skipping overlay');
+      }
+      _explicitSignIn = false;
+    } else {
+      G.userProfile = snapshot.val();
+      _explicitSignIn = false;
+    }
+  }).catch(e => log('error','AUTH','Failed to load profile: ' + e.message));
 
         // Load persistent settings from Firebase
         get(ref(db, 'users/' + user.uid + '/settings')).then(snapshot => {
@@ -96,7 +106,7 @@ onAuthStateChanged(auth, (user) => {
                 const fbSettings = snapshot.val();
                 G.settings = { ...G.settings, ...fbSettings };
                 localStorage.setItem('tankBattleSettings', JSON.stringify(G.settings));
-                import('./ui.js').then(m => m.applySettingsToUI());
+                import('./ui.js').then(m => m.applySettingsToUI()).catch(e => log('warn','AUTH','Apply settings UI failed: ' + e.message));
                 log('info','AUTH','Settings loaded from Firebase');
             }
         }).catch(e => log('warn','AUTH','Failed to load settings: ' + e.message));
@@ -117,24 +127,35 @@ onAuthStateChanged(auth, (user) => {
                     if (fbProg.ownedWeapons) merged.ownedWeapons = fbProg.ownedWeapons;
                     localStorage.setItem('tankBattle_progression', JSON.stringify(merged));
                     Object.assign(P, merged);
-                    log('info','PROG','Progression live-synced from Firebase for ' + (user.email || user.uid));
-                }
-                import('./ui.js').then(m => m.updateCurrencyDisplay());
-            });
+                    // Sync campaign data to localStorage
+                    if (fbProg.campaign) {
+                        localStorage.setItem('tankBattle_campaign', JSON.stringify(fbProg.campaign));
+                    }
+                    // Sync lifetime stats to localStorage
+                    if (fbProg.lifetimeStats) {
+                        try {
+                            const raw = localStorage.getItem('tankBattle_lifetimeStats');
+                            const local = raw ? JSON.parse(raw) : {};
+                            const mergedStats = { ...local, ...fbProg.lifetimeStats };
+                            localStorage.setItem('tankBattle_lifetimeStats', JSON.stringify(mergedStats));
+                        } catch(e) {}
+                    }
+    log('info','PROG','Progression live-synced from Firebase for ' + (user.email || user.uid));
+    }
+    import('./ui.js').then(m => m.updateCurrencyDisplay()).catch(e => log('warn','PROG','UI currency update failed: ' + e.message));
+  });
         }, (err) => {
             log('warn','PROG','Progression listener error: ' + err.message);
         });
     } else {
-        log('info','AUTH','No user signed in — showing home as guest');
-        // Go straight to home (no login form)
-        document.getElementById('loginForm').style.display = 'none';
-        document.getElementById('loggedInPanel').style.display = 'flex';
-        document.getElementById('homeTopBar').style.display = 'flex';
-        document.getElementById('loginOverlay').classList.add('overlay-home');
-        document.getElementById('displayName').textContent = 'Player';
-        const avatarEl2 = document.getElementById('homeAvatar');
-        if (avatarEl2) avatarEl2.textContent = 'P';
-    }
+        if (_signingOut) { log('info','AUTH','Signing out — not auto-signing as guest'); return; }
+        log('info','AUTH','Showing login page');
+        document.getElementById('loginForm').style.display = 'flex';
+        document.getElementById('loggedInPanel').style.display = 'none';
+        document.getElementById('homeTopBar').style.display = 'none';
+  document.getElementById('loginOverlay').classList.remove('overlay-home');
+  import('./ui.js').then(m => m.showOverlay('loginOverlay')).catch(e => log('warn','AUTH','Show login overlay failed: ' + e.message));
+}
 });
 
 window.signUp = async function() {
@@ -189,17 +210,46 @@ window.signIn = async function() {
     }
 };
 
+let _signOutPending = false;
 window.signOut = async function() {
-    log('info','AUTH','User signing out');
-    if (G.lobbyId) window.leaveLobby();
+  if (_signOutPending) return;
+  _signOutPending = true;
+  log('info','AUTH','User signing out');
+  if (!G.currentUser) {
+    log('warn','AUTH','No user — showing login page');
     try {
-        const userRef = ref(db, 'users/' + G.currentUser.uid);
-        await update(userRef, { online: false });
-        await fbSignOut(auth);
-        log('info','AUTH','Sign out successful');
-    } catch(e) {
-        log('error','AUTH','Sign out failed: ' + e.message);
-    }
+      document.getElementById('loginForm').style.display = 'flex';
+      document.getElementById('loggedInPanel').style.display = 'none';
+      document.getElementById('homeTopBar').style.display = 'none';
+    } catch(e) {}
+    import('./ui.js').then(m => m.showOverlay('loginOverlay')).catch(() => {}).finally(() => { _signOutPending = false; });
+    return;
+  }
+  if (G.lobbyId) window.leaveLobby();
+  // Clean up friend listeners before signing out
+  import('./friends.js').then(m => {
+    m.stopListeningFriendRequests();
+    m.stopListeningFriends();
+    m.stopListeningInvitations();
+    m.resetFriendSystem();
+  }).catch(() => {});
+  try {
+    _signingOut = true;
+    const userRef = ref(db, 'users/' + G.currentUser.uid);
+    await update(userRef, { online: false });
+    await fbSignOut(auth);
+    G.currentUser = null;
+    G.friendCode = null;
+    G.friendUids = [];
+    log('info','AUTH','Sign out successful');
+    import('./ui.js').then(m => m.showOverlay('loginOverlay')).catch(e => log('warn','AUTH','Show login overlay failed: ' + e.message));
+    _signingOut = false;
+    _signOutPending = false;
+  } catch(e) {
+    log('error','AUTH','Sign out failed: ' + e.message);
+    _signingOut = false;
+    _signOutPending = false;
+  }
 };
 
 let _guestSigningIn = false;
@@ -259,8 +309,18 @@ window.addEventListener('beforeunload', () => {
         const raw = localStorage.getItem('tankBattle_progression');
         if (raw) {
             const prog = JSON.parse(raw);
-            // Don't block unload — fire and forget
-            set(ref(db, 'user_progression/' + u.uid), prog).catch(() => {});
+            // Merge lifetime stats for admin visibility
+            try {
+                const statsRaw = localStorage.getItem('tankBattle_lifetimeStats');
+                if (statsRaw) {
+                    prog.lifetimeStats = JSON.parse(statsRaw);
+                }
+            } catch(_) {}
+    // Don't block unload — fire and forget
+    // NOTE: campaign is intentionally NOT merged here. saveCampaignData() in
+    // progression.js already syncs campaign to Firebase on level completion.
+    // Merging it here would overwrite admin edits with stale local data on refresh.
+    set(ref(db, 'user_progression/' + u.uid), prog).catch(e => log('warn','AUTH','beforeunload progression save failed: ' + e.message));
         }
     } catch (e) {
         // silently ignore — unload handlers must not throw
@@ -268,10 +328,16 @@ window.addEventListener('beforeunload', () => {
 });
 
 window.saveProfile = async function() {
+    const displayName = document.getElementById('profileDisplayName').value.trim();
     const birthday = document.getElementById('profileBirthday').value;
     const gender = document.getElementById('profileGender').value;
     const errorEl = document.getElementById('profileError');
 
+    if (!displayName) {
+        errorEl.textContent = 'Please enter your display name';
+        errorEl.style.display = 'block';
+        return;
+    }
     if (!birthday) {
         errorEl.textContent = 'Please select your birthday';
         errorEl.style.display = 'block';
@@ -280,19 +346,30 @@ window.saveProfile = async function() {
     errorEl.style.display = 'none';
 
     const profile = {
+        displayName: displayName,
         birthday: birthday,
         gender: gender || 'prefer-not',
         createdAt: Date.now()
     };
 
     try {
-        await set(ref(db, 'users/' + G.currentUser.uid + '/profile'), profile);
+        await Promise.all([
+            set(ref(db, 'users/' + G.currentUser.uid + '/profile'), profile),
+            update(ref(db, 'users/' + G.currentUser.uid), { name: displayName }),
+            updateProfile(G.currentUser, { displayName: displayName })
+        ]);
         G.userProfile = profile;
+        document.getElementById('displayName').textContent = displayName;
+        const avatarEl = document.getElementById('homeAvatar');
+        if (avatarEl) avatarEl.textContent = displayName[0].toUpperCase();
         const pp = document.getElementById('profileOverlay');
         pp.style.display = 'none';
         pp.classList.remove('active');
+        document.getElementById('loginOverlay').classList.add('active');
         document.getElementById('loggedInPanel').style.display = 'flex';
-        import('./ui.js').then(m => m.updateCurrencyDisplay());
+        document.getElementById('homeTopBar').style.display = 'flex';
+        import('./ui.js').then(m => m.updateCurrencyDisplay()).catch(e => log('warn','AUTH','UI update after profile save failed: ' + e.message));
+        import('./tutorial.js').then(m => m.autoShowTutorial()).catch(e => log('warn','AUTH','Tutorial auto-show failed: ' + e.message));
         log('info','AUTH','Profile saved successfully');
     } catch(e) {
         errorEl.textContent = 'Failed to save: ' + e.message;

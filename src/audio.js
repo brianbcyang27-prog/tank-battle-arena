@@ -1,5 +1,6 @@
 import { G } from './state.js';
 import { log } from './log.js';
+import { GameState } from './config.js';
 
 let audioCtx = null;
 let masterVolume = 0.7;
@@ -7,14 +8,20 @@ let sfxVolume = 0.8;
 let musicVolume = 0.4;
 let musicGain = null;
 let currentMusic = null;
+let musicInterval = null;
 
 export function initAudio() {
-    if (audioCtx) return;
+  if (audioCtx) return;
+  try {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     musicGain = audioCtx.createGain();
     musicGain.connect(audioCtx.destination);
     musicGain.gain.value = musicVolume * masterVolume;
     log('info', 'AUDIO', 'Audio system initialized');
+  } catch (e) {
+    log('warn', 'AUDIO', 'Failed to create AudioContext: ' + e);
+    audioCtx = null;
+  }
 }
 
 export function setMasterVolume(v) { masterVolume = Math.max(0, Math.min(1, v)); updateMusicVolume(); }
@@ -27,10 +34,11 @@ function updateMusicVolume() {
 }
 
 function getSfxGain() {
-    const g = audioCtx.createGain();
-    g.gain.value = sfxVolume * masterVolume;
-    g.connect(audioCtx.destination);
-    return g;
+  if (!audioCtx) return null;
+  const g = audioCtx.createGain();
+  g.gain.value = sfxVolume * masterVolume;
+  g.connect(audioCtx.destination);
+  return g;
 }
 
 function resumeContext() {
@@ -38,11 +46,12 @@ function resumeContext() {
 }
 
 export function playShoot() {
-    if (!audioCtx) return;
-    resumeContext();
-    const osc = audioCtx.createOscillator();
-    const gain = getSfxGain();
-    osc.connect(gain);
+  if (!audioCtx) return;
+  resumeContext();
+  const osc = audioCtx.createOscillator();
+  const gain = getSfxGain();
+  if (!gain) return;
+  osc.connect(gain);
     osc.type = 'square';
     osc.frequency.setValueAtTime(220, audioCtx.currentTime);
     osc.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 0.1);
@@ -53,16 +62,17 @@ export function playShoot() {
 }
 
 export function playExplosion() {
-    if (!audioCtx) return;
-    resumeContext();
-    const bufferSize = audioCtx.sampleRate * 0.3;
-    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 2);
-    const noise = audioCtx.createBufferSource();
-    noise.buffer = buffer;
-    const gain = getSfxGain();
-    const filter = audioCtx.createBiquadFilter();
+  if (!audioCtx) return;
+  resumeContext();
+  const bufferSize = audioCtx.sampleRate * 0.3;
+  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 2);
+  const noise = audioCtx.createBufferSource();
+  noise.buffer = buffer;
+  const gain = getSfxGain();
+  if (!gain) return;
+  const filter = audioCtx.createBiquadFilter();
     filter.type = 'lowpass';
     filter.frequency.value = 400;
     noise.connect(filter);
@@ -73,11 +83,12 @@ export function playExplosion() {
 }
 
 export function playHit() {
-    if (!audioCtx) return;
-    resumeContext();
-    const osc = audioCtx.createOscillator();
-    const gain = getSfxGain();
-    osc.connect(gain);
+  if (!audioCtx) return;
+  resumeContext();
+  const osc = audioCtx.createOscillator();
+  const gain = getSfxGain();
+  if (!gain) return;
+  osc.connect(gain);
     osc.type = 'sine';
     osc.frequency.setValueAtTime(150, audioCtx.currentTime);
     osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.15);
@@ -88,11 +99,12 @@ export function playHit() {
 }
 
 export function playMinePlace() {
-    if (!audioCtx) return;
-    resumeContext();
-    const osc = audioCtx.createOscillator();
-    const gain = getSfxGain();
-    osc.connect(gain);
+  if (!audioCtx) return;
+  resumeContext();
+  const osc = audioCtx.createOscillator();
+  const gain = getSfxGain();
+  if (!gain) return;
+  osc.connect(gain);
     osc.type = 'sine';
     osc.frequency.setValueAtTime(440, audioCtx.currentTime);
     osc.frequency.setValueAtTime(880, audioCtx.currentTime + 0.05);
@@ -103,11 +115,12 @@ export function playMinePlace() {
 }
 
 export function playMineArmed() {
-    if (!audioCtx) return;
-    resumeContext();
-    const osc = audioCtx.createOscillator();
-    const gain = getSfxGain();
-    osc.connect(gain);
+  if (!audioCtx) return;
+  resumeContext();
+  const osc = audioCtx.createOscillator();
+  const gain = getSfxGain();
+  if (!gain) return;
+  osc.connect(gain);
     osc.type = 'sine';
     osc.frequency.setValueAtTime(1200, audioCtx.currentTime);
     osc.frequency.setValueAtTime(800, audioCtx.currentTime + 0.08);
@@ -118,13 +131,14 @@ export function playMineArmed() {
 }
 
 export function playVictory() {
-    if (!audioCtx) return;
-    resumeContext();
-    const notes = [523, 659, 784, 1047];
-    notes.forEach((freq, i) => {
-        const osc = audioCtx.createOscillator();
-        const gain = getSfxGain();
-        osc.connect(gain);
+  if (!audioCtx) return;
+  resumeContext();
+  const notes = [523, 659, 784, 1047];
+  notes.forEach((freq, i) => {
+    const osc = audioCtx.createOscillator();
+    const gain = getSfxGain();
+    if (!gain) return;
+    osc.connect(gain);
         osc.type = 'sine';
         osc.frequency.value = freq;
         const startTime = audioCtx.currentTime + i * 0.12;
@@ -135,14 +149,45 @@ export function playVictory() {
     });
 }
 
-export function playDefeat() {
+export function playCelebration() {
     if (!audioCtx) return;
     resumeContext();
-    const notes = [400, 350, 300, 250];
-    notes.forEach((freq, i) => {
-        const osc = audioCtx.createOscillator();
-        const gain = getSfxGain();
-        osc.connect(gain);
+    const fanfare = [
+        { freq: 523, time: 0,    dur: 0.15 },
+        { freq: 659, time: 0.12,  dur: 0.15 },
+        { freq: 784, time: 0.24,  dur: 0.15 },
+        { freq: 1047, time: 0.36, dur: 0.3  },
+        { freq: 1319, time: 0.36, dur: 0.5  },
+        { freq: 784,  time: 0.72, dur: 0.2  },
+        { freq: 1047, time: 0.72, dur: 0.4  },
+        { freq: 1319, time: 0.72, dur: 0.4  },
+        { freq: 1568, time: 0.95, dur: 0.8  },
+        { freq: 2093, time: 0.95, dur: 0.8  },
+    ];
+  fanfare.forEach(n => {
+    const osc = audioCtx.createOscillator();
+    const gain = getSfxGain();
+    if (!gain) return;
+    osc.connect(gain);
+        osc.type = 'sine';
+        osc.frequency.value = n.freq;
+        const t = audioCtx.currentTime + n.time;
+        gain.gain.setValueAtTime(0.35, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + n.dur);
+        osc.start(t);
+        osc.stop(t + n.dur);
+    });
+}
+
+export function playDefeat() {
+  if (!audioCtx) return;
+  resumeContext();
+  const notes = [400, 350, 300, 250];
+  notes.forEach((freq, i) => {
+    const osc = audioCtx.createOscillator();
+    const gain = getSfxGain();
+    if (!gain) return;
+    osc.connect(gain);
         osc.type = 'sawtooth';
         osc.frequency.value = freq;
         const startTime = audioCtx.currentTime + i * 0.15;
@@ -154,13 +199,14 @@ export function playDefeat() {
 }
 
 export function playRoundWin() {
-    if (!audioCtx) return;
-    resumeContext();
-    const notes = [659, 784, 1047];
-    notes.forEach((freq, i) => {
-        const osc = audioCtx.createOscillator();
-        const gain = getSfxGain();
-        osc.connect(gain);
+  if (!audioCtx) return;
+  resumeContext();
+  const notes = [659, 784, 1047];
+  notes.forEach((freq, i) => {
+    const osc = audioCtx.createOscillator();
+    const gain = getSfxGain();
+    if (!gain) return;
+    osc.connect(gain);
         osc.type = 'triangle';
         osc.frequency.value = freq;
         const startTime = audioCtx.currentTime + i * 0.1;
@@ -172,13 +218,14 @@ export function playRoundWin() {
 }
 
 export function playRoundLose() {
-    if (!audioCtx) return;
-    resumeContext();
-    const notes = [392, 330];
-    notes.forEach((freq, i) => {
-        const osc = audioCtx.createOscillator();
-        const gain = getSfxGain();
-        osc.connect(gain);
+  if (!audioCtx) return;
+  resumeContext();
+  const notes = [392, 330];
+  notes.forEach((freq, i) => {
+    const osc = audioCtx.createOscillator();
+    const gain = getSfxGain();
+    if (!gain) return;
+    osc.connect(gain);
         osc.type = 'square';
         osc.frequency.value = freq;
         const startTime = audioCtx.currentTime + i * 0.2;
@@ -190,13 +237,14 @@ export function playRoundLose() {
 }
 
 export function playLevelUp() {
-    if (!audioCtx) return;
-    resumeContext();
-    const notes = [523, 659, 784, 659, 784, 1047];
-    notes.forEach((freq, i) => {
-        const osc = audioCtx.createOscillator();
-        const gain = getSfxGain();
-        osc.connect(gain);
+  if (!audioCtx) return;
+  resumeContext();
+  const notes = [523, 659, 784, 659, 784, 1047];
+  notes.forEach((freq, i) => {
+    const osc = audioCtx.createOscillator();
+    const gain = getSfxGain();
+    if (!gain) return;
+    osc.connect(gain);
         osc.type = 'sine';
         osc.frequency.value = freq;
         const startTime = audioCtx.currentTime + i * 0.08;
@@ -208,11 +256,12 @@ export function playLevelUp() {
 }
 
 export function playMenuSelect() {
-    if (!audioCtx) return;
-    resumeContext();
-    const osc = audioCtx.createOscillator();
-    const gain = getSfxGain();
-    osc.connect(gain);
+  if (!audioCtx) return;
+  resumeContext();
+  const osc = audioCtx.createOscillator();
+  const gain = getSfxGain();
+  if (!gain) return;
+  osc.connect(gain);
     osc.type = 'sine';
     osc.frequency.value = 600;
     gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
@@ -222,11 +271,12 @@ export function playMenuSelect() {
 }
 
 export function playButtonClick() {
-    if (!audioCtx) return;
-    resumeContext();
-    const osc = audioCtx.createOscillator();
-    const gain = getSfxGain();
-    osc.connect(gain);
+  if (!audioCtx) return;
+  resumeContext();
+  const osc = audioCtx.createOscillator();
+  const gain = getSfxGain();
+  if (!gain) return;
+  osc.connect(gain);
     osc.type = 'sine';
     osc.frequency.value = 800;
     gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
@@ -236,11 +286,12 @@ export function playButtonClick() {
 }
 
 export function playReload() {
-    if (!audioCtx) return;
-    resumeContext();
-    const osc = audioCtx.createOscillator();
-    const gain = getSfxGain();
-    osc.connect(gain);
+  if (!audioCtx) return;
+  resumeContext();
+  const osc = audioCtx.createOscillator();
+  const gain = getSfxGain();
+  if (!gain) return;
+  osc.connect(gain);
     osc.type = 'triangle';
     osc.frequency.setValueAtTime(200, audioCtx.currentTime);
     osc.frequency.linearRampToValueAtTime(400, audioCtx.currentTime + 0.1);
@@ -252,11 +303,12 @@ export function playReload() {
 }
 
 export function playBoost() {
-    if (!audioCtx) return;
-    resumeContext();
-    const osc = audioCtx.createOscillator();
-    const gain = getSfxGain();
-    osc.connect(gain);
+  if (!audioCtx) return;
+  resumeContext();
+  const osc = audioCtx.createOscillator();
+  const gain = getSfxGain();
+  if (!gain) return;
+  osc.connect(gain);
     osc.type = 'sawtooth';
     osc.frequency.setValueAtTime(100, audioCtx.currentTime);
     osc.frequency.linearRampToValueAtTime(400, audioCtx.currentTime + 0.15);
@@ -267,13 +319,15 @@ export function playBoost() {
 }
 
 export function stopMusic() {
-    if (currentMusic) {
-        currentMusic.stop();
-        currentMusic = null;
-    }
+  if (currentMusic) {
+    try { currentMusic.stop(); } catch(e) { /* already stopped */ }
+    currentMusic = null;
+  }
+  if (musicInterval) {
+    clearInterval(musicInterval);
+    musicInterval = null;
+  }
 }
-
-let musicInterval = null;
 
 export function playBackgroundMusic() {
     if (!audioCtx || currentMusic) return;
@@ -326,7 +380,7 @@ export function playBackgroundMusic() {
     playNote();
     playBass();
     musicInterval = setInterval(() => {
-        if (G.gameState !== 2) { playNote(); playBass(); }
+        if (G.gameState === GameState.PLAYING || G.gameState === GameState.TUTORIAL) { playNote(); playBass(); }
     }, 400);
     log('info', 'AUDIO', 'Background music started');
 }

@@ -1,19 +1,21 @@
-import { CANVAS_WIDTH, CANVAS_HEIGHT, CELL_SIZE, COLORS, GameState } from './config.js';
+import { GameState, ARCADE_LIVES, QL_PARAMS } from './config.js';
 import { G } from './state.js';
-import { Vector2, Player, Tank } from './engine.js';
 import { generateLevel } from './levels.js';
 import { showOverlay, updateUI, updateCurrencyDisplay } from './ui.js';
 import { log } from './log.js';
 import { initStats, finalizeStats } from './stats.js';
-import { awardLevelComplete, awardGameOver, awardAiWin, awardAiRoundWin, getCampaignLevel, saveCampaignLevel } from './progression.js';
-import { initAudio, playBackgroundMusic } from './audio.js';
+import { awardLevelComplete, awardGameOver, awardAiWin, awardAiRoundWin, getCampaignLevel, getStageAndLevel, completeLevelInCampaign, getStageAggregateStats } from './progression.js';
+import { initAudio, playBackgroundMusic, stopMusic } from './audio.js';
 
 // ==================== GAME FLOW ====================
 export function startGame(){
     if (G.gameState === GameState.LOADING) return;
     G.gameState = GameState.LOADING;
+    if (G._traceCtx) G._traceCtx.clearRect(0, 0, G._traceCanvas.width, G._traceCanvas.height);
+    if (G._fadeTraceCtx) G._fadeTraceCtx.clearRect(0, 0, G._fadeTraceCanvas.width, G._fadeTraceCanvas.height);
     showOverlay(null);
     G.level=1; G.score=0; initStats();
+    G.stageColors = null;
     document.getElementById('loadingScreen').style.display='flex';
     document.getElementById('loadingTitle').textContent='GENERATING LEVEL...';
     setTimeout(()=>generateLevel(G.level),100);
@@ -24,6 +26,14 @@ export function startGameFromMenu(){
     showOverlay(null);
     initAudio();
     playBackgroundMusic();
+    import('./ui.js').then(m => {
+        m.showLoadout(() => doStartGame());
+    });
+}
+
+function doStartGame() {
+    if (G._traceCtx) G._traceCtx.clearRect(0, 0, G._traceCanvas.width, G._traceCanvas.height);
+    if (G._fadeTraceCtx) G._fadeTraceCtx.clearRect(0, 0, G._fadeTraceCanvas.width, G._fadeTraceCanvas.height);
     if(G.gameMode==='single'){
         log('info','START','Starting single player game');
         G.level=1; G.score=0; initStats();
@@ -31,13 +41,15 @@ export function startGameFromMenu(){
         document.getElementById('loadingTitle').textContent='GENERATING LEVEL...';
         setTimeout(()=>generateLevel(G.level),100);
     } else if(G.gameMode==='campaign'){
-        const savedLevel = getCampaignLevel();
-        G.level = savedLevel;
+        if (typeof G.currentStageIndex !== 'number' && typeof G.currentLevelInStage !== 'number') {
+            const savedLevel = getCampaignLevel();
+            G.level = savedLevel;
+        }
         G.score = 0;
         initStats();
-        log('info','START','Starting campaign from level '+savedLevel);
+        log('info','START','Starting campaign from level '+G.level);
         document.getElementById('loadingScreen').style.display='flex';
-        document.getElementById('loadingTitle').textContent='CAMPAIGN — LEVEL '+savedLevel;
+        document.getElementById('loadingTitle').textContent='CAMPAIGN — LEVEL '+G.level;
         setTimeout(()=>generateLevel(G.level),100);
     } else if(G.gameMode==='ai1v1'){
         log('info','START','Starting 1v1 AI game, difficulty: '+G.aiDifficulty);
@@ -47,6 +59,22 @@ export function startGameFromMenu(){
         document.getElementById('loadingTitle').textContent='ROUND 1';
         import('./adaptive-ai.js').then(m => {
             G.aiTracker = new m.PlayerBehaviorTracker();
+            setTimeout(() => generateLevel(1), 100);
+        });
+    } else if(G.gameMode==='arcade'){
+        log('info','START','Starting ARCADE mode');
+        G.level=1; G.score=0; initStats();
+        import('./arcade-ai.js').then(m => {
+            G.arcadeQL = new m.QLearningAgent(QL_PARAMS.lr, QL_PARAMS.gamma, QL_PARAMS.epsilon);
+            G.arcadeLives = ARCADE_LIVES;
+            G.arcadeMaxLives = ARCADE_LIVES;
+            G.arcadeWave = 1;
+            G.arcadeKills = 0;
+            G.arcadeWaveComplete = false;
+            G._arcadeWaveTimer = 0;
+            document.getElementById('loadingScreen').style.display='flex';
+            document.getElementById('loadingTitle').textContent='ARCADE MODE';
+            document.getElementById('loadingSubtitle').textContent='WAVE 1';
             setTimeout(() => generateLevel(1), 100);
         });
     } else {
@@ -77,8 +105,9 @@ export function levelComplete(){
     document.getElementById('nextLevelButton').onclick=nextLevel;
     updateCurrencyDisplay();
     if (G.gameMode === 'campaign') {
-        saveCampaignLevel(G.level + 1);
-        log('info','CAMPAIGN','Campaign progress saved — next: level ' + (G.level + 1));
+        const { stageIdx, levelIdx } = getStageAndLevel(G.level);
+        completeLevelInCampaign(stageIdx, levelIdx, G.score, G.levelTime);
+        submitStageWorldRecord(stageIdx);
     }
     log('info','LEVEL','Level complete! Score: '+G.score);
 }
@@ -89,6 +118,11 @@ export function nextLevel(){
     G.mouseDown = false;
     showOverlay(null);
     G.level++;
+    if (G.gameMode === 'campaign' && G.level > 60) {
+        G.stageColors = null;
+        import('./ui.js').then(m => m.showCampaignMap());
+        return;
+    }
     document.getElementById('loadingScreen').style.display='flex';
     document.getElementById('loadingTitle').textContent='GENERATING LEVEL '+G.level+'...';
     setTimeout(()=>generateLevel(G.level),100);
@@ -113,9 +147,10 @@ function savePersonalBest(score) {
 
 export function gameOver(){
     G.gameState=GameState.GAME_OVER;
+    stopMusic();
     import('./audio.js').then(m => m.playDefeat());
     finalizeStats(false);
-    if (G.currentUser) saveToLeaderboard();
+    if (G.currentUser) saveToLeaderboard(G.gameMode === 'single' ? 'solo' : G.gameMode);
     awardGameOver(G.score);
     updateCurrencyDisplay();
 
@@ -130,26 +165,14 @@ export function gameOver(){
     }
 }
 
-function saveToLeaderboard() {
+function saveToLeaderboard(mode) {
     try {
-        const lb = JSON.parse(localStorage.getItem('tankBattleLeaderboard') || '[]');
         const name = G.currentUser?.displayName || G.currentUser?.email?.split('@')[0] || 'Player';
-        const idx = lb.findIndex(e => e.name === name);
-        if (idx >= 0) {
-            if (G.score > lb[idx].score) {
-                lb[idx] = { name, score: G.score, level: G.level, date: new Date().toISOString() };
-            }
-        } else {
-            lb.push({ name, score: G.score, level: G.level, date: new Date().toISOString() });
-        }
-        lb.sort((a, b) => b.score - a.score);
-        localStorage.setItem('tankBattleLeaderboard', JSON.stringify(lb));
-
         const fbScore = G.score;
         const fbLevel = G.level;
-        import('/src/firebase.js').then(({ ref, get, set, db, serverTimestamp }) => {
+        import('./firebase.js').then(({ ref, get, set, db, serverTimestamp }) => {
             if (!G.currentUser) return;
-            const userRef = ref(db, 'leaderboard/' + G.currentUser.uid);
+            const userRef = ref(db, 'leaderboard/' + mode + '/' + G.currentUser.uid);
             get(userRef).then(snap => {
                 const existing = snap.val();
                 if (!existing || fbScore > (existing.score || 0)) {
@@ -170,6 +193,35 @@ function saveToLeaderboard() {
             });
         }).catch(() => {});
     } catch(e) {}
+}
+
+function submitStageWorldRecord(stageIdx) {
+    import('./firebase.js').then(({ ref, get, set, db, serverTimestamp }) => {
+        if (!G.currentUser) return;
+        const stats = getStageAggregateStats(stageIdx);
+        if (!stats || stats.bestScore === null) return;
+        const wrRef = ref(db, 'campaignLeaderboard/stage_' + stageIdx + '/' + G.currentUser.uid);
+        get(wrRef).then(snap => {
+            const existing = snap.val();
+            if (!existing || stats.bestScore > (existing.score || 0)) {
+                set(wrRef, {
+                    name: G.currentUser.displayName || G.currentUser.email?.split('@')[0] || 'Anonymous',
+                    score: stats.bestScore,
+                    time: stats.bestTime || 0,
+                    completions: stats.completedCount,
+                    timestamp: serverTimestamp()
+                }).catch(() => {});
+            }
+        }).catch(() => {
+            set(wrRef, {
+                name: G.currentUser.displayName || G.currentUser.email?.split('@')[0] || 'Anonymous',
+                score: stats.bestScore,
+                time: stats.bestTime || 0,
+                completions: stats.completedCount,
+                timestamp: serverTimestamp()
+            }).catch(() => {});
+        });
+    }).catch(() => {});
 }
 
 function showNormalGameOver() {
@@ -206,16 +258,20 @@ window.submitScore = function() {
     if (!entered) { input.focus(); return; }
 
     try {
+        const mode = G.gameMode === 'single' ? 'solo' : G.gameMode || 'campaign';
         const lb = JSON.parse(localStorage.getItem('tankBattleLeaderboard') || '[]');
-        const prev = lb.findIndex(e => e.name === entered);
+        // Find existing entry for same name + mode
+        const prev = lb.findIndex(e => e.name === entered && (e.mode || 'campaign') === mode);
         if (prev >= 0) {
             if (G.score > lb[prev].score) {
-                lb[prev] = { name: entered, score: G.score, level: G.level, date: new Date().toISOString() };
+                lb[prev] = { name: entered, score: G.score, level: G.level, mode, date: new Date().toISOString() };
             }
         } else {
-            lb.push({ name: entered, score: G.score, level: G.level, date: new Date().toISOString() });
+            lb.push({ name: entered, score: G.score, level: G.level, mode, date: new Date().toISOString() });
         }
-        lb.sort((a, b) => b.score - a.score);
+        lb.sort((a, b) => (b.mode || 'campaign') !== (a.mode || 'campaign')
+            ? ((a.mode || 'campaign') > (b.mode || 'campaign') ? 1 : -1)
+            : b.score - a.score);
         localStorage.setItem('tankBattleLeaderboard', JSON.stringify(lb));
 
         import('./ui.js').then(m => m.displayLeaderboard(lb));
@@ -228,7 +284,7 @@ window.submitScore = function() {
     }
 };
 
-function showNewRecordAnimation(score, prevBest, level) {
+function showNewRecordAnimation(score, prevBest) {
     const overlay = document.createElement('div');
     overlay.id = 'recordAnimation';
     overlay.style.cssText = [
@@ -264,6 +320,7 @@ function showNewRecordAnimation(score, prevBest, level) {
         '<div id="recGoldConfetti" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:hidden;"></div>'
     ].join('');
     document.body.appendChild(overlay);
+    import('./audio.js').then(m => m.playCelebration());
 
     // ----- Golden confetti (immediate) -----
     const goldConfettiInterval = setInterval(() => {
@@ -535,6 +592,48 @@ function animateScoreCounter(el, target, duration) {
     requestAnimationFrame(tick);
 }
 
+// ==================== ARCADE MODE GAME OVER ====================
+export function arcadeGameOver() {
+    if (G.gameState !== GameState.PLAYING) return;
+    G.gameState = GameState.GAME_OVER;
+    stopMusic();
+    import('./audio.js').then(m => m.playDefeat());
+
+    // Save Q-table and update meta stats
+    if (G.arcadeQL) {
+        G.arcadeQL.meta.totalGames++;
+        G.arcadeQL.meta.totalKills += G.arcadeKills;
+        G.arcadeQL.save();
+    }
+
+    finalizeStats(false);
+    if (G.currentUser) saveToLeaderboard('arcade');
+
+    // Show arcade game over overlay
+    const overlay = document.getElementById('gameOverOverlay');
+    const iq = G.arcadeQL ? G.arcadeQL.getIQ() : 0;
+    overlay.innerHTML = `
+        <h1 style="color:#e74c3c;font-size:52px;margin:0 0 5px;text-shadow:0 0 30px #e74c3c;">GAME OVER</h1>
+        <p style="color:#f39c12;font-size:22px;margin:0 0 15px;">REACHED WAVE ${G.arcadeWave}</p>
+        <p style="color:#eaeaea;font-size:16px;margin:0 0 5px;">SCORE: <span style="color:#27ae60;">${G.score}</span></p>
+        <p style="color:#eaeaea;font-size:16px;margin:0 0 5px;">KILLS: <span style="color:#27ae60;">${G.arcadeKills}</span></p>
+        <p style="color:#eaeaea;font-size:16px;margin:0 0 15px;">AI IQ: <span style="color:${iq > 20 ? '#e74c3c' : iq > 10 ? '#f39c12' : '#888'};">${iq}</span></p>
+        <div id="mpGameOverStats" style="margin:6px 0;width:75%;max-width:360px;background:rgba(0,0,0,0.3);border-radius:4px;padding:8px;display:none;">
+            <div id="mpGameOverStatsContent"></div>
+        </div>
+        <div style="display:flex;gap:15px;justify-content:center;">
+            <button onclick="startArcade()" style="padding:15px 40px;font-size:18px;cursor:pointer;background:#27ae60;border:none;border-radius:8px;color:white;">PLAY AGAIN</button>
+            <button onclick="leaveGame()" style="padding:15px 40px;font-size:18px;cursor:pointer;background:#3498db;border:none;border-radius:8px;color:white;">BACK TO MENU</button>
+        </div>
+    `;
+    showOverlay('gameOverOverlay');
+    showGameOverStats();
+
+    const confettiInterval = setInterval(() => { spawnConfettiBurst(6); }, 200);
+    setTimeout(() => clearInterval(confettiInterval), 2000);
+    log('info', 'ARCADE', 'Arcade game over. Wave: ' + G.arcadeWave + ', Score: ' + G.score);
+}
+
 export function multiplayerGameOver(isWinner){
     if (G.gameState !== GameState.PLAYING) return;
     G.gameState=GameState.GAME_OVER;
@@ -558,6 +657,7 @@ export function multiplayerGameOver(isWinner){
                 awardAiWin();
                 updateCurrencyDisplay();
             }
+            if (G.currentUser) saveToLeaderboard('vs_ai');
             const mt = playerWonMatch ? 'VICTORY!' : 'DEFEAT!';
             const mc = playerWonMatch ? '#27ae60' : '#e74c3c';
             const sub = playerWonMatch ? 'You won the match!' : 'You lost the match!';
@@ -607,8 +707,9 @@ export function multiplayerGameOver(isWinner){
                 <p style="color:#888;font-size:14px;margin:0 0 2px;">Round ${roundsPlayed} of ${G.aiMatch.maxRounds}</p>
                 <p style="color:${diffColor};font-size:16px;margin:0 0 10px;">${diffLabel} MODE</p>
                 <p style="color:#f39c12;font-size:26px;margin:0 0 10px;">YOU ${myWins} — ${aiWins} AI</p>
-                <div id="mpGameOverStats" style="margin:6px 0;width:75%;max-width:360px;background:rgba(0,0,0,0.3);border-radius:4px;padding:8px;display:none;"></div>
-                <div id="mpGameOverStatsContent" style="display:none;"></div>
+                <div id="mpGameOverStats" style="margin:6px 0;width:75%;max-width:360px;background:rgba(0,0,0,0.3);border-radius:4px;padding:8px;display:none;">
+                    <div id="mpGameOverStatsContent"></div>
+                </div>
                 <p id="autoNextCountdown" style="color:#888;font-size:14px;margin:12px 0 6px;letter-spacing:2px;">NEXT ROUND IN 3...</p>
                 <button onclick="leaveGame()" style="padding:10px 30px;font-size:14px;cursor:pointer;background:#555;border:none;border-radius:6px;color:#ccc;">QUIT MATCH</button>
             `;
@@ -652,7 +753,7 @@ export function multiplayerGameOver(isWinner){
         setTimeout(() => clearInterval(confettiInterval2), 3500);
     }
     if (G.lobbyId) {
-        import('/src/firebase.js').then(({ ref, update, db }) => {
+        import('./firebase.js').then(({ ref, update, db }) => {
             const lobbyRef=ref(db, 'lobbies/'+G.lobbyId);
             const remoteUids = Object.keys(G.remoteTanks);
             const winnerUid = isWinner ? G.currentUser.uid : (remoteUids.length > 0 ? remoteUids[0] : null);
@@ -672,6 +773,7 @@ export function startNextRound(){
     G.aiMatch.state = 'playing';
     G.gameState = GameState.LOADING;
     G.mouseDown = false;
+    G.keys = {};
     showOverlay(null);
     initStats();
     const ls = document.getElementById('loadingScreen');

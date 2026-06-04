@@ -81,7 +81,20 @@ export class PlayerBehaviorTracker {
     }
 
     getProfile() {
-        if (this.rounds.length === 0) return { confidence: 'low' };
+	if (this.rounds.length === 0) {
+	    return {
+		accuracy: 0,
+		kd: 0,
+		avgEngagementDistance: 400,
+		avgDirectionChanges: 0,
+		avgTimeNearWalls: 0,
+		avgMinesPerRound: 0,
+		roundsObserved: 0,
+		wins: 0,
+		losses: 0,
+		confidence: 'low'
+	    };
+	}
 
         const r = this.rounds;
         const totalShots = r.reduce((s, x) => s + x.shots, 0);
@@ -93,16 +106,16 @@ export class PlayerBehaviorTracker {
         const avgWallTime = r.reduce((s, x) => s + x.timeNearWalls, 0) / r.length;
         const avgMines = r.reduce((s, x) => s + x.minesPlaced, 0) / r.length;
 
-        const accuracy = totalShots > 0 ? totalHits / totalShots : 0;
-        const kd = totalDeaths > 0 ? totalKills / totalDeaths : totalKills;
+	const accuracy = totalShots > 0 ? totalHits / totalShots : 0;
+	const kd = totalDeaths > 0 ? totalKills / totalDeaths : totalKills;
 
-        return {
-            accuracy,
-            kd,
-            avgEngagementDistance: avgDist,
-            avgDirectionChanges: avgDirChanges,
-            avgTimeNearWalls: avgWallTime,
-            avgMinesPerRound: avgMines,
+	return {
+	    accuracy: isNaN(accuracy) ? 0 : accuracy,
+	    kd: isNaN(kd) ? 0 : kd,
+	    avgEngagementDistance: isNaN(avgDist) ? 400 : avgDist,
+	    avgDirectionChanges: isNaN(avgDirChanges) ? 0 : avgDirChanges,
+	    avgTimeNearWalls: isNaN(avgWallTime) ? 0 : avgWallTime,
+	    avgMinesPerRound: isNaN(avgMines) ? 0 : avgMines,
             roundsObserved: this.rounds.length,
             wins: r.filter(x => x.won).length,
             losses: r.filter(x => !x.won).length,
@@ -159,7 +172,7 @@ export class PlayerBehaviorTracker {
             s.erraticMovement = Math.min(1, s.erraticMovement + 0.1);
         }
 
-        log('info', 'AI', 'Strategy: acc=' + p.accuracy.toFixed(2) + ' dist=' + Math.round(p.avgEngagementDistance) + ' erratic=' + s.erraticMovement.toFixed(2) + ' flank=' + s.flanking.toFixed(2));
+	log('info', 'AI', 'Strategy: acc=' + (p.accuracy || 0).toFixed(2) + ' dist=' + Math.round(p.avgEngagementDistance || 400) + ' erratic=' + s.erraticMovement.toFixed(2) + ' flank=' + s.flanking.toFixed(2));
 
         return s;
     }

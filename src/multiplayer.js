@@ -14,23 +14,25 @@ function setInStorage(key, val) {
 
 // ==================== LOBBY CREATION & JOINING ====================
 export function createOrJoinLobby() {
-    const playerCount = G.gameMode === '1v1' ? 2 : G.gameMode === '2v2' ? 4 : 6;
-    get(ref(db, 'lobbies')).then(snapshot => {
-        let foundLobby = null;
-        let foundCode = null;
-        snapshot.forEach(snap => {
-            const l = snap.val();
-            if (l.mode === G.gameMode && l.players && Object.keys(l.players).length < playerCount && l.status === 'waiting') {
-                foundLobby = snap.key;
-                foundCode = l.code;
-            }
-        });
-        if (foundLobby) {
-            joinLobby(foundLobby, foundCode);
-        } else {
-            createLobby(playerCount);
+  const playerCount = G.gameMode === '1v1' ? 2 : G.gameMode === '2v2' ? 4 : 6;
+  get(ref(db, 'lobbies')).then(snapshot => {
+    let foundLobby = null;
+    let foundCode = null;
+    snapshot.forEach(snap => {
+      const l = snap.val();
+      if (l.mode === G.gameMode && l.players && Object.keys(l.players).length < playerCount && l.status === 'waiting') {
+        if (!foundLobby) {
+          foundLobby = snap.key;
+          foundCode = l.code;
         }
-    }).catch(e => {
+      }
+    });
+    if (foundLobby) {
+      joinLobby(foundLobby, foundCode);
+    } else {
+      createLobby(playerCount);
+    }
+  }).catch(e => {
         log('error', 'LOBBY', 'Lobby search failed: ' + e.message);
         alert('Failed to create/join lobby. Please try again.');
         document.getElementById('loadingScreen').style.display = 'none';
@@ -40,122 +42,111 @@ export function createOrJoinLobby() {
 }
 
 export function createLobby(playerCount) {
-    G.lobbyId = 'lobby_' + Date.now();
-    const lobbyRef = ref(db, 'lobbies/' + G.lobbyId);
-    const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-    set(lobbyRef, {
-        mode: G.gameMode, status: 'waiting', playerCount: playerCount,
-        host: G.currentUser.uid, createdAt: serverTimestamp(),
-        code: roomCode,
-        players: {}
-    }).then(() => {
-        setInStorage('lobbyId', G.lobbyId);
-        setInStorage('lobbyHost', G.currentUser.uid);
-        const initialReady = G.settings.autoReady;
-        set(child(lobbyRef, 'players/' + G.currentUser.uid), {
-            name: G.currentUser.email, ready: initialReady, joined: serverTimestamp()
-        });
-        onDisconnect(lobbyRef).remove();
-        listenToLobby(lobbyRef);
-        showOverlay('lobbyOverlay');
-        document.getElementById('loadingScreen').style.display = 'none';
-        document.getElementById('lobbyTitle').textContent = 'ROOM CREATED!';
-        document.getElementById('lobbyMode').textContent = 'Mode: ' + G.gameMode.toUpperCase();
-        document.getElementById('currentRoomCode').textContent = roomCode;
-        document.getElementById('readyButton').style.display = 'none';
-        document.getElementById('startGameButton').style.display = 'inline-block';
-        document.getElementById('lobbyShareHint').style.display = 'block';
-        document.getElementById('lobbyStatus').textContent = 'Share code: ' + roomCode + ' - Waiting for players...';
-        log('info', 'LOBBY', 'Created lobby: ' + G.lobbyId + ' with code: ' + roomCode);
-    });
+  G.lobbyId = 'lobby_' + Date.now();
+  const lobbyRef = ref(db, 'lobbies/' + G.lobbyId);
+  const roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+  set(lobbyRef, {
+    mode: G.gameMode, status: 'waiting', playerCount: playerCount,
+    host: G.currentUser.uid, createdAt: serverTimestamp(),
+    code: roomCode, players: {}
+  }).then(() => {
+    setInStorage('lobbyId', G.lobbyId);
+    setInStorage('lobbyHost', G.currentUser.uid);
+    const initialReady = G.settings.autoReady;
+    set(child(lobbyRef, 'players/' + G.currentUser.uid), {
+      name: G.currentUser.email, ready: initialReady, joined: serverTimestamp()
+    }).catch(e => log('error', 'LOBBY', 'Failed to add host player: ' + e.message));
+    onDisconnect(child(lobbyRef, 'players/' + G.currentUser.uid)).remove();
+    listenToLobby(lobbyRef);
+    showOverlay('lobbyOverlay');
+    document.getElementById('loadingScreen').style.display = 'none';
+    document.getElementById('lobbyTitle').textContent = 'ROOM CREATED!';
+    document.getElementById('lobbyMode').textContent = 'Mode: ' + G.gameMode.toUpperCase();
+    document.getElementById('currentRoomCode').textContent = roomCode;
+    document.getElementById('readyButton').style.display = 'none';
+    document.getElementById('startGameButton').style.display = 'inline-block';
+    document.getElementById('lobbyShareHint').style.display = 'block';
+    document.getElementById('lobbyStatus').textContent = 'Share code: ' + roomCode + ' - Waiting for players...';
+    log('info', 'LOBBY', 'Created lobby: ' + G.lobbyId + ' with code: ' + roomCode);
+  }).catch(e => {
+    log('error', 'LOBBY', 'Failed to create lobby: ' + e.message);
+    alert('Failed to create lobby. Please try again.');
+    document.getElementById('loadingScreen').style.display = 'none';
+    document.getElementById('loggedInPanel').style.display = 'flex';
+    showOverlay('loginOverlay');
+  });
 }
 
 function joinLobby(id, roomCode) {
-    G.lobbyId = id;
-    const lobbyRef = ref(db, 'lobbies/' + G.lobbyId);
-    const initialReady = G.settings.autoReady;
-    set(child(lobbyRef, 'players/' + G.currentUser.uid), {
-        name: G.currentUser.email, ready: initialReady, joined: serverTimestamp()
-    });
-    onDisconnect(child(lobbyRef, 'players/' + G.currentUser.uid)).remove();
-    listenToLobby(lobbyRef);
-    document.getElementById('loadingScreen').style.display = 'none';
-    showOverlay('lobbyOverlay');
-    document.getElementById('lobbyTitle').textContent = 'MULTIPLAYER LOBBY';
-    document.getElementById('lobbyMode').textContent = 'Mode: ' + G.gameMode.toUpperCase();
-    document.getElementById('currentRoomCode').textContent = roomCode || 'N/A';
-    document.getElementById('readyButton').textContent = initialReady ? 'NOT READY' : 'READY';
-    document.getElementById('readyButton').style.display = 'inline-block';
-    document.getElementById('startGameButton').style.display = 'none';
-    document.getElementById('lobbyShareHint').style.display = 'none';
-    log('info', 'LOBBY', 'Joined lobby: ' + G.lobbyId);
+  G.lobbyId = id;
+  const lobbyRef = ref(db, 'lobbies/' + G.lobbyId);
+  const initialReady = G.settings.autoReady;
+  set(child(lobbyRef, 'players/' + G.currentUser.uid), {
+    name: G.currentUser.email, ready: initialReady, joined: serverTimestamp()
+  }).catch(e => log('error', 'LOBBY', 'Failed to join lobby: ' + e.message));
+  onDisconnect(child(lobbyRef, 'players/' + G.currentUser.uid)).remove();
+  listenToLobby(lobbyRef);
+  showOverlay('lobbyOverlay');
+  document.getElementById('loadingScreen').style.display = 'none';
+  document.getElementById('lobbyTitle').textContent = 'MULTIPLAYER LOBBY';
+  document.getElementById('lobbyMode').textContent = 'Mode: ' + G.gameMode.toUpperCase();
+  document.getElementById('currentRoomCode').textContent = roomCode || 'N/A';
+  document.getElementById('readyButton').textContent = initialReady ? 'NOT READY' : 'READY';
+  document.getElementById('readyButton').style.display = 'inline-block';
+  document.getElementById('startGameButton').style.display = 'none';
+  document.getElementById('lobbyShareHint').style.display = 'none';
+  log('info', 'LOBBY', 'Joined lobby: ' + G.lobbyId);
 }
 
 window.joinWithCode = function() {
-    const rawCode = document.getElementById('roomCodeInput').value.trim();
-    const code = rawCode.toUpperCase().slice(-6);
-    if (!code || code.length < 6) { log('warn', 'JOIN', 'Invalid room code'); alert('Please enter a valid 6-character room code'); return; }
-    if (!G.currentUser) { log('warn', 'JOIN', 'Must be logged in'); return; }
-    log('info', 'JOIN', 'Attempting to join room: ' + code);
-    joinLobbyByCode(code);
+  const rawCode = document.getElementById('roomCodeInput').value.trim();
+  const code = rawCode.toUpperCase().slice(-6);
+  if (!code || code.length < 6) { log('warn', 'JOIN', 'Invalid room code'); alert('Please enter a valid 6-character room code'); return; }
+  if (!G.currentUser) { log('warn', 'JOIN', 'Must be logged in'); return; }
+  log('info', 'JOIN', 'Attempting to join room: ' + code);
+  joinLobbyByCode(code);
 };
 
 window.createRoom = function() {
-    if (!G.currentUser) { log('warn', 'CREATE', 'Must be logged in'); return; }
-    if (G.gameMode === 'single') { log('warn', 'CREATE', 'Cannot create room in single player'); return; }
-    log('info', 'CREATE', 'Creating new room for mode: ' + G.gameMode);
-    document.getElementById('loadingScreen').style.display = 'flex';
-    document.getElementById('loadingTitle').textContent = 'CREATING YOUR ROOM...';
-    document.getElementById('loadingSubtitle').textContent = 'Please wait...';
-    const playerCount = G.gameMode === '1v1' ? 2 : G.gameMode === '2v2' ? 4 : 6;
-    createLobby(playerCount);
+  if (!G.currentUser) { log('warn', 'CREATE', 'Must be logged in'); return; }
+  if (G.gameMode === 'single') { log('warn', 'CREATE', 'Cannot create room in single player'); return; }
+  log('info', 'CREATE', 'Creating new room for mode: ' + G.gameMode);
+  document.getElementById('loadingScreen').style.display = 'flex';
+  document.getElementById('loadingTitle').textContent = 'CREATING YOUR ROOM...';
+  document.getElementById('loadingSubtitle').textContent = 'Please wait...';
+  const playerCount = G.gameMode === '1v1' ? 2 : G.gameMode === '2v2' ? 4 : 6;
+  createLobby(playerCount);
 };
 
 function joinLobbyByCode(code) {
-    const lobbiesRef = ref(db, 'lobbies');
-    document.getElementById('loadingScreen').style.display = 'flex';
-    document.getElementById('loadingTitle').textContent = 'JOINING ROOM...';
-    document.getElementById('loadingSubtitle').textContent = code;
-    get(lobbiesRef).then(snapshot => {
-        let found = false;
-        snapshot.forEach(snap => {
-            const l = snap.val();
-            if (l.code === code && l.status === 'waiting') {
-                found = true;
-                G.lobbyId = snap.key;
-                const lobbyRef = ref(db, 'lobbies/' + G.lobbyId);
-                const initialReady = G.settings.autoReady;
-                set(child(lobbyRef, 'players/' + G.currentUser.uid), {
-                    name: G.currentUser.email, ready: initialReady, joined: serverTimestamp()
-                });
-                onDisconnect(child(lobbyRef, 'players/' + G.currentUser.uid)).remove();
-                listenToLobby(lobbyRef);
-                showOverlay('lobbyOverlay');
-                document.getElementById('loadingScreen').style.display = 'none';
-                document.getElementById('lobbyTitle').textContent = 'MULTIPLAYER LOBBY';
-                document.getElementById('lobbyMode').textContent = 'Mode: ' + G.gameMode.toUpperCase();
-                document.getElementById('currentRoomCode').textContent = code;
-                document.getElementById('readyButton').textContent = initialReady ? 'NOT READY' : 'READY';
-                document.getElementById('readyButton').style.display = 'inline-block';
-                document.getElementById('startGameButton').style.display = 'none';
-                document.getElementById('lobbyShareHint').style.display = 'none';
-                log('info', 'LOBBY', 'Joined lobby via code: ' + code);
-            }
-        });
-        if (!found) {
-            log('warn', 'JOIN', 'Room not found or full: ' + code);
-            alert('Room not found or already full!');
-            document.getElementById('loadingScreen').style.display = 'none';
-            document.getElementById('loggedInPanel').style.display = 'flex';
-            showOverlay('loginOverlay');
-        }
-    }).catch(e => {
-        log('error', 'JOIN', 'Failed to join room: ' + e.message);
-        alert('Failed to join room. Please try again.');
-        document.getElementById('loadingScreen').style.display = 'none';
-        document.getElementById('loggedInPanel').style.display = 'flex';
-        showOverlay('loginOverlay');
+  const lobbiesRef = ref(db, 'lobbies');
+  document.getElementById('loadingScreen').style.display = 'flex';
+  document.getElementById('loadingTitle').textContent = 'JOINING ROOM...';
+  document.getElementById('loadingSubtitle').textContent = code;
+  get(lobbiesRef).then(snapshot => {
+    let found = false;
+    snapshot.forEach(snap => {
+      const l = snap.val();
+      if (l.code === code && l.status === 'waiting') {
+        found = true;
+        joinLobby(snap.key, code);
+        log('info', 'LOBBY', 'Joined lobby via code: ' + code);
+      }
     });
+    if (!found) {
+      log('warn', 'JOIN', 'Room not found or full: ' + code);
+      alert('Room not found or already full!');
+      document.getElementById('loadingScreen').style.display = 'none';
+      document.getElementById('loggedInPanel').style.display = 'flex';
+      showOverlay('loginOverlay');
+    }
+  }).catch(e => {
+    log('error', 'JOIN', 'Failed to join room: ' + e.message);
+    alert('Failed to join room. Please try again.');
+    document.getElementById('loadingScreen').style.display = 'none';
+    document.getElementById('loggedInPanel').style.display = 'flex';
+    showOverlay('loginOverlay');
+  });
 }
 
 // ==================== LOBBY LISTENER ====================
@@ -170,14 +161,14 @@ export function listenToLobby(lobbyRef) {
     let isHost = false;
 
     // Fetch friend UIDs for friend badges in player list
-    import('/src/firebase.js').then(({ ref: fbRef, get: fbGet, db: fbDb }) => {
-        fbGet(fbRef(fbDb, 'friends/' + G.currentUser.uid)).then(snap => {
-            G.friendUids = new Set();
-            if (snap.exists()) {
-                snap.forEach(child => G.friendUids.add(child.key));
-            }
-        }).catch(() => {});
-    });
+  import('./firebase.js').then(({ ref: fbRef, get: fbGet, db: fbDb }) => {
+    fbGet(fbRef(fbDb, 'friends/' + G.currentUser.uid)).then(snap => {
+      G.friendUids = [];
+      if (snap.exists()) {
+        snap.forEach(child => G.friendUids.push(child.key));
+      }
+    }).catch(e => log('warn', 'LOBBY', 'Failed to load friend UIDs: ' + e.message));
+  }).catch(e => log('warn', 'LOBBY', 'Failed to import firebase for friend UIDs: ' + e.message));
 
     _cleanups.push(onValue(lobbyRef, snapshot => {
         const l = snapshot.val();
@@ -185,6 +176,9 @@ export function listenToLobby(lobbyRef) {
 
         isHost = l.host === G.currentUser.uid;
         const players = l.players || {};
+
+        // Store player data for versus countdown (weapon + upgrades)
+        G._versusPlayerData = players;
 
         // Only update player list if we're in lobby (not in game)
         if (G.gameState !== GameState.PLAYING) {
@@ -312,7 +306,7 @@ function updatePlayerList(players) {
         const displayName = p.name ? p.name.split('@')[0] : 'Player';
         const initial = displayName.charAt(0).toUpperCase();
         const color = p.color || '#666';
-        const isFriend = G.friendUids && G.friendUids.has(id);
+        const isFriend = G.friendUids && G.friendUids.includes(id);
         html += '<div class="player-card' +
             (p.ready ? ' ready' : '') +
             (isMe ? ' host' : '') + '">';
@@ -333,38 +327,42 @@ function updatePlayerList(players) {
 }
 
 window.toggleReady = function() {
-    if (!G.lobbyId) return;
-    const lobbyRef = ref(db, 'lobbies/' + G.lobbyId + '/players/' + G.currentUser.uid);
-    get(lobbyRef).then(snap => {
-        const p = snap.val();
-        update(lobbyRef, { ready: !p.ready });
-        log('info', 'LOBBY', 'Toggled ready: ' + (!p.ready));
-    });
+  if (!G.lobbyId) return;
+  const lobbyRef = ref(db, 'lobbies/' + G.lobbyId + '/players/' + G.currentUser.uid);
+  get(lobbyRef).then(snap => {
+    const p = snap.val();
+    update(lobbyRef, { ready: !p.ready }).catch(e => log('error', 'LOBBY', 'Failed to toggle ready: ' + e.message));
+    log('info', 'LOBBY', 'Toggled ready: ' + (!p.ready));
+  }).catch(e => log('error', 'LOBBY', 'Failed to get ready state: ' + e.message));
 };
 
 export function cleanupMultiplayer() {
-    if (typeof G._lobbyCleanup === 'function') {
-        G._lobbyCleanup();
-        G._lobbyCleanup = null;
-    }
-    if (G.bulletListenerRef) {
-        if (typeof G.bulletListenerRef === 'function') G.bulletListenerRef();
-        G.bulletListenerRef = null;
-    }
-    if (G.explosionListenerRef) {
-        if (typeof G.explosionListenerRef === 'function') G.explosionListenerRef();
-        G.explosionListenerRef = null;
-    }
-    if (G.playerUpdateInterval) {
-        clearInterval(G.playerUpdateInterval);
-        G.playerUpdateInterval = null;
-    }
-    G.isMultiplayerGame = false;
-    G._multiplayerStarting = false;
-    G._rematchStarting = false;
-    G.remoteTanks = {};
-    G.remoteBullets = {};
-    G._processedExplosions = {};
+  if (typeof G._lobbyCleanup === 'function') {
+    G._lobbyCleanup();
+    G._lobbyCleanup = null;
+  }
+  if (G.bulletListenerRef) {
+    if (typeof G.bulletListenerRef === 'function') G.bulletListenerRef();
+    G.bulletListenerRef = null;
+  }
+  if (G.explosionListenerRef) {
+    if (typeof G.explosionListenerRef === 'function') G.explosionListenerRef();
+    G.explosionListenerRef = null;
+  }
+  if (G.playerUpdateInterval) {
+    clearInterval(G.playerUpdateInterval);
+    G.playerUpdateInterval = null;
+  }
+  if (_inviteFriendsUnsub) {
+    import('./friends.js').then(m => { m.stopListeningFriends(); }).catch(() => {});
+    _inviteFriendsUnsub = null;
+  }
+  G.isMultiplayerGame = false;
+  G._multiplayerStarting = false;
+  G._rematchStarting = false;
+  G.remoteTanks = {};
+  G.remoteBullets = {};
+  G._processedExplosions = {};
 }
 
 window.rematch = function() {
@@ -396,16 +394,17 @@ function startRematchCountdown() {
 }
 
 function executeRematch() {
-    log('info', 'MP', 'Executing rematch');
-    cleanupMultiplayer();
-    G.gameState = GameState.MENU;
-    document.getElementById('gameOverOverlay').style.display = 'none';
-    G._rematchStarting = false;
-    remove(child(ref(db, 'lobbies/' + G.lobbyId), 'rematch'));
-    remove(child(ref(db, 'lobbies/' + G.lobbyId), 'winner'));
-    remove(child(ref(db, 'lobbies/' + G.lobbyId), 'gameResult'));
-    remove(child(ref(db, 'lobbies/' + G.lobbyId), 'explosions'));
-    window.startMultiplayerGame();
+  log('info', 'MP', 'Executing rematch');
+  cleanupMultiplayer();
+  G.gameState = GameState.MENU;
+  document.getElementById('gameOverOverlay').style.display = 'none';
+  G._rematchStarting = false;
+  const lobbyPath = ref(db, 'lobbies/' + G.lobbyId);
+  remove(child(lobbyPath, 'rematch')).catch(e => log('warn', 'MP', 'Failed to clear rematch: ' + e.message));
+  remove(child(lobbyPath, 'winner')).catch(e => log('warn', 'MP', 'Failed to clear winner: ' + e.message));
+  remove(child(lobbyPath, 'gameResult')).catch(e => log('warn', 'MP', 'Failed to clear gameResult: ' + e.message));
+  remove(child(lobbyPath, 'explosions')).catch(e => log('warn', 'MP', 'Failed to clear explosions: ' + e.message));
+  window.startMultiplayerGame();
 }
 
 // ==================== FRIEND INVITES ====================
@@ -419,55 +418,80 @@ window.showInviteFriends = function() {
     }
 };
 
+let _inviteFriendsUnsub = null;
+
 function renderInviteFriendList() {
-    const list = document.getElementById('inviteFriendList');
-    if (!list) return;
-    import('./friends.js').then(m => {
-        m.listenFriends(friends => {
-            const onlineFriends = friends.filter(f => f.online);
-            if (onlineFriends.length === 0) {
-                list.innerHTML = '<p style="color:#666;font-size:11px;text-align:center;">No online friends to invite</p>';
-                return;
-            }
-            list.innerHTML = onlineFriends.map(f =>
-                `<div class="invite-friend-entry" onclick="sendInvite('${f.uid}', '${f.name}')">
-                    <span class="friend-status-dot online"></span>
-                    <span style="flex:1;color:#eaeaea;font-size:12px;">${f.name}</span>
-                    <span style="color:#27ae60;font-size:10px;">INVITE →</span>
-                </div>`
-            ).join('');
-        });
+  const list = document.getElementById('inviteFriendList');
+  if (!list) return;
+  if (_inviteFriendsUnsub) { _inviteFriendsUnsub(); _inviteFriendsUnsub = null; }
+  import('./friends.js').then(m => {
+    _inviteFriendsUnsub = m.listenFriends(friends => {
+      const onlineFriends = friends.filter(f => f.online);
+      if (onlineFriends.length === 0) {
+        list.innerHTML = '<p style="color:#666;font-size:11px;text-align:center;">No online friends to invite</p>';
+        return;
+      }
+      list.innerHTML = onlineFriends.map(f =>
+        `<div class="invite-friend-entry" onclick="sendInvite('${f.uid}', '${f.name}')">
+          <span class="friend-status-dot online"></span>
+          <span style="flex:1;color:#eaeaea;font-size:12px;">${f.name}</span>
+          <span style="color:#27ae60;font-size:10px;">INVITE →</span>
+        </div>`
+      ).join('');
     });
+  });
 }
 
 window.sendInvite = function(friendUid, friendName) {
     if (!G.lobbyId) return;
     const roomCode = document.getElementById('currentRoomCode');
     const code = roomCode ? roomCode.textContent : '';
-    inviteToLobby(friendUid, G.lobbyId, code, G.gameMode).then(() => {
-        const invitedDiv = document.getElementById('invitedContent');
-        if (invitedDiv) {
-            const current = invitedDiv.textContent;
-            invitedDiv.textContent = current === 'None' ? friendName : current + ', ' + friendName;
-        }
-    });
+  inviteToLobby(friendUid, G.lobbyId, code, G.gameMode).then(() => {
+    const invitedDiv = document.getElementById('invitedContent');
+    if (invitedDiv) {
+      const current = invitedDiv.textContent;
+      invitedDiv.textContent = current === 'None' ? friendName : current + ', ' + friendName;
+    }
+  }).catch(e => log('warn', 'INVITE', 'Failed to send invite: ' + e.message));
 };
 
 export function joinByCode(code) {
-    joinLobbyByCode(code);
+    const lobbiesRef = ref(db, 'lobbies');
+    get(lobbiesRef).then(snapshot => {
+        let found = false;
+        snapshot.forEach(snap => {
+            const l = snap.val();
+            if (l.code === code && l.status === 'waiting' && l.players && Object.keys(l.players).length < (l.playerCount || 2)) {
+                found = true;
+                joinLobby(snap.key, code);
+            }
+        });
+        if (!found) {
+            log('warn', 'JOIN', 'Room not found or full: ' + code);
+            alert('Room not found or already full!');
+        }
+    }).catch(e => {
+        log('error', 'JOIN', 'Failed to join room: ' + e.message);
+        alert('Failed to join room. Please try again.');
+    });
 }
 window.joinByCode = joinByCode;
 
 window.leaveLobby = function() {
-    if (!G.lobbyId) return;
-    cleanupMultiplayer();
-    const lobbyRef = ref(db, 'lobbies/' + G.lobbyId);
-    remove(child(lobbyRef, 'players/' + G.currentUser.uid)).then(() => {
-        log('info', 'LOBBY', 'Left lobby: ' + G.lobbyId);
-        G.lobbyId = null;
-        document.getElementById('loggedInPanel').style.display = 'flex';
-        showOverlay('loginOverlay');
-    });
+  if (!G.lobbyId) return;
+  cleanupMultiplayer();
+  const lobbyRef = ref(db, 'lobbies/' + G.lobbyId);
+  remove(child(lobbyRef, 'players/' + G.currentUser.uid)).then(() => {
+    log('info', 'LOBBY', 'Left lobby: ' + G.lobbyId);
+    G.lobbyId = null;
+    document.getElementById('loggedInPanel').style.display = 'flex';
+    showOverlay('loginOverlay');
+  }).catch(e => {
+    log('error', 'LOBBY', 'Failed to leave lobby: ' + e.message);
+    G.lobbyId = null;
+    document.getElementById('loggedInPanel').style.display = 'flex';
+    showOverlay('loginOverlay');
+  });
 };
 
 // ==================== START MULTIPLAYER GAME ====================
@@ -477,6 +501,8 @@ window.startMultiplayerGame = function() {
     log('info', 'MP', 'Starting multiplayer game!');
     G.isMultiplayerGame = true;
     G.gameState = GameState.LOADING;
+    if (G._traceCtx) G._traceCtx.clearRect(0, 0, G._traceCanvas.width, G._traceCanvas.height);
+if (G._fadeTraceCtx) G._fadeTraceCtx.clearRect(0, 0, G._fadeTraceCanvas.width, G._fadeTraceCanvas.height);
 
     // Set up Firebase bullet listener
     const bulletsRef = ref(db, 'lobbies/' + G.lobbyId + '/bullets');
@@ -547,9 +573,9 @@ window.startMultiplayerGame = function() {
     }
 
     // Notify Firebase so joiner receives the signal to start
-    if (G.lobbyId) {
-        update(ref(db, 'lobbies/' + G.lobbyId), { status: 'playing' });
-    }
+  if (G.lobbyId) {
+    update(ref(db, 'lobbies/' + G.lobbyId), { status: 'playing' }).catch(e => log('error', 'MP', 'Failed to set status=playing: ' + e.message));
+  }
 
     log('info', 'MP', 'Generating level for multiplayer...');
 
@@ -569,19 +595,15 @@ window.startMultiplayerGame = function() {
                 const wallData = G.walls.map(w => ({ x: w.x, y: w.y, w: w.w, h: w.h }));
                 const hostStart = { x: G.player.pos.x, y: G.player.pos.y };
                 const joinerStart = { x: CANVAS_WIDTH - CELL_SIZE * 2.5, y: CELL_SIZE * 2.5 };
-                update(ref(db, 'lobbies/' + G.lobbyId), {
-                    map: wallData,
-                    hostStart: hostStart,
-                    joinerStart: joinerStart,
-                    mapGenerated: true
-                });
-                G.player.color = COLORS.player;
-                G.player.name = G.currentUser.email ? G.currentUser.email.split('@')[0] : 'Player';
-                G.player.labelTime = 3;
-                update(ref(db, 'lobbies/' + G.lobbyId + '/players/' + G.currentUser.uid), {
-                    color: COLORS.player,
-                    name: G.player.name
-                });
+      update(ref(db, 'lobbies/' + G.lobbyId), {
+        map: wallData, hostStart: hostStart, joinerStart: joinerStart, mapGenerated: true
+      }).catch(e => log('error', 'MP', 'Failed to save map to Firebase: ' + e.message));
+      G.player.color = COLORS.player;
+      G.player.name = G.currentUser.email ? G.currentUser.email.split('@')[0] : 'Player';
+      G.player.labelTime = 3;
+      update(ref(db, 'lobbies/' + G.lobbyId + '/players/' + G.currentUser.uid), {
+        color: COLORS.player, name: G.player.name
+      }).catch(e => log('warn', 'MP', 'Failed to update host player data: ' + e.message));
                 log('info', 'MP', 'Host generated map, saved to Firebase');
             } else {
                 // Joiner: load map from Firebase
@@ -599,38 +621,41 @@ window.startMultiplayerGame = function() {
 };
 
 function listenToMapAndStart() {
-    const mapRef = ref(db, 'lobbies/' + G.lobbyId);
-    get(mapRef).then(snapshot => {
-        const data = snapshot.val();
-        if (data && data.map && data.mapGenerated && data.hostStart && data.joinerStart) {
-            log('info', 'MP', 'Received map from host, loading...');
-            loadMapFromData(data.map, data.hostStart, data.joinerStart);
-            G.player.color = COLORS.player2;
-            update(ref(db, 'lobbies/' + G.lobbyId + '/players/' + G.currentUser.uid), {
-                color: COLORS.player2,
-                name: G.currentUser.email ? G.currentUser.email.split('@')[0] : 'Player'
-            });
-        } else {
-            // Map not ready yet, listen for it
-            const waitMapRef = ref(db, 'lobbies/' + G.lobbyId);
-            const waitFn = onValue(waitMapRef, snap2 => {
-                const d2 = snap2.val();
-                if (d2 && d2.map && d2.mapGenerated && d2.hostStart && d2.joinerStart) {
-                    log('info', 'MP', 'Received map from host (deferred), loading...');
-                    loadMapFromData(d2.map, d2.hostStart, d2.joinerStart);
-                    G.player.color = COLORS.player2;
-                    update(ref(db, 'lobbies/' + G.lobbyId + '/players/' + G.currentUser.uid), {
-                        color: COLORS.player2,
-                        name: G.currentUser.email ? G.currentUser.email.split('@')[0] : 'Player'
-                    });
-                    off(waitMapRef, 'value', waitFn);
-                }
-            });
+  const mapRef = ref(db, 'lobbies/' + G.lobbyId);
+  get(mapRef).then(snapshot => {
+    const data = snapshot.val();
+    if (data && data.map && data.mapGenerated && data.hostStart && data.joinerStart) {
+      log('info', 'MP', 'Received map from host, loading...');
+      loadMapFromData(data.map, data.hostStart, data.joinerStart);
+      G.player.color = COLORS.player2;
+      update(ref(db, 'lobbies/' + G.lobbyId + '/players/' + G.currentUser.uid), {
+        color: COLORS.player2,
+        name: G.currentUser.email ? G.currentUser.email.split('@')[0] : 'Player'
+      }).catch(e => log('warn', 'MP', 'Failed to update joiner color: ' + e.message));
+    } else {
+      const waitMapRef = ref(db, 'lobbies/' + G.lobbyId);
+      const waitFn = onValue(waitMapRef, snap2 => {
+        const d2 = snap2.val();
+        if (d2 && d2.map && d2.mapGenerated && d2.hostStart && d2.joinerStart) {
+          log('info', 'MP', 'Received map from host (deferred), loading...');
+          loadMapFromData(d2.map, d2.hostStart, d2.joinerStart);
+          G.player.color = COLORS.player2;
+          update(ref(db, 'lobbies/' + G.lobbyId + '/players/' + G.currentUser.uid), {
+            color: COLORS.player2,
+            name: G.currentUser.email ? G.currentUser.email.split('@')[0] : 'Player'
+          }).catch(e => log('warn', 'MP', 'Failed to update joiner color (deferred): ' + e.message));
+          off(waitMapRef, 'value', waitFn);
         }
-    });
+      });
+    }
+  }).catch(e => {
+    log('error', 'MP', 'Failed to load map from host: ' + e.message);
+    initStats();
+    generateLevel(1);
+  });
 }
 
-function loadMapFromData(wallData, hostStart, joinerStart) {
+function loadMapFromData(wallData, _hostStart, joinerStart) {
     G.walls = [];
     G.bullets = [];
     G.particles = [];
@@ -645,6 +670,8 @@ function loadMapFromData(wallData, hostStart, joinerStart) {
     G.player = new Player(myStart.x, myStart.y, G.currentUser.email ? G.currentUser.email.split('@')[0] : 'Player');
     G.player.color = COLORS.player2;
     G.player.pos = new Vector2(myStart.x, myStart.y);
+
+    import('./progression.js').then(m => m.applyProgressionToPlayer(G.player)).catch(() => {});
 
     initStats();
     G.gameState = GameState.READY;

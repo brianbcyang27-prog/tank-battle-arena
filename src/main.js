@@ -1,22 +1,31 @@
 import { G } from './state.js';
 import { log } from './log.js';
-import { COLORS, CANVAS_WIDTH, CANVAS_HEIGHT, GameState, WEAPONS } from './config.js';
-import { loadSettings, showOverlay } from './ui.js';
-import { startGame, startGameFromMenu, levelComplete, nextLevel, gameOver, multiplayerGameOver } from './game.js';
-import { generateLevel } from './levels.js';
-import { resolveWallCollision } from './engine.js';
+import { COLORS, CANVAS_WIDTH, CANVAS_HEIGHT, CELL_SIZE, GameState, WEAPONS } from './config.js';
+import { loadSettings, showOverlay, showVersusCountdown } from './ui.js';
+import { startGame, levelComplete, nextLevel, gameOver, multiplayerGameOver, arcadeGameOver } from './game.js';
+import { Vector2, resolveWallCollision } from './engine.js';
 import { db, ref, set, update, remove } from './firebase.js';
 import { recordHit, recordKill, recordDeath, recordDistance, recordDamageTaken } from './stats.js';
 import { trackKill, trackMineKill, trackSurvivalTime } from './progression.js';
 import './multiplayer.js';
-import { autoShowTutorial, updateTutorial, renderTutorial, closeTutorial } from './tutorial.js';
-import { initAudio, playMenuSelect, playButtonClick } from './audio.js';
+import { updateTutorial, renderTutorial, closeTutorial } from './tutorial.js';
+import { initAudio } from './audio.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 canvas.width = CANVAS_WIDTH;
 canvas.height = CANVAS_HEIGHT;
 G.ctx = ctx;
+
+G._traceCanvas = document.createElement('canvas');
+G._traceCanvas.width = CANVAS_WIDTH;
+G._traceCanvas.height = CANVAS_HEIGHT;
+G._traceCtx = G._traceCanvas.getContext('2d');
+
+G._fadeTraceCanvas = document.createElement('canvas');
+G._fadeTraceCanvas.width = CANVAS_WIDTH;
+G._fadeTraceCanvas.height = CANVAS_HEIGHT;
+G._fadeTraceCtx = G._fadeTraceCanvas.getContext('2d');
 
 loadSettings();
 
@@ -51,9 +60,28 @@ function gameLoop(ct) {
     const dt = Math.min((ct - lastTime) / 1000, 0.05);
     lastTime = ct;
 
-    ctx.fillStyle = COLORS.background;
+    const stageColors = G.stageColors;
+    ctx.fillStyle = stageColors ? stageColors.bg : COLORS.background;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    if (G._fadeTraceCtx) {
+        G._fadeTraceCtx.globalCompositeOperation = 'destination-out';
+        G._fadeTraceCtx.globalAlpha = 0.002;
+        G._fadeTraceCtx.fillStyle = '#000';
+        G._fadeTraceCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        G._fadeTraceCtx.globalAlpha = 1;
+        G._fadeTraceCtx.globalCompositeOperation = 'source-over';
+    }
+    if (G._traceCanvas) ctx.drawImage(G._traceCanvas, 0, 0);
+    if (G._fadeTraceCanvas) ctx.drawImage(G._fadeTraceCanvas, 0, 0);
     for (let w of G.walls) w.draw();
+
+    // Screen shake transform
+    if (G.screenShake > 0) {
+        const shakeX = (Math.random() - 0.5) * G.screenShake * 20;
+        const shakeY = (Math.random() - 0.5) * G.screenShake * 20;
+        ctx.save();
+        ctx.translate(shakeX, shakeY);
+    }
 
     if (G.gameState === GameState.PLAYING) {
         G.levelTime = (ct - G.levelStartTime) / 1000;
@@ -124,6 +152,7 @@ function gameLoop(ct) {
                         if (G.aiTracker) G.aiTracker.recordDeath();
                         if (G.isMultiplayerGame) multiplayerGameOver(false);
                         else if (G.gameMode === 'ai1v1') multiplayerGameOver(false);
+                        else if (G.gameMode === 'arcade') { /* handled by player death check below */ }
                         else gameOver();
                     }
                 }
@@ -152,13 +181,36 @@ function gameLoop(ct) {
             }
         }
         G.mines = G.mines.filter(m => !m.exploded);
+        // Catch remote tank death from mine explosion radius
+        if (G.isMultiplayerGame) {
+            for (let uid in G.remoteTanks) {
+                if (!G.remoteTanks[uid].tank.alive && G.gameState === GameState.PLAYING) {
+                    multiplayerGameOver(true);
+                    break;
+                }
+            }
+        }
         // Catch player death from mine auto-explosion or bullet-triggered explosion
         if (G.player && !G.player.alive && G.gameState === GameState.PLAYING) {
             recordDeath();
             if (G.aiTracker) G.aiTracker.recordDeath();
             if (G.isMultiplayerGame) multiplayerGameOver(false);
             else if (G.gameMode === 'ai1v1') multiplayerGameOver(false);
-            else gameOver();
+            else if (G.gameMode === 'arcade') {
+                G.arcadeLives--;
+                if (G.arcadeLives <= 0) {
+                    import('./game.js').then(m => m.arcadeGameOver());
+                } else {
+                    // Respawn player after short delay
+                    G.safePeriod = 1.5;
+                    G.player.alive = true;
+                    G.player.health = G.player.maxHealth;
+                    G.player.pos = new Vector2(CELL_SIZE * 2.5, CANVAS_HEIGHT - CELL_SIZE * 2.5);
+                    G.player.vel = new Vector2(0, 0);
+                }
+            } else {
+                gameOver();
+            }
         }
 
         for (let e of G.enemies) { if (e.alive) e.update(dt, ct); }
@@ -176,16 +228,22 @@ function gameLoop(ct) {
                         }
                     }
                 }
+                // Bullet may have been killed by mine collision — skip remaining checks
+                if (!b.alive) continue;
                 if (G.player && G.player.alive && b.checkCollision(G.player)) {
                     b.alive = false;
                     G.player.takeDamage(b.damage||1);
                     recordDamageTaken(b.damage||1);
+                    if (b.owner && b.owner._isQLearning) {
+                        b.owner._accumulatedReward += b.damage || 1;
+                    }
                     log('info', 'DAMAGE', 'Player hit! HP: ' + G.player.health);
                     if (!G.player.alive) {
                         recordDeath();
                         if (G.aiTracker) G.aiTracker.recordDeath();
                         if (G.isMultiplayerGame) multiplayerGameOver(false);
                         else if (G.gameMode === 'ai1v1') multiplayerGameOver(false);
+                        else if (G.gameMode === 'arcade') { /* handled by player death check below */ }
                         else gameOver();
                     }
                 }
@@ -195,8 +253,8 @@ function gameLoop(ct) {
                         if (!G.settings.friendlyFire && isEnemyBullet) break;
                         if (!b.pierceCount) b.alive = false;
                         e.takeDamage(b.damage||1);
-                        recordHit(); if (G.aiTracker) G.aiTracker.recordHit();
-                        if (!e.alive) { recordKill(); trackKill(); if (G.aiTracker) G.aiTracker.recordKill(); G.score += 100 * G.level; log('info', 'KILL', 'Enemy killed! Score: ' + G.score); }
+                        recordHit(b.damage||1); if (G.aiTracker) G.aiTracker.recordHit();
+                        if (!e.alive) { recordKill(); trackKill(); if (G.aiTracker) G.aiTracker.recordKill(); G.score += 100 * (G.gameMode === 'arcade' ? G.arcadeWave : G.level); log('info', 'KILL', 'Enemy killed! Score: ' + G.score); }
                         break;
                     }
                 }
@@ -208,7 +266,7 @@ function gameLoop(ct) {
                         if (rt.alive && b.checkCollision(rt)) {
                             b.alive = false;
                             rt.takeDamage(b.damage||1);
-                            recordHit();
+                            recordHit(b.damage||1);
                             log('info', 'MP', 'Remote player hit! HP: ' + rt.health);
                             if (!rt.alive) { recordKill(); multiplayerGameOver(true); }
                             break;
@@ -247,18 +305,41 @@ function gameLoop(ct) {
             }
         }
 
-        if (!G.isMultiplayerGame && G.enemies.filter(e => e.alive).length === 0 && G.player.alive && G.gameState !== GameState.TUTORIAL) {
+        if (!G.isMultiplayerGame && G.enemies.filter(e => e.alive).length === 0 && G.player && G.player.alive && G.gameState !== GameState.TUTORIAL) {
             if (G.gameMode === 'ai1v1') {
                 recordKill(); if (G.aiTracker) G.aiTracker.recordKill();
                 multiplayerGameOver(true);
+            } else if (G.gameMode === 'arcade') {
+                if (!G.arcadeWaveComplete) {
+                    G.arcadeWaveComplete = true;
+                    G._arcadeWaveTimer = 1.5;
+                    G.score += 500 * G.arcadeWave;
+                }
             } else {
                 levelComplete();
+            }
+        }
+
+        // ARCADE wave timer — spawn next wave after delay
+        if (G.gameMode === 'arcade' && G.arcadeWaveComplete && G._arcadeWaveTimer > 0) {
+            G._arcadeWaveTimer -= dt;
+            if (G._arcadeWaveTimer <= 0) {
+                G.arcadeWave++;
+                if (G.arcadeQL) {
+                    G.arcadeQL.save(); // persist Q-table per wave
+                    G.arcadeQL.decayEpsilon(); // reduce exploration over time
+                }
+                import('./levels.js').then(m => m.generateArcadeWave());
             }
         }
     } else if (G.gameState === GameState.TUTORIAL) {
         // Interactive tutorial — let the player move, shoot, boost, place mines freely
         if (G.player && G.player.alive) {
             G.player.update(dt, ct);
+            // Prevent player from clipping through walls
+            for (let w of G.walls) {
+                if (G.player.collidesWithWall(w)) resolveWallCollision(G.player, w);
+            }
         }
         for (let m of G.mines) m.update(dt);
 
@@ -282,16 +363,22 @@ function gameLoop(ct) {
 
         updateTutorial(dt);
     } else if (G.gameState === GameState.READY) {
+        // For versus multiplayer — show DOM countdown overlay with player info
+        if (G.isMultiplayerGame && !G._versusCountdownShown) {
+            G._versusCountdownShown = true;
+            showVersusCountdown(() => {
+                G.gameState = GameState.PLAYING;
+                G.levelStartTime = performance.now();
+            });
+            return;
+        }
         const elapsed = (ct - G._readyAt) / 1000;
         const count = Math.ceil(3 - elapsed);
-
         // Dim overlay
         ctx.fillStyle = 'rgba(0,0,0,0.2)';
         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-
         if (count > 0) {
             ctx.fillStyle = '#f39c12';
             ctx.font = 'bold 96px Orbitron, monospace';
@@ -319,6 +406,19 @@ function gameLoop(ct) {
     for (let uid in G.remoteTanks) { const rt = G.remoteTanks[uid].tank; if (rt.alive) rt.draw(); }
     for (let e of G.enemies) { if (e.alive) e.draw(); }
 
+    // End screen shake / restore unshaken canvas for HUD
+    if (G.screenShake > 0) ctx.restore();
+
+    // Red border overlay on hit
+    if (G.screenShake > 0) {
+        const alpha = Math.min(G.screenShake * 0.8, 0.35);
+        ctx.strokeStyle = `rgba(255,0,0,${alpha})`;
+        ctx.lineWidth = 16;
+        ctx.strokeRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    }
+
+    if (G.screenShake > 0) G.screenShake = Math.max(0, G.screenShake - dt * 2);
+
     if (G.gameState === GameState.PLAYING || G.gameState === GameState.TUTORIAL) {
         const isTutorial = G.gameState === GameState.TUTORIAL;
         ctx.fillStyle = COLORS.text;
@@ -335,6 +435,25 @@ function gameLoop(ct) {
             ctx.fillStyle = COLORS.text;
             ctx.fillText('TIME: ' + G.levelTime.toFixed(1) + 's', CANVAS_WIDTH - 20, 60);
             ctx.fillText('MINES: ' + (3 - G.mines.length) + '/3', CANVAS_WIDTH - 20, 85);
+        } else if (G.gameMode === 'arcade') {
+            const iq = G.arcadeQL ? G.arcadeQL.getIQ() : 0;
+            ctx.textAlign = 'left';
+            ctx.fillText('WAVE ' + G.arcadeWave, 20, 35);
+            ctx.fillText('SCORE: ' + G.score, 20, 60);
+            ctx.fillText('LIVES: ' + '❤'.repeat(Math.max(0, G.arcadeLives)) + '🖤'.repeat(Math.max(0, G.arcadeMaxLives - G.arcadeLives)), 20, 85);
+            ctx.fillText('KILLS: ' + G.arcadeKills, 20, 110);
+            ctx.textAlign = 'right';
+            ctx.fillStyle = iq > 20 ? '#e74c3c' : iq > 10 ? '#f39c12' : '#888';
+            ctx.fillText('AI IQ: ' + iq, CANVAS_WIDTH - 20, 35);
+            ctx.fillStyle = COLORS.text;
+            ctx.fillText('TIME: ' + G.levelTime.toFixed(1) + 's', CANVAS_WIDTH - 20, 60);
+            ctx.fillText('MINES: ' + (3 - G.mines.length) + '/3', CANVAS_WIDTH - 20, 85);
+            if (G.arcadeWaveComplete && G._arcadeWaveTimer > 0) {
+                ctx.textAlign = 'center';
+                ctx.fillStyle = '#f1c40f';
+                ctx.font = '18px Orbitron';
+                ctx.fillText('NEXT WAVE IN ' + Math.ceil(G._arcadeWaveTimer) + '...', CANVAS_WIDTH / 2, 60);
+            }
         } else if (!isTutorial) {
             ctx.textAlign = 'left';
             ctx.fillText('LEVEL ' + G.level, 20, 35);
@@ -347,7 +466,6 @@ function gameLoop(ct) {
             ctx.fillText('MINES: ' + (3 - G.mines.length) + '/3', CANVAS_WIDTH - 20, 60);
         }
 
-        // Ammo + cooldown HUD (bottom-right)
         const p = G.player;
         if (p) {
             let weaponName = 'CANNON';
@@ -360,15 +478,19 @@ function gameLoop(ct) {
             const hudW = 160;
             const hudH = 94;
 
-            ctx.fillStyle = 'rgba(0,0,0,0.55)';
+            ctx.fillStyle = 'rgba(10,10,26,0.7)';
             ctx.beginPath();
-            ctx.roundRect(hudX, hudY, hudW, hudH, 6);
+            ctx.roundRect(hudX, hudY, hudW, hudH, 8);
             ctx.fill();
-            ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+            ctx.lineWidth = 1.5;
             ctx.beginPath();
-            ctx.roundRect(hudX, hudY, hudW, hudH, 6);
+            ctx.roundRect(hudX, hudY, hudW, hudH, 8);
             ctx.stroke();
+            ctx.fillStyle = 'rgba(255,255,255,0.03)';
+            ctx.beginPath();
+            ctx.roundRect(hudX + 2, hudY + 2, hudW - 4, hudH / 3, 6);
+            ctx.fill();
 
             ctx.textAlign = 'left';
             ctx.font = '10px Orbitron';
@@ -485,7 +607,7 @@ document.addEventListener('keydown', (e) => {
             resumeGame();
         } else if (G.gameState === GameState.MENU || G.gameState === GameState.LOADING || !G.gameState) {
             // Close overlay if one is open (detect via visible non-login overlays)
-            const overlays = ['settingsOverlay','aboutOverlay','statsOverlay','friendsOverlay','leaderboardOverlay','aiDifficultyOverlay','profileOverlay','missionsOverlay','shopOverlay','upgradeOverlay'];
+            const overlays = ['settingsOverlay','aboutOverlay','statsOverlay','friendsOverlay','leaderboardOverlay','aiDifficultyOverlay','profileOverlay','missionsOverlay','shopOverlay','upgradeOverlay','tutorialOverlay'];
             const active = overlays.find(id => {
                 const el = document.getElementById(id);
                 return el && el.classList.contains('active');
@@ -498,7 +620,8 @@ document.addEventListener('keydown', (e) => {
             else if (active === 'aiDifficultyOverlay') closeAIDifficulty();
             else if (active === 'missionsOverlay') closeMissions();
             else if (active === 'shopOverlay') closeShop();
-else if (active === 'upgradeOverlay') closeUpgrades();
+            else if (active === 'upgradeOverlay') closeUpgrades();
+            else if (active === 'tutorialOverlay') closeTutorial();
         }
     }
 });
@@ -673,7 +796,6 @@ function startWelcomeSequence() {
                     wo.style.display = 'none';
                     wo.classList.remove('active');
                     showOverlay('loginOverlay');
-                    autoShowTutorial();
                 }, 600);
             }, 400);
         }

@@ -70,22 +70,28 @@ const STEPS = [
     }
 ];
 
+// Navigate around the wall: up → left → down → right (counter-clockwise)
 const MOVE_KEYS = [
-    { code: 'KeyW', label: 'W', instruction: 'Press W to move forward', success: 'Forward!' },
-    { code: 'KeyA', label: 'A', instruction: 'Press A to turn left', success: 'Left turn!' },
-    { code: 'KeyS', label: 'S', instruction: 'Press S to move backward', success: 'Backward!' },
-    { code: 'KeyD', label: 'D', instruction: 'Press D to turn right', success: 'Right turn!' }
+    { code: 'KeyW', label: 'W', instruction: 'Press W to go above the wall', success: 'Up!' },
+    { code: 'KeyA', label: 'A', instruction: 'Press A to go left of the wall', success: 'Left!' },
+    { code: 'KeyS', label: 'S', instruction: 'Press S to go below the wall', success: 'Down!' },
+    { code: 'KeyD', label: 'D', instruction: 'Press D to go right of the wall', success: 'Right!' }
 ];
 
-const MOVE_CODES = MOVE_KEYS.map(k => k.code);
+// Axis-aligned checkpoints for counter-clockwise path around the central wall block.
+// Each shares an axis with the previous so a single key press reaches it.
+// Path: start at (640,440) → W up → A left → S down → D right → back to start
+const MOVE_CHECKPOINTS = [
+    { x: 640, y: 280 },  // W — above wall
+    { x: 520, y: 280 },  // A — left of wall (same y as W)
+    { x: 520, y: 440 },  // S — below wall (same x as A)
+    { x: 640, y: 440 }   // D — right of wall (same y as S, back to start)
+];
 
 let currentStep = 0;
 let stepTimer = 0;
 let showSuccess = false;
 let successTimer = 0;
-let hasMoved = false;
-let totalDist = 0;
-let lastPos = null;
 let initialAngle = null;
 let angleChanged = false;
 let shotCount = 0;
@@ -94,12 +100,15 @@ let boostTimer = 0;
 let mineTimer = 0;
 let enemyTriggeredMine = false;
 let fuelDrained = false;
+let fuelRegenTimer = 0;
+let releaseTimer = 0;
 let isActive = false;
 
 // Key-by-key movement
 let moveKeyIndex = 0;
 let wrongKeyTimer = 0;
-let prevKeys = {};
+let moveMarker = null;
+let moveStartPos = null;
 
 // Spotlight
 let spotlightHighlightEl = null;
@@ -121,13 +130,15 @@ function setupTutorialArena() {
         [920, 500], [920, 540], [960, 500], [960, 540],
         [560, 300], [560, 340], [560, 380],
         [120, 660], [160, 660], [200, 660],
-        [840, 120], [840, 160], [880, 120], [880, 160]
+        [840, 120], [840, 160], [880, 120], [880, 160],
+        // Central wall block for navigation practice (2x2)
+        [560, 320], [600, 320], [560, 360], [600, 360]
     ];
     for (let [wx, wy] of wallPositions) {
         G.walls.push(new Wall(wx, wy, 40, 40));
     }
 
-    G.player = new Player(CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+    G.player = new Player(640, 440);  // below-right of central wall block
     G.player.health = 3;
     G.player.maxHealth = 3;
     G.player.maxAmmo = 99;
@@ -149,34 +160,51 @@ function setupTutorialArena() {
 }
 
 function resetStepState() {
-    hasMoved = false;
-    totalDist = 0;
-    lastPos = G.player ? G.player.pos.clone() : null;
     initialAngle = G.player ? G.player.turretAngle : null;
     angleChanged = false;
     shotCount = 0;
     hasBoosted = false;
     boostTimer = 0;
+    releaseTimer = 0;
     mineTimer = 0;
     enemyTriggeredMine = false;
     fuelDrained = false;
+    fuelRegenTimer = 0;
     stepTimer = 0;
     moveKeyIndex = 0;
     wrongKeyTimer = 0;
-    prevKeys = {};
+    moveMarker = null;
+    moveStartPos = null;
     removeSpotlight();
+    // Reset player to a safe central position between steps
+    if (G.player) {
+        G.player.pos.x = CANVAS_WIDTH / 2;
+        G.player.pos.y = CANVAS_HEIGHT / 2;
+        G.player.vel.x = 0;
+        G.player.vel.y = 0;
+        G.player.fuel = 100;
+        G.player.boostEnergy = 100;
+    }
     // Restore target dummy health between steps
     if (targetDummy && !targetDummy.alive) {
         targetDummy.health = targetDummy.maxHealth;
         targetDummy.alive = true;
     }
-    if (targetDummy && G.enemies.indexOf(targetDummy) !== -1) {
-        const nextStepId = currentStep + 1 < STEPS.length ? STEPS[currentStep + 1].id : null;
-        const enteringMine = STEPS[currentStep] && STEPS[currentStep].id === 'mine';
-        if (enteringMine || nextStepId === 'mine') {
-            G.enemies.splice(G.enemies.indexOf(targetDummy), 1);
-        }
-    }
+	if (targetDummy && G.enemies.indexOf(targetDummy) !== -1) {
+		const nextStepId = currentStep + 1 < STEPS.length ? STEPS[currentStep + 1].id : null;
+		const enteringMine = STEPS[currentStep] && STEPS[currentStep].id === 'mine';
+		if (enteringMine || nextStepId === 'mine') {
+			G.enemies.splice(G.enemies.indexOf(targetDummy), 1);
+		}
+	}
+	if (targetDummy && G.enemies.indexOf(targetDummy) === -1) {
+		const currentStepId = STEPS[currentStep] && STEPS[currentStep].id;
+		if (currentStepId === 'shoot' || currentStepId === 'aim') {
+			targetDummy.health = targetDummy.maxHealth;
+			targetDummy.alive = true;
+			G.enemies.push(targetDummy);
+		}
+	}
 }
 
 function advanceStep() {
@@ -192,6 +220,17 @@ function doAdvance() {
     showSuccess = false;
     currentStep++;
     resetStepState();
+}
+
+function spawnMoveMarker() {
+    if (moveKeyIndex >= MOVE_KEYS.length) { moveMarker = null; return; }
+    const cp = MOVE_CHECKPOINTS[moveKeyIndex];
+    if (G.player) {
+        moveStartPos = { x: G.player.pos.x, y: G.player.pos.y };
+    }
+    const px = G.player ? G.player.pos.x : CANVAS_WIDTH / 2;
+    const py = G.player ? G.player.pos.y : CANVAS_HEIGHT / 2;
+    moveMarker = { x: cp.x, y: cp.y, angle: Math.atan2(cp.y - py, cp.x - px), pulse: 0 };
 }
 
 export function updateTutorial(dt) {
@@ -214,36 +253,21 @@ export function updateTutorial(dt) {
 
     switch (step.id) {
         case 'move': {
-            // Snapshot current key state for edge detection
-            const curKeys = {};
-            for (const code in G.keys) {
-                if (G.keys[code]) curKeys[code] = true;
-            }
-
-            // Edge-detect newly pressed keys
-            for (const code of MOVE_CODES) {
-                const wasDown = !!prevKeys[code];
-                const isDown = !!curKeys[code];
-                if (!wasDown && isDown) {
-                    if (code === MOVE_KEYS[moveKeyIndex].code) {
-                        // Correct key — advance to next
-                        moveKeyIndex++;
-                        if (moveKeyIndex >= MOVE_KEYS.length) {
-                            advanceStep();
-                        }
+            if (!moveMarker && moveKeyIndex < MOVE_KEYS.length) spawnMoveMarker();
+            if (moveMarker && G.player) {
+                const dx = G.player.pos.x - moveMarker.x;
+                const dy = G.player.pos.y - moveMarker.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 40) {
+                    moveKeyIndex++;
+                    if (moveKeyIndex >= MOVE_KEYS.length) {
+                        moveMarker = null;
+                        advanceStep();
                     } else {
-                        // Wrong key — shake + red flash
-                        wrongKeyTimer = 0.6;
-                        document.getElementById('gameContainer').classList.add('tutorial-shake');
-                        setTimeout(() => {
-                            const gc = document.getElementById('gameContainer');
-                            if (gc) gc.classList.remove('tutorial-shake');
-                        }, 350);
+                        spawnMoveMarker();
                     }
                 }
             }
-
-            prevKeys = curKeys;
             break;
         }
         case 'hud': {
@@ -256,9 +280,14 @@ export function updateTutorial(dt) {
         }
         case 'fuel': {
             if (!spotlightHighlightEl) createSpotlight();
-            if (G.player && G.player.fuel < 30) fuelDrained = true;
+            if (G.player && G.player.fuel < 30 && !fuelDrained) {
+                fuelDrained = true;
+            }
+            if (fuelDrained) {
+                fuelRegenTimer += dt;
+            }
             // Let player see regeneration for 3s after fuel drained
-            if (fuelDrained && stepTimer > 3) {
+            if (fuelDrained && fuelRegenTimer > 3) {
                 removeSpotlight();
                 advanceStep();
             }
@@ -269,6 +298,10 @@ export function updateTutorial(dt) {
                 if (Math.abs(G.player.turretAngle - initialAngle) > 0.5) angleChanged = true;
             }
             if (angleChanged && stepTimer > 2) advanceStep();
+            // Fallback: advance after 10s even if player doesn't move mouse
+            if (stepTimer > 10 && !angleChanged) {
+                angleChanged = true;
+            }
             break;
         }
         case 'shoot': {
@@ -284,14 +317,14 @@ export function updateTutorial(dt) {
         }
         case 'boost': {
             const shiftHeld = G.keys['ShiftLeft'] || G.keys['ShiftRight'];
-            const moving = G.keys['w'] || G.keys['a'] || G.keys['s'] || G.keys['d'] ||
-                           G.keys['W'] || G.keys['A'] || G.keys['S'] || G.keys['D'] ||
-                           G.keys['KeyW'] || G.keys['KeyA'] || G.keys['KeyS'] || G.keys['KeyD'];
+		const moving = G.keys['KeyW'] || G.keys['KeyA'] || G.keys['KeyS'] || G.keys['KeyD'];
             if (shiftHeld && moving) {
                 boostTimer += dt;
+                releaseTimer = 0;  // reset release timer while actively boosting
             } else if (hasBoosted && !shiftHeld) {
+                releaseTimer += dt;  // count time since shift release
                 // Let them see energy regenerate for 2s after releasing shift
-                if (stepTimer > 2) advanceStep();
+                if (releaseTimer > 2) advanceStep();
             }
             if (boostTimer >= 2.0) {
                 hasBoosted = true;
@@ -299,40 +332,31 @@ export function updateTutorial(dt) {
             break;
         }
         case 'mine': {
-            console.log('MINE STEP ENTERED'); // DEBUG
-            // Count existing live mines
             const liveMines = G.mines.filter(m => !m.exploded).length;
             if (liveMines > 0) mineTimer += dt;
 
             if (mineTimer > 0 && mineTimer < 2 && G.enemies.length === 0) {
                 const firstMine = G.mines.find(m => !m.exploded);
-                if (firstMine) {
-                    const spawnX = firstMine.pos.x + 150;
-                    const spawnY = firstMine.pos.y;
+                if (firstMine && G.player) {
+                    // Spawn enemy on the far side of the mine from the player,
+                    // so it must run through the mine to reach the player.
+                    const dx = firstMine.pos.x - G.player.pos.x;
+                    const dy = firstMine.pos.y - G.player.pos.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                    const spawnX = firstMine.pos.x + (dx / dist) * 80;
+                    const spawnY = firstMine.pos.y + (dy / dist) * 80;
                     const e = new Enemy(spawnX, spawnY, 1);
                     e.health = 1;
                     e.maxHealth = 1;
                     e.speed = 160;
                     G.enemies.push(e);
-                    log('info', 'TUTORIAL', 'Enemy spawned at ' + spawnX + ',' + spawnY + ' (mine at ' + firstMine.pos.x + ',' + firstMine.pos.y + ')');
                 }
             }
 
-            // Log enemy distance to nearest live mine for debugging
-            if (G.enemies.length > 0) {
-                const nearestMine = G.mines.find(m => !m.exploded);
-                if (nearestMine && G.enemies[0].alive) {
-                    const dist = Math.round(G.enemies[0].pos.distanceTo(nearestMine.pos));
-                    if (dist < 60) log('info', 'TUTORIAL', 'Enemy ' + dist + 'px from mine');
-                }
-            }
-
-            // Check if any enemy was killed by a mine
             if (!enemyTriggeredMine) {
                 for (const e of G.enemies) {
                     if (!e.alive || e.health <= 0) {
                         enemyTriggeredMine = true;
-                        log('info', 'TUTORIAL', 'EnemyTriggeredMine = true (alive=' + e.alive + ', health=' + e.health + ')');
                         break;
                     }
                 }
@@ -387,13 +411,15 @@ export function renderTutorial(ctx) {
     // --- Bottom instruction panel ---
     const panelH = 120;
     const panelY = CANVAS_HEIGHT - panelH;
+    const isHudStep = step.id === 'hud';
+    const panelAlpha = isHudStep ? 0.4 : 0.8;
     const grad = ctx.createLinearGradient(0, panelY, 0, CANVAS_HEIGHT);
-    grad.addColorStop(0, 'rgba(13,13,26,0.8)');
-    grad.addColorStop(1, 'rgba(13,13,26,0.95)');
+    grad.addColorStop(0, 'rgba(13,13,26,' + panelAlpha + ')');
+    grad.addColorStop(1, 'rgba(13,13,26,' + (panelAlpha + 0.15) + ')');
     ctx.fillStyle = grad;
     ctx.fillRect(0, panelY, CANVAS_WIDTH, panelH);
 
-    const pulseAccent = 0.3 + Math.sin(stepTimer * 3) * 0.15;
+    const pulseAccent = isHudStep ? 0.1 + Math.sin(stepTimer * 3) * 0.05 : 0.3 + Math.sin(stepTimer * 3) * 0.15;
     ctx.strokeStyle = 'rgba(233,69,96,' + pulseAccent + ')';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -423,25 +449,60 @@ export function renderTutorial(ctx) {
         ctx.fillText('💡 ' + step.hint, 20, panelY + 94);
     }
 
-    if (step.id === 'move' && moveKeyIndex < MOVE_KEYS.length) {
+    if (step.id === 'move' && moveKeyIndex < MOVE_KEYS.length && moveMarker) {
         const mk = MOVE_KEYS[moveKeyIndex];
-        const shakeX = wrongKeyTimer > 0 ? (Math.random() - 0.5) * 10 : 0;
-        ctx.textAlign = 'right';
-        ctx.font = 'bold 40px Orbitron';
-        ctx.fillStyle = '#f1c40f';
-        ctx.shadowColor = '#f1c40f';
-        ctx.shadowBlur = 25;
-        ctx.fillText('[' + mk.label + ']', CANVAS_WIDTH - 160 + shakeX, panelY + 72);
+        const pulse = Math.sin(stepTimer * 6) * 0.3 + 0.7;
+
+        if (moveStartPos) {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(100, 100, 255, 0.3)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([8, 8]);
+            ctx.beginPath();
+            ctx.moveTo(moveStartPos.x, moveStartPos.y);
+            ctx.lineTo(moveMarker.x, moveMarker.y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = 'rgba(100, 100, 255, 0.5)';
+            ctx.beginPath();
+            ctx.arc(moveStartPos.x, moveStartPos.y, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        ctx.save();
+        ctx.translate(moveMarker.x, moveMarker.y);
+        ctx.rotate(moveMarker.angle);
+        ctx.strokeStyle = `rgba(46, 204, 113, ${pulse})`;
+        ctx.shadowColor = '#2ecc71';
+        ctx.shadowBlur = 20 * pulse;
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-25, 0);
+        ctx.lineTo(25, 0);
+        ctx.lineTo(15, -12);
+        ctx.moveTo(25, 0);
+        ctx.lineTo(15, 12);
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.fillStyle = '#2ecc71';
+        ctx.font = 'bold 16px Orbitron';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = '#2ecc71';
+        ctx.shadowBlur = 10;
+        ctx.fillText(mk.label, moveMarker.x, moveMarker.y - 45);
         ctx.shadowBlur = 0;
 
         ctx.textAlign = 'center';
         ctx.font = '12px Orbitron';
+        ctx.fillStyle = '#888';
         let dots = '';
         for (let i = 0; i < MOVE_KEYS.length; i++) {
             dots += i < moveKeyIndex ? '●  ' : '○  ';
         }
-        ctx.fillStyle = moveKeyIndex > 0 ? '#2ecc71' : '#555';
-        ctx.fillText(dots, CANVAS_WIDTH - 80, panelY + 100);
+        ctx.fillText(dots, CANVAS_WIDTH / 2, CANVAS_HEIGHT - panelH - 12);
     }
 
     // --- HUD / Fuel labels ---
@@ -535,7 +596,7 @@ export function renderTutorial(ctx) {
             ctx.fillStyle = 'rgba(241,196,15,' + arrowPulse + ')';
             ctx.shadowColor = '#f1c40f';
             ctx.shadowBlur = 12;
-            ctx.fillText('⬇ FUEL BAR ⬇', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 135);
+            ctx.fillText('⬇ FUEL BAR ⬇', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 150);
             ctx.shadowBlur = 0;
         }
     }
@@ -565,8 +626,9 @@ export function renderTutorial(ctx) {
         ctx.closePath();
         ctx.fill();
 
-        const hx = G.player.pos.x + Math.cos(G.player.angle) * 40;
-        const hy = G.player.pos.y + Math.sin(G.player.angle) * 40;
+		const hullAngle = G.player.vel && G.player.vel.length() > 5 ? Math.atan2(G.player.vel.y, G.player.vel.x) : G.player.turretAngle;
+		const hx = G.player.pos.x + Math.cos(hullAngle) * 40;
+		const hy = G.player.pos.y + Math.sin(hullAngle) * 40;
         ctx.strokeStyle = 'rgba(52,152,219,0.85)';
         ctx.lineWidth = 3;
         ctx.setLineDash([]);
@@ -719,14 +781,30 @@ export function renderTutorial(ctx) {
 }
 
 export function startTutorial() {
-    isActive = true;
-    currentStep = 0;
-    showSuccess = false;
-    resetStepState();
+	if (isActive) {
+		removeSpotlight();
+	}
+	isActive = true;
+	currentStep = 0;
+	showSuccess = false;
+	successTimer = 0;
+	stepTimer = 0;
+	shotCount = 0;
+	boostTimer = 0;
+	mineTimer = 0;
+	enemyTriggeredMine = false;
+	fuelDrained = false;
+	hasBoosted = false;
+	moveKeyIndex = 0;
+	wrongKeyTimer = 0;
+	prevKeys = {};
+	moveMarker = null;
+	moveStartPos = null;
+	targetDummy = null;
 
-    setupTutorialArena();
-    showOverlay(null);
-    log('info', 'TUTORIAL', 'Starting interactive walkthrough');
+	setupTutorialArena();
+	showOverlay(null);
+	log('info', 'TUTORIAL', 'Starting interactive walkthrough');
 }
 
 function showModeOverview() {
@@ -752,18 +830,31 @@ function showModeOverview() {
 }
 
 export function closeTutorial() {
-    isActive = false;
-    currentStep = 0;
-    showSuccess = false;
-    removeSpotlight();
-    targetDummy = null;
-    G.player = null;
-    G.walls = [];
-    G.bullets = [];
-    G.particles = [];
-    G.mines = [];
-    G.enemies = [];
-    G.gameState = GameState.MENU;
+	isActive = false;
+	currentStep = 0;
+	showSuccess = false;
+	successTimer = 0;
+	stepTimer = 0;
+	shotCount = 0;
+	boostTimer = 0;
+	mineTimer = 0;
+	enemyTriggeredMine = false;
+	fuelDrained = false;
+	hasBoosted = false;
+	moveKeyIndex = 0;
+	wrongKeyTimer = 0;
+	prevKeys = {};
+	moveMarker = null;
+	moveStartPos = null;
+	removeSpotlight();
+	targetDummy = null;
+	G.player = null;
+	G.walls = [];
+	G.bullets = [];
+	G.particles = [];
+	G.mines = [];
+	G.enemies = [];
+	G.gameState = GameState.MENU;
 
     const to = document.getElementById('tutorialOverlay');
     to.style.display = 'none';

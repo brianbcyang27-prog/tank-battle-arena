@@ -1,7 +1,9 @@
 import { G } from './state.js';
 import { log } from './log.js';
-import { GameState } from './config.js';
-import { getCampaignLevel, getGems, getCoins, getRank, getRankProgress } from './progression.js';
+import { GameState, WEAPONS, SKINS, STAGES, STAGE_COUNT, LEVELS_PER_STAGE } from './config.js';
+import { getCampaignData, getStageProgress, isStageUnlocked, getGlobalLevel, getGems, getCoins, getRank, getRankProgress, getOwnedWeapons, getOwnedSkins, getEquippedWeapon, getEquippedSkin, getWeaponData, equipWeapon, equipSkin,
+    getSessionTier, getSessionProgressInTier, getSessionLifetimeXp, getSessionRewards, getClaimedRewards, claimReward, claimAllAvailableRewards } from './progression.js';
+import { SESSION } from './sessionConfig.js';
 
 // ==================== SETTINGS ====================
 export function loadSettings() {
@@ -36,7 +38,7 @@ export function saveSettings() {
     localStorage.setItem('tankBattleSettings', JSON.stringify(G.settings));
     // Sync to Firebase for cross-session persistence
     if (G.currentUser) {
-        import('/src/firebase.js').then(({ ref, update, db }) => {
+        import('./firebase.js').then(({ ref, update, db }) => {
             update(ref(db, 'users/' + G.currentUser.uid + '/settings'), G.settings)
                 .catch(e => log('warn','SETTINGS','Firebase save failed: '+e.message));
         });
@@ -76,6 +78,71 @@ window.showAbout = function() {
 window.closeAbout = function() {
     showOverlay('loginOverlay');
     log('info','UI','Closing about panel');
+};
+
+// ==================== FEEDBACK ====================
+window.openFeedback = function() {
+    document.getElementById('feedbackStatus').style.display = 'none';
+    document.getElementById('feedbackSubmitBtn').disabled = false;
+    document.getElementById('feedbackSubmitBtn').textContent = 'SUBMIT FEEDBACK';
+    showOverlay('feedbackOverlay');
+};
+
+window.closeFeedback = function() {
+    showOverlay('loginOverlay');
+};
+
+window.submitFeedback = function() {
+    const type = document.getElementById('feedbackType').value;
+    const message = document.getElementById('feedbackMessage').value.trim();
+    const email = document.getElementById('feedbackEmail').value.trim();
+    const statusEl = document.getElementById('feedbackStatus');
+    const btn = document.getElementById('feedbackSubmitBtn');
+
+    if (!message) {
+        statusEl.style.color = '#e74c3c';
+        statusEl.textContent = 'Please enter a message';
+        statusEl.style.display = 'block';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'SUBMITTING...';
+
+    import('./firebase.js').then(({ ref, push, db, serverTimestamp }) => {
+        const payload = {
+            type,
+            message,
+            timestamp: serverTimestamp(),
+            userAgent: navigator.userAgent,
+        };
+        if (email) payload.email = email;
+        if (G.currentUser) {
+            payload.uid = G.currentUser.uid;
+            payload.displayName = G.currentUser.displayName || G.currentUser.email?.split('@')[0] || 'Anonymous';
+        }
+        push(ref(db, 'feedback'), payload).then(() => {
+            statusEl.style.color = '#2ecc71';
+            statusEl.textContent = 'Thank you! Your feedback has been submitted.';
+            statusEl.style.display = 'block';
+            btn.textContent = '✅ SUBMITTED';
+            document.getElementById('feedbackMessage').value = '';
+            document.getElementById('feedbackEmail').value = '';
+            setTimeout(() => { btn.disabled = false; }, 2000);
+        }).catch(err => {
+            statusEl.style.color = '#e74c3c';
+            statusEl.textContent = 'Failed to submit: ' + err.message;
+            statusEl.style.display = 'block';
+            btn.disabled = false;
+            btn.textContent = 'SUBMIT FEEDBACK';
+        });
+    }).catch(() => {
+        statusEl.style.color = '#e74c3c';
+        statusEl.textContent = 'Failed to load Firebase. Try again later.';
+        statusEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = 'SUBMIT FEEDBACK';
+    });
 };
 
 // ==================== STATS OVERLAY ====================
@@ -147,7 +214,7 @@ window.showStats = function() {
 };
 
 // ==================== UI HELPERS ====================
-const HOME_OVERLAYS = ['loginOverlay','missionsOverlay','shopOverlay','statsOverlay','leaderboardOverlay','friendsOverlay','aboutOverlay','upgradeOverlay','tutorialOverlay','progressionOverlay'];
+const HOME_OVERLAYS = ['loginOverlay','missionsOverlay','shopOverlay','statsOverlay','leaderboardOverlay','friendsOverlay','aboutOverlay','upgradeOverlay','tutorialOverlay','progressionOverlay','seasonPassOverlay'];
 
 export function showOverlay(id){
     document.querySelectorAll('.overlay').forEach(o=>{
@@ -161,13 +228,7 @@ export function showOverlay(id){
         el.classList.add('active');
         // Home overlays fill the full viewport
         if (HOME_OVERLAYS.includes(id)) {
-            // Only fullscreen loginOverlay when loggedInPanel is showing
-            if (id === 'loginOverlay') {
-                const panel = document.getElementById('loggedInPanel');
-                if (panel && panel.style.display !== 'none') el.classList.add('overlay-home');
-            } else {
-                el.classList.add('overlay-home');
-            }
+            el.classList.add('overlay-home');
         }
         log('info','UI','Showing overlay: '+id);
     }
@@ -181,11 +242,100 @@ export function updateUI(){
     if(el('finalLevel')) el('finalLevel').textContent='REACHED LEVEL '+G.level;
 }
 
+// ==================== VERSUS COUNTDOWN ====================
+const VERSUS_WEAPON_ICONS = {
+    standard: '\uD83D\uDD2B',
+    rapid: '\u26A1',
+    cannon: '\uD83D\uDCA5',
+    shotgun: '\uD83D\uDCA2',
+    sniper: '\uD83C\uDFAF',
+};
+
+export function showVersusCountdown(onComplete) {
+    const el = id => document.getElementById(id);
+    const maxLv = 10;
+    import('./progression.js').then(prog => {
+        const localWeapon = prog.getEquippedWeapon() || 'standard';
+        const localSpeed = prog.getUpgradeLevel('speed');
+        const localFuel = prog.getUpgradeLevel('fuel');
+        const localMine = prog.getUpgradeLevel('mineRadius');
+        const localName = G.currentUser ? G.currentUser.email.split('@')[0] : 'YOU';
+        const wIcon = VERSUS_WEAPON_ICONS[localWeapon] || '\uD83D\uDD2B';
+        const wName = (WEAPONS.find(w => w.id === localWeapon) || {}).name || 'Standard Cannon';
+        el('vsP1Name').textContent = localName;
+        el('vsP1WeaponIcon').textContent = wIcon;
+        el('vsP1WeaponName').textContent = wName;
+        el('vsP1Speed').style.width = (localSpeed / maxLv * 100) + '%';
+        el('vsP1SpeedLv').textContent = localSpeed + '/10';
+        el('vsP1Fuel').style.width = (localFuel / maxLv * 100) + '%';
+        el('vsP1FuelLv').textContent = localFuel + '/10';
+        el('vsP1Mine').style.width = (localMine / maxLv * 100) + '%';
+        el('vsP1MineLv').textContent = localMine + '/10';
+        // Remote player
+        const rd = G._versusPlayerData || {};
+        const ruid = Object.keys(rd).find(uid => uid !== (G.currentUser && G.currentUser.uid));
+        if (ruid && rd[ruid]) {
+            const r = rd[ruid];
+            const rw = r.weapon || 'standard';
+            el('vsP2Name').textContent = r.name ? r.name.split('@')[0] : 'OPPONENT';
+            el('vsP2WeaponIcon').textContent = VERSUS_WEAPON_ICONS[rw] || '\uD83D\uDD2B';
+            el('vsP2WeaponName').textContent = (WEAPONS.find(ww => ww.id === rw) || {}).name || 'Standard Cannon';
+            el('vsP2Speed').style.width = ((r.upgrades ? r.upgrades.speed : 0) / maxLv * 100) + '%';
+            el('vsP2SpeedLv').textContent = (r.upgrades ? r.upgrades.speed : 0) + '/10';
+            el('vsP2Fuel').style.width = ((r.upgrades ? r.upgrades.fuel : 0) / maxLv * 100) + '%';
+            el('vsP2FuelLv').textContent = (r.upgrades ? r.upgrades.fuel : 0) + '/10';
+            el('vsP2Mine').style.width = ((r.upgrades ? r.upgrades.mineRadius : 0) / maxLv * 100) + '%';
+            el('vsP2MineLv').textContent = (r.upgrades ? r.upgrades.mineRadius : 0) + '/10';
+        }
+        showOverlay('vsCountdownOverlay');
+        el('vsP1Card').style.animation = 'vs-slideInLeft 0.5s ease-out 0.2s forwards';
+        el('vsP2Card').style.animation = 'vs-slideInRight 0.5s ease-out 0.2s forwards';
+        // Countdown
+        let count = 5;
+        const cnEl = el('vsCountdownNumber');
+        const lbEl = el('vsCountdownLabel');
+        const ftEl = el('vsFightContainer');
+        cnEl.textContent = String(count);
+        cnEl.style.display = 'block';
+        function tick() {
+            if (count > 0) {
+                cnEl.textContent = String(count);
+                cnEl.style.animation = 'none';
+                void cnEl.offsetWidth;
+                cnEl.style.animation = 'vs-countPulse 0.8s ease-in-out infinite';
+                count--;
+                setTimeout(tick, 1000);
+            } else {
+                cnEl.style.display = 'none';
+                lbEl.style.display = 'none';
+                ftEl.style.display = 'block';
+                const goEl = ftEl.querySelector('.vs-fight-text');
+                if (goEl) {
+                    goEl.style.animation = 'none';
+                    void goEl.offsetWidth;
+                    goEl.style.animation = 'vs-fightFlash 0.5s ease-out forwards';
+                }
+                setTimeout(() => {
+                    showOverlay(null);
+                    if (onComplete) onComplete();
+                }, 800);
+            }
+        }
+        setTimeout(tick, 500);
+    });
+}
+
 window.setMode = function(m,btn){
     G.gameMode=m;
     document.querySelectorAll('.mode-tab').forEach(b=>b.classList.remove('selected'));
     btn.classList.add('selected');
     log('info','MODE','Game mode set to: '+m);
+};
+
+window.startArcade = function(){
+    G.gameMode = 'arcade';
+    log('info','MODE','Starting ARCADE mode');
+    import('./game.js').then(m => m.startGameFromMenu());
 };
 
 window.startVersusAI = function(){
@@ -209,99 +359,304 @@ window.startSolo = function(){
     import('./game.js').then(m => m.startGameFromMenu());
 };
 
+let _selectedStageIndex = 0;
+let _selectedLevelIndex = 0;
+let _gridRendered = false;
+
 window.startCampaign = function(){
     G.gameMode='campaign';
     showCampaignMap();
 };
 
-function showCampaignMap() {
-    const savedLevel = getCampaignLevel();
-    const grid = document.getElementById('campaignLevelGrid');
-    const sub = document.getElementById('campaignMapSub');
-    const btn = document.getElementById('campaignStartBtn');
-    if (!grid) return;
-    
-    grid.innerHTML = '';
-    const maxLevel = 60;
-    const colsPerRow = 10;
-    
-    if (sub) {
-        sub.textContent = savedLevel > 1
-            ? 'LEVEL ' + savedLevel + ' — ' + (savedLevel - 1) + ' COMPLETED'
-            : 'READY TO BEGIN YOUR JOURNEY';
-    }
-    if (btn) btn.textContent = savedLevel > 1 ? 'CONTINUE (LEVEL ' + savedLevel + ')' : 'START';
-    
-    for (let i = 1; i <= maxLevel; i += colsPerRow) {
-        const row = document.createElement('div');
-        row.className = 'campaign-row' + ((Math.floor((i - 1) / colsPerRow) % 2 === 1) ? ' reverse' : '');
-        
-        for (let j = 0; j < colsPerRow && i + j <= maxLevel; j++) {
-            const lvl = i + j;
-            const node = document.createElement('div');
-            node.className = 'campaign-node';
-            
-            const iconSpan = document.createElement('div');
-            iconSpan.className = 'node-icon';
-            const levelSpan = document.createElement('div');
-            levelSpan.className = 'node-level';
-            
-            if (lvl < savedLevel) {
-                node.classList.add('completed');
-                iconSpan.textContent = '✓';
-                levelSpan.textContent = 'L' + lvl;
-            } else if (lvl === savedLevel) {
-                node.classList.add('current');
-                iconSpan.textContent = '▶';
-                levelSpan.textContent = 'L' + lvl;
-            } else {
-                node.classList.add('locked');
-                iconSpan.textContent = '🔒';
-                levelSpan.textContent = '' + lvl;
-            }
-            
-            node.appendChild(iconSpan);
-            node.appendChild(levelSpan);
-            row.appendChild(node);
-        }
-        grid.appendChild(row);
-        
-        // Connector row between level rows
-        if (i + colsPerRow <= maxLevel) {
-            const connRow = document.createElement('div');
-            connRow.className = 'campaign-row';
-            connRow.style.cssText = 'gap:6px;justify-content:center;';
-            
-            const connWidth = 46 * Math.min(colsPerRow, maxLevel - i) + 6 * (Math.min(colsPerRow, maxLevel - i) - 1);
-            const conn = document.createElement('div');
-            conn.style.cssText = 'width:' + connWidth + 'px;height:6px;display:flex;align-items:center;justify-content:center;';
-            
-            const lastInBatch = Math.min(i + colsPerRow - 1, maxLevel);
-            const nextLevel = lastInBatch + 1;
-            
-            let connClass = 'campaign-connector';
-            if (nextLevel <= savedLevel) connClass += ' done';
-            else if (nextLevel === savedLevel + 1) connClass += ' active';
-            conn.innerHTML = '<div class="' + connClass + '">⤵</div>';
-            
-            connRow.appendChild(conn);
-            grid.appendChild(connRow);
-        }
-    }
-    
+export function showCampaignMap() {
+    const data = getCampaignData();
+    _selectedStageIndex = Math.min(data.unlockedStage, STAGE_COUNT - 1);
+    _selectedLevelIndex = 0;
+    renderCampaignUI();
     showOverlay('campaignMapOverlay');
-    log('info','CAMPAIGN','Campaign map shown, saved level: ' + savedLevel);
+    log('info','CAMPAIGN','Campaign map shown');
 }
+
+function renderCampaignUI() {
+    renderStageTabs();
+    renderLevelGrid();
+    updateCampaignSubtitle();
+    renderStageDetail();
+}
+
+function renderStageTabs() {
+    const container = document.getElementById('stageCarousel');
+    if (!container) return;
+    container.innerHTML = '';
+    const data = getCampaignData();
+
+    for (let si = 0; si < STAGE_COUNT; si++) {
+        const stage = STAGES[si];
+        const progress = getStageProgress(si);
+        const unlocked = si <= data.unlockedStage;
+        const active = si === _selectedStageIndex;
+
+        const card = document.createElement('div');
+        card.className = 'stage-card' + (active ? ' active' : '') + (!unlocked ? ' locked' : '');
+        card.style.setProperty('--stage-accent', stage.colors.wall || '#333');
+        card.style.setProperty('--stage-bg', stage.colors.bg || '#111');
+        card.onclick = () => selectStage(si);
+
+        card.innerHTML = `
+            <div class="stage-card-icon">${stage.icon}</div>
+            <div class="stage-card-name">${stage.name}</div>
+            <div class="stage-card-progress">${progress.completedCount}/${progress.totalCount}</div>
+            <div class="stage-card-bar"><div class="stage-card-bar-fill" style="width:${(progress.completedCount / progress.totalCount * 100).toFixed(0)}%"></div></div>
+            ${!unlocked ? '<div class="stage-card-lock">🔒</div>' : ''}
+        `;
+        container.appendChild(card);
+
+        requestAnimationFrame(() => {
+            card.style.opacity = '1';
+            card.style.transform = 'translateY(0)';
+        });
+    }
+}
+
+function renderLevelGrid() {
+    const grid = document.getElementById('campaignLevelGrid');
+    if (!grid) return;
+    grid.innerHTML = '';
+
+    const progress = getStageProgress(_selectedStageIndex);
+    const unlocked = isStageUnlocked(_selectedStageIndex);
+    if (!progress) return;
+    if (!Array.isArray(progress.completed)) return;
+
+    for (let li = 0; li < LEVELS_PER_STAGE; li++) {
+        const completed = progress.completed[li];
+        const record = progress.records[String(li)] || null;
+        const canPlay = unlocked && (completed || li === 0 || progress.completed.slice(0, li).some(c => c));
+
+        const node = document.createElement('div');
+        node.className = 'level-node' + (completed ? ' completed' : '') + (canPlay && !completed ? ' available' : '') + (!canPlay ? ' locked' : '') + (li === _selectedLevelIndex ? ' selected' : '');
+
+        const num = document.createElement('div');
+        num.className = 'level-node-num';
+        num.textContent = li + 1;
+
+        const status = document.createElement('div');
+        status.className = 'level-node-status';
+        if (completed) {
+            status.textContent = '✓';
+        } else if (canPlay) {
+            status.textContent = '▶';
+        } else {
+            status.textContent = '🔒';
+        }
+
+        node.appendChild(num);
+        node.appendChild(status);
+
+        if (completed && record) {
+            const tip = document.createElement('div');
+            tip.className = 'level-node-record';
+            tip.textContent = Math.round(record.score).toLocaleString() + ' | ' + record.time.toFixed(1) + 's';
+            node.appendChild(tip);
+        }
+
+        if (canPlay) {
+            node.onclick = function() {
+                _selectedLevelIndex = li;
+                renderLevelGrid();
+                renderStageDetail();
+            };
+            node.style.cursor = 'pointer';
+            node.title = 'Level ' + (li + 1) + (record ? ' — Best: ' + Math.round(record.score).toLocaleString() : '');
+        } else {
+            node.title = 'Complete previous levels to unlock';
+        }
+
+        if (_gridRendered) {
+            node.style.opacity = '1';
+            node.style.transform = 'scale(1)';
+            node.style.transition = 'none';
+        } else {
+            node.style.opacity = '0';
+            node.style.transform = 'scale(0.6)';
+            const delay = li * 40;
+            node.style.transition = 'all 0.3s ease ' + delay + 'ms';
+        }
+        grid.appendChild(node);
+        if (!_gridRendered) {
+            requestAnimationFrame(() => {
+                node.style.opacity = '1';
+                node.style.transform = 'scale(1)';
+            });
+        }
+    }
+    _gridRendered = true;
+}
+
+function updateCampaignSubtitle() {
+    const sub = document.getElementById('campaignMapSub');
+    if (!sub) return;
+    const data = getCampaignData();
+    const completed = data.stages.reduce((sum, s) => sum + s.completed.filter(Boolean).length, 0);
+    const total = STAGE_COUNT * LEVELS_PER_STAGE;
+    if (completed >= total) {
+        sub.textContent = '🎉 ALL LEVELS COMPLETE! Congratulations Commander!';
+    } else {
+        const stage = STAGES[_selectedStageIndex];
+        const prog = getStageProgress(_selectedStageIndex);
+        sub.textContent = stage.icon + ' ' + stage.name + ' — ' + prog.completedCount + '/' + prog.totalCount + ' levels cleared';
+    }
+}
+
+window.selectStage = function(si) {
+    if (si < 0 || si >= STAGE_COUNT) return;
+    if (!isStageUnlocked(si)) return;
+    _selectedStageIndex = si;
+    _selectedLevelIndex = 0;
+    _gridRendered = false;
+    renderCampaignUI();
+};
 
 window.closeCampaignMap = function() {
     showOverlay('loginOverlay');
     log('info','CAMPAIGN','Campaign map closed');
 };
 
-window.startCampaignGame = function(){
+window.startCampaignGame = function() {
+    startCampaignLevel(_selectedStageIndex, _selectedLevelIndex);
+};
+
+function startCampaignLevel(stageIdx, levelIdx) {
+    const globalLevel = getGlobalLevel(stageIdx, levelIdx);
+    G.level = globalLevel;
+    G.currentStageIndex = stageIdx;
+    G.currentLevelInStage = levelIdx;
     showOverlay(null);
     import('./game.js').then(m => m.startGameFromMenu());
-};
+}
+
+window.startCampaignLevel = startCampaignLevel;
+
+// ==================== STAGE DETAIL PANEL ====================
+
+function fetchStageWorldRecord(stageIdx) {
+    return new Promise(resolve => {
+        import('./firebase.js').then(({ ref, get, db, query, orderByChild, limitToLast }) => {
+            get(query(ref(db, 'campaignLeaderboard/stage_' + stageIdx), orderByChild('score'), limitToLast(1)))
+                .then(snap => {
+                    const data = snap.val();
+                    if (!data) { resolve(null); return; }
+                    const entries = Object.values(data);
+                    resolve(entries.length ? entries.reduce((a, b) => (a.score > b.score ? a : b)) : null);
+                }).catch(() => resolve(null));
+        }).catch(() => resolve(null));
+    });
+}
+
+function getLevelEnemyInfo(stageIdx, levelIdx) {
+    const lvl = getGlobalLevel(stageIdx, levelIdx);
+    const baseEnemies = lvl === 1 ? 1 : 2;
+    const enemies = Math.min(baseEnemies + Math.floor(lvl * 1.2), 10);
+    const tier = Math.min(Math.ceil(lvl / 2), 4);
+    return { enemies, tier };
+}
+
+function renderStageDetail() {
+    const panel = document.getElementById('stageDetailPanel');
+    if (!panel) return;
+    const stage = STAGES[_selectedStageIndex];
+    const li = _selectedLevelIndex;
+    const progress = getStageProgress(_selectedStageIndex);
+    const record = progress ? (progress.records[String(li)] || null) : null;
+    const enemyInfo = getLevelEnemyInfo(_selectedStageIndex, li);
+
+    panel.style.setProperty('--stage-accent', stage.colors.wall || '#333');
+    panel.className = 'stage-detail-panel';
+
+    const gripDots = Array.from({ length: 5 }, (_, i) =>
+        `<span class="detail-grip-dot ${stage.grip * 10 > i ? 'filled' : ''}"></span>`
+    ).join('');
+
+    const hazardLabels = { lava: 'Lava Pools', fog: 'Dense Fog', wind: 'Sandstorms', movingWalls: 'Moving Walls' };
+    const hazardLabel = stage.hazard ? (hazardLabels[stage.hazard] || stage.hazard) : 'None';
+
+    const bestScore = record ? Math.round(record.score).toLocaleString() : '--';
+    const bestTime = record ? record.time.toFixed(1) + 's' : '--';
+
+    panel.innerHTML = `
+        <div class="stage-detail-header">
+            <div class="stage-detail-icon">${stage.icon}</div>
+            <div class="stage-detail-name">${stage.name}</div>
+            <div class="stage-detail-level-label">LEVEL ${li + 1} of ${LEVELS_PER_STAGE}</div>
+            <p class="stage-detail-desc">${stage.desc}</p>
+        </div>
+        <div class="detail-card">
+            <h3>⚔️ Combat Intel</h3>
+            <div class="detail-row">
+                <span class="label">Grip</span>
+                <span class="value"><span class="detail-grip-bar">${gripDots}</span> ${stage.grip.toFixed(2)}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Hazard</span>
+                <span class="value"><span class="detail-hazard-tag">${hazardLabel}</span></span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Enemies</span>
+                <span class="value">${enemyInfo.enemies}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Enemy Tier</span>
+                <span class="value">${enemyInfo.tier}</span>
+            </div>
+        </div>
+        <div class="detail-card">
+            <h3>🏆 Personal Best</h3>
+            <div class="detail-row">
+                <span class="label">Score</span>
+                <span class="value highlight">${bestScore}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Time</span>
+                <span class="value">${bestTime}</span>
+            </div>
+            <div class="detail-row">
+                <span class="label">Status</span>
+                <span class="value">${record ? '✅ Completed' : (progress && progress.completed.slice(0, li).some(c => c) ? '▶ Unlocked' : (li === 0 ? '▶ Available' : '🔒 Locked'))}</span>
+            </div>
+        </div>
+        <div class="detail-card" id="stageWorldRecordCard">
+            <h3>🌍 World Record</h3>
+            <div class="stage-detail-wr-loading">Loading...</div>
+        </div>
+        <button class="stage-detail-play" onclick="startCampaignGame()">
+            ▶ PLAY LEVEL ${li + 1}
+        </button>
+    `;
+
+    fetchStageWorldRecord(_selectedStageIndex).then(record => {
+        const wrCard = document.getElementById('stageWorldRecordCard');
+        if (!wrCard) return;
+        if (record && record.name) {
+            wrCard.innerHTML = `
+                <h3>🌍 World Record</h3>
+                <div class="detail-row">
+                    <span class="label">Player</span>
+                    <span class="value">${record.name}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="label">Score</span>
+                    <span class="value highlight">${Math.round(record.score).toLocaleString()}</span>
+                </div>
+                ${record.time ? `<div class="detail-row"><span class="label">Time</span><span class="value">${record.time.toFixed(1)}s</span></div>` : ''}
+            `;
+        } else {
+            wrCard.innerHTML = `
+                <h3>🌍 World Record</h3>
+                <div style="font-size:9px;color:#555;font-style:italic;">No records yet — be the first!</div>
+            `;
+        }
+    });
+}
 
 window.toggleVersus = function(){
     const panel=document.getElementById('versusPanel');
@@ -334,8 +689,9 @@ window.submitOnlineScore = function(){
         log('warn','LB','Cannot submit score: not logged in');
         return;
     }
-    import('/src/firebase.js').then(({ ref, push, db, serverTimestamp }) => {
-        const leaderboardRef=ref(db, 'leaderboard');
+    const mode = G.gameMode === 'single' ? 'solo' : G.gameMode || 'campaign';
+    import('./firebase.js').then(({ ref, push, db, serverTimestamp }) => {
+        const leaderboardRef=ref(db, 'leaderboard/' + mode);
         push(leaderboardRef, {
             name:G.currentUser.email,
             score:G.score,
@@ -351,14 +707,26 @@ window.submitOnlineScore = function(){
 function loadOnlineLeaderboard(){
     const lb=document.getElementById('leaderboardEntries');
     lb.innerHTML='<p style="color:#666;">Loading online leaderboard...</p>';
-    import('/src/firebase.js').then(({ ref, query, orderByChild, limitToLast, get, db }) => {
-        const leaderboardRef=ref(db, 'leaderboard');
-        get(query(leaderboardRef, orderByChild('score'), limitToLast(10))).then(snapshot=>{
-            const raw = snapshot.val();
-            const entries = raw ? Object.values(raw) : [];
+    import('./firebase.js').then(({ ref, get, db }) => {
+        const modes = ['campaign', 'solo', 'arcade', 'vs_ai'];
+        Promise.all(modes.map(m => get(ref(db, 'leaderboard/' + m)).catch(() => null))).then(results => {
+            let entries = [];
+            results.forEach((snapshot, i) => {
+                const mode = modes[i];
+                if (!snapshot) return;
+                const raw = snapshot.val();
+                if (!raw) return;
+                for (const uid in raw) {
+                    const entry = raw[uid];
+                    if (entry && entry.score > 0) {
+                        entry.mode = mode;
+                        entries.push(entry);
+                    }
+                }
+            });
             entries.sort((a, b) => (b.score || 0) - (a.score || 0));
             displayLeaderboard(entries);
-        }).catch(()=>{
+        }).catch(() => {
             lb.innerHTML='<p style="color:#666;">Could not load online leaderboard</p>';
         });
     });
@@ -381,6 +749,7 @@ export function displayLeaderboard(entries){
 // ==================== HOME LEADERBOARD (worldwide) ====================
 let _lbCache = null;
 let _lbFilter = 'all';
+let _lbMode = 'all';
 
 function _lbRender() {
     const listEl = document.getElementById('lbList');
@@ -389,7 +758,13 @@ function _lbRender() {
     if (!listEl) return;
     const query = (searchInput && searchInput.value || '').toLowerCase().trim();
     const filter = _lbFilter;
+    const mode = _lbMode;
     let entries = _lbCache || [];
+
+    // Filter by mode first
+    if (mode !== 'all') {
+        entries = entries.filter(e => (e.mode || 'campaign') === mode);
+    }
 
     if (filter === 'top10') entries = entries.slice(0, 10);
     else if (filter === 'top50') entries = entries.slice(0, 50);
@@ -429,18 +804,26 @@ function _lbRender() {
 function _mergeLocal() {
     try {
         const local = JSON.parse(localStorage.getItem('tankBattleLeaderboard') || '[]');
-        const myName = (G.currentUser?.displayName || G.currentUser?.email?.split('@')[0] || '').toLowerCase();
-        if (!myName || !local.length || !_lbCache) return;
-        const localBest = local.find(e => (e.name || '').toLowerCase() === myName);
-        if (!localBest || !localBest.score) return;
-        const fbMatch = _lbCache.find(e => (e.name || '').toLowerCase() === myName);
-        if (fbMatch) {
-            if ((localBest.score || 0) > (fbMatch.score || 0)) {
-                fbMatch.score = localBest.score;
-                fbMatch.level = localBest.level || fbMatch.level;
+        if (!local.length || !_lbCache) return;
+        for (const localEntry of local) {
+            const localMode = localEntry.mode || 'campaign';
+            const localName = (localEntry.name || '').toLowerCase();
+            if (!localName) continue;
+            // Find matching entry in cache with same name + mode
+            const match = _lbCache.find(e => (e.name || '').toLowerCase() === localName && (e.mode || 'campaign') === localMode);
+            if (match) {
+                if ((localEntry.score || 0) > (match.score || 0)) {
+                    match.score = localEntry.score;
+                    match.level = localEntry.level || match.level;
+                }
+            } else {
+                _lbCache.push({
+                    name: localEntry.name,
+                    score: localEntry.score,
+                    level: localEntry.level || 1,
+                    mode: localMode
+                });
             }
-        } else {
-            _lbCache.push({ name: myName, score: localBest.score, level: localBest.level || 1 });
         }
         _lbCache.sort((a, b) => (b.score || 0) - (a.score || 0));
     } catch(e) {}
@@ -454,25 +837,39 @@ window.showLeaderboard = function() {
     if (countEl) countEl.textContent = '';
 
     _lbCache = null;
-    import('/src/firebase.js').then(({ ref, get, db }) => {
-        get(ref(db, 'leaderboard')).then(snapshot => {
-            const raw = snapshot.val();
-            _lbCache = raw ? Object.values(raw) : [];
-            // Deduplicate by name — keep highest score per player
+    import('./firebase.js').then(({ ref, get, db }) => {
+        // Read all 3 mode paths in parallel
+        const modes = ['campaign', 'solo', 'arcade', 'vs_ai'];
+        Promise.all(modes.map(m => get(ref(db, 'leaderboard/' + m)).catch(() => null))).then(results => {
+            let allEntries = [];
+            results.forEach((snapshot, i) => {
+                const mode = modes[i];
+                if (!snapshot) return;
+                const raw = snapshot.val();
+                if (!raw) return;
+                for (const uid in raw) {
+                    const entry = raw[uid];
+                    if (entry && entry.score > 0) {
+                        entry.mode = mode;
+                        entry.uid = uid;
+                        allEntries.push(entry);
+                    }
+                }
+            });
+
+            // Deduplicate by name per mode — keep highest score per player per mode
             const seen = {};
-            _lbCache = _lbCache.filter(e => {
-                if (!e.score || e.score <= 0) return false;
-                const key = (e.name || '').toLowerCase();
-                if (!key) return true;
+            allEntries = allEntries.filter(e => {
+                const key = ((e.name || '').toLowerCase()) + '::' + (e.mode || 'campaign');
                 if (seen[key]) {
                     if ((e.score || 0) > (seen[key].score || 0)) seen[key].score = e.score;
-                    if ((e.level || 1) > (seen[key].level || 1)) seen[key].level = e.level;
                     return false;
                 }
                 seen[key] = e;
                 return true;
             });
-            _lbCache.sort((a, b) => (b.score || 0) - (a.score || 0));
+            allEntries.sort((a, b) => (b.score || 0) - (a.score || 0));
+            _lbCache = allEntries;
             _mergeLocal();
             _lbRender();
         }).catch(e => {
@@ -498,6 +895,17 @@ window.setLBFilter = function(filter) {
         b.style.color = '#999';
     });
     const btn = document.querySelector('.lb-filter[data-filter="' + filter + '"]');
+    if (btn) { btn.style.background = 'rgba(52,152,219,0.3)'; btn.style.color = '#f39c12'; }
+    _lbRender();
+};
+
+window.setLBMode = function(mode) {
+    _lbMode = mode;
+    document.querySelectorAll('.lb-mode').forEach(b => {
+        b.style.background = 'transparent';
+        b.style.color = '#999';
+    });
+    const btn = document.querySelector('.lb-mode[data-mode="' + mode + '"]');
     if (btn) { btn.style.background = 'rgba(52,152,219,0.3)'; btn.style.color = '#f39c12'; }
     _lbRender();
 };
@@ -671,13 +1079,20 @@ window.copyRoomCode = function() {
 };
 
 // ==================== PROGRESSION UI ====================
-import { SKINS, WEAPONS } from './config.js';
 
 function updateCampaignDesc() {
     const el = document.getElementById('campaignDesc');
     if (el) {
-        const level = getCampaignLevel();
-        el.textContent = level > 1 ? 'Level ' + level + ' — Continue Progress' : 'Persistent — Continue Progress';
+        const data = getCampaignData();
+        let completed = 0;
+        for (const s of data.stages) completed += s.completed.filter(Boolean).length;
+        const total = STAGE_COUNT * LEVELS_PER_STAGE;
+        if (completed >= total) {
+            el.textContent = '🎉 All ' + total + ' levels complete!';
+        } else {
+            const stage = STAGES[data.unlockedStage];
+            el.textContent = stage.icon + ' ' + stage.name + ' — ' + completed + '/' + total + ' levels';
+        }
     }
 }
 
@@ -691,7 +1106,7 @@ export function updateCurrencyDisplay() {
     const rank = getRank();
     const rankEl = document.getElementById('homeRankBadge');
     const barEl = document.getElementById('homeRankBar');
-    if (rankEl) rankEl.textContent = rank.icon + ' ' + rank.title;
+    if (rankEl) rankEl.innerHTML = rank.icon + ' <span class="rank-title">' + rank.title + '</span>';
     if (barEl) barEl.style.width = (getRankProgress() * 100).toFixed(0) + '%';
 }
 
@@ -831,6 +1246,149 @@ window.closeProgression = function() {
     log('info','UI','Closing progression panel');
 };
 
+// ==================== SEASON PASS / BATTLE PASS ====================
+
+window.showSeasonPass = function() {
+    renderSeasonPass();
+    showOverlay('seasonPassOverlay');
+    log('info','UI','Opening Season Pass');
+};
+
+window.closeSeasonPass = function() {
+    showOverlay('loginOverlay');
+    log('info','UI','Closing Season Pass');
+};
+
+function renderSeasonPass() {
+    const grid = document.getElementById('seasonPassGrid');
+    if (!grid) return;
+
+    const tier = getSessionTier();
+    const progress = getSessionProgressInTier();
+    const claimed = getClaimedRewards();
+    const lifetimeXp = getSessionLifetimeXp();
+    const totalTiers = SESSION.tiers;
+    const isMaxTier = tier >= totalTiers;
+    const maxTierXp = totalTiers * SESSION.xpPerTier;
+
+    const headerEl = document.getElementById('seasonPassHeader');
+    if (headerEl) {
+        const pct = isMaxTier ? 100 : Math.min(100, (progress.totalXp / maxTierXp) * 100);
+        headerEl.innerHTML = `
+            <div class="sp-header-top">
+                <span class="sp-season-icon">${SESSION.icon}</span>
+                <span class="sp-season-name">${SESSION.name}</span>
+            </div>
+            <div class="sp-season-desc">${SESSION.description}</div>
+            <div class="sp-progress-bar">
+                <div class="sp-progress-fill" style="width:${pct}%"></div>
+            </div>
+            <div class="sp-progress-stats">
+                <span>Tier <strong>${isMaxTier ? totalTiers : tier}</strong> / ${totalTiers}</span>
+                <span>${isMaxTier ? 'MAX TIER!' : progress.tierProgress + ' / ' + progress.tierMax + ' XP to next tier'}</span>
+                <span>Total: ${lifetimeXp.toLocaleString()} XP</span>
+            </div>
+        `;
+    }
+
+    const allRewards = getSessionRewards();
+    let html = '';
+    for (const entry of allRewards) {
+        const t = entry.tier;
+        const reward = entry.reward;
+        const isUnlocked = tier >= t;
+        const isClaimed = claimed.includes(t);
+
+        let rewardDisplay = '';
+        switch (reward.type) {
+            case 'coins':
+                rewardDisplay = '<span class="sp-reward-icon">🪙</span><span class="sp-reward-amount">' + reward.amount + '</span>';
+                break;
+            case 'gems':
+                rewardDisplay = '<span class="sp-reward-icon">💎</span><span class="sp-reward-amount">' + reward.amount + '</span>';
+                break;
+            case 'skin': {
+                const skin = SKINS.find(s => s.id === reward.id);
+                rewardDisplay = '<span class="sp-reward-icon" style="color:' + (skin ? skin.color : '#fff') + ';">🎨</span><span class="sp-reward-name">' + (skin ? skin.name : reward.id) + '</span>';
+                break;
+            }
+            case 'weapon': {
+                const weapon = WEAPONS.find(w => w.id === reward.id);
+                rewardDisplay = '<span class="sp-reward-icon">🔫</span><span class="sp-reward-name">' + (weapon ? weapon.name : reward.id) + '</span>';
+                break;
+            }
+            case 'title':
+                rewardDisplay = '<span class="sp-reward-icon">🏆</span><span class="sp-reward-name">' + reward.title + '</span>';
+                break;
+            case 'bundle': {
+                let parts = [];
+                if (reward.coins) parts.push('🪙' + reward.coins);
+                if (reward.gems) parts.push('💎' + reward.gems);
+                if (reward.title) parts.push('🏆' + reward.title);
+                rewardDisplay = '<span class="sp-reward-bundle">' + parts.join(' ') + '</span>';
+                break;
+            }
+        }
+
+        // Extra coins/gems on milestone skins/weapons
+        let extraRewardHtml = '';
+        if (reward.coins && reward.type !== 'bundle') extraRewardHtml += '<span class="sp-extra">+🪙' + reward.coins + '</span>';
+        if (reward.gems && reward.type !== 'bundle') extraRewardHtml += '<span class="sp-extra">+💎' + reward.gems + '</span>';
+
+        const isMilestone = t === 5 || t === 10 || t === 15 || t === 20 || t === 25 || t === 30;
+        const cardClass = isClaimed ? 'sp-tier claimed'
+            : isUnlocked ? 'sp-tier unlocked'
+            : 'sp-tier locked';
+
+        const btnClass = isClaimed ? 'sp-btn claimed'
+            : isUnlocked ? 'sp-btn claim'
+            : 'sp-btn locked';
+        const btnText = isClaimed ? '✓ CLAIMED'
+            : isUnlocked ? 'CLAIM'
+            : '🔒';
+        const btnDisabled = isClaimed || !isUnlocked ? 'disabled' : '';
+        const btnClick = isUnlocked && !isClaimed ? `claimBattlePassTier(${t})` : '';
+
+        html += `
+        <div class="${cardClass}${isMilestone ? ' milestone' : ''}">
+            <div class="sp-tier-num">TIER ${t}</div>
+            <div class="sp-reward">${rewardDisplay}</div>
+            ${extraRewardHtml ? '<div class="sp-extra-row">' + extraRewardHtml + '</div>' : ''}
+            <button class="${btnClass}" onclick="${btnClick}" ${btnDisabled}>${btnText}</button>
+        </div>`;
+    }
+
+    const hasUnclaimed = allRewards.some(e => tier >= e.tier && !claimed.includes(e.tier));
+    html += `
+    <div class="sp-tier sp-claim-all">
+        <div class="sp-tier-num" style="color:#f1c40f;">BULK CLAIM</div>
+        <div style="color:#888;font-size:10px;">Claim all available rewards at once</div>
+        <button class="sp-btn claim-all" onclick="claimAllBattlePass()" ${hasUnclaimed ? '' : 'disabled'}>
+            ${hasUnclaimed ? 'CLAIM ALL' : 'ALL CLAIMED'}
+        </button>
+    </div>`;
+
+    grid.innerHTML = html;
+}
+
+window.claimBattlePassTier = function(tier) {
+    const result = claimReward(tier);
+    if (result.ok) {
+        renderSeasonPass();
+        updateCurrencyDisplay();
+        log('info','SESSION','Claimed tier ' + tier + ' reward');
+    }
+};
+
+window.claimAllBattlePass = function() {
+    const count = claimAllAvailableRewards();
+    if (count > 0) {
+        renderSeasonPass();
+        updateCurrencyDisplay();
+        log('info','SESSION','Claimed ' + count + ' rewards');
+    }
+};
+
 window.showShop = function() {
     const gemEl = document.getElementById('shopGems');
     const coinEl = document.getElementById('shopCoins');
@@ -862,6 +1420,7 @@ const WEAPON_ICONS = {
     cannon: '💥',
     shotgun: '💢',
     sniper: '🎯',
+    minigun: '🔥',
 };
 
 function renderShopItems(container, items, type, prog) {
@@ -871,6 +1430,7 @@ function renderShopItems(container, items, type, prog) {
 
     let html = '<div class="shop-grid">';
     for (const item of items) {
+        if (item.session) continue; // session-exclusive items not sold in shop
         const owned = ownedList.includes(item.id);
         const equipped = equippedId === item.id;
         const rankLocked = item.minRank && prog.rankIndex(item.minRank) > prog.rankIndex(rank);
@@ -902,7 +1462,7 @@ function renderShopItems(container, items, type, prog) {
         }
 
         const iconHtml = type === 'skin'
-            ? `<div class="shop-item-icon">🎨</div>`
+            ? `<canvas class="skin-preview-canvas" data-skin-id="${item.id}" width="60" height="50"></canvas>`
             : `<div class="shop-item-icon weapon-icon" onclick="showWeaponPreview3D('${item.id}')" style="cursor:pointer;" title="Click for 3D preview">${WEAPON_ICONS[item.id] || '🔫'}</div>`;
 
         html += `
@@ -916,6 +1476,111 @@ function renderShopItems(container, items, type, prog) {
     }
     html += '</div>';
     container.innerHTML = html;
+
+    // Draw skin previews on each canvas
+    if (type === 'skin') {
+        container.querySelectorAll('.skin-preview-canvas').forEach(c => {
+            const skin = items.find(s => s.id === c.dataset.skinId);
+            if (skin) drawSkinPreview(c, skin);
+        });
+    }
+}
+
+function drawSkinPreview(canvas, skin) {
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    const cx = w / 2, cy = h / 2;
+
+    // Glow behind body
+    if (skin.glowColor) {
+        ctx.save();
+        ctx.globalAlpha = 0.25;
+        ctx.shadowColor = skin.glowColor;
+        ctx.shadowBlur = 16;
+        ctx.fillStyle = skin.glowColor;
+        ctx.beginPath(); ctx.arc(cx, cy, 18, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+    }
+
+    // Body
+    ctx.fillStyle = skin.color;
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(cx - 14, cy - 14, 28, 28, 5); ctx.fill(); ctx.stroke();
+
+    // Body pattern
+    if (skin.bodyPattern) {
+        const px = (x) => cx + x * (28/36);
+        const py = (y) => cy + y * (28/36);
+        switch (skin.bodyPattern) {
+            case 'carbon':
+                ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 1;
+                for (let x = -9; x <= 9; x += 6) { ctx.beginPath(); ctx.moveTo(px(x), py(-14)); ctx.lineTo(px(x), py(14)); ctx.stroke(); }
+                for (let y = -9; y <= 9; y += 6) { ctx.beginPath(); ctx.moveTo(px(-14), py(y)); ctx.lineTo(px(14), py(y)); ctx.stroke(); }
+                break;
+            case 'etched':
+                ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(px(-9), py(-9)); ctx.lineTo(px(9), py(9)); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(px(9), py(-9)); ctx.lineTo(px(-9), py(9)); ctx.stroke();
+                break;
+            case 'circuit':
+                ctx.strokeStyle = 'rgba(0,255,136,0.25)'; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(px(-9), py(-9)); ctx.lineTo(px(-3), py(-9)); ctx.lineTo(px(-3), py(-3));
+                ctx.lineTo(px(3), py(-3)); ctx.lineTo(px(3), py(3)); ctx.lineTo(px(9), py(3)); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(px(-9), py(9)); ctx.lineTo(px(-3), py(9)); ctx.lineTo(px(-3), py(3));
+                ctx.lineTo(px(3), py(3)); ctx.lineTo(px(3), py(-3)); ctx.lineTo(px(9), py(-3)); ctx.stroke();
+                break;
+            case 'flame':
+                ctx.strokeStyle = 'rgba(255,200,0,0.2)'; ctx.lineWidth = 1;
+                for (let x = -7; x <= 7; x += 7) {
+                    ctx.beginPath(); ctx.moveTo(px(x), py(11));
+                    ctx.quadraticCurveTo(px(x-2), py(6), px(x), py(2));
+                    ctx.quadraticCurveTo(px(x+2), py(-3), px(x), py(-8)); ctx.stroke();
+                }
+                break;
+            case 'stealth':
+                ctx.fillStyle = 'rgba(0,0,0,0.2)';
+                for (let x = -9; x <= 9; x += 6)
+                    for (let y = -9; y <= 9; y += 6) { ctx.beginPath(); ctx.arc(px(x), py(y), 1, 0, Math.PI*2); ctx.fill(); }
+                break;
+            case 'crystal':
+                ctx.strokeStyle = 'rgba(255,255,255,0.2)'; ctx.lineWidth = 1;
+                ctx.beginPath(); ctx.moveTo(px(-14), py(-5)); ctx.lineTo(px(-5), py(-14)); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(px(5), py(-14)); ctx.lineTo(px(14), py(-5)); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(px(-14), py(5)); ctx.lineTo(px(-5), py(14)); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(px(5), py(14)); ctx.lineTo(px(14), py(5)); ctx.stroke();
+                break;
+        }
+    }
+
+    // Visor
+    if (skin.visorColor) {
+        ctx.save();
+        ctx.shadowColor = skin.visorColor;
+        ctx.shadowBlur = 6;
+        ctx.fillStyle = skin.visorColor;
+        ctx.beginPath(); ctx.arc(cx, cy - 12, 2, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+    }
+
+    // Turret
+    ctx.strokeStyle = skin.turretGlow || skin.color;
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + 16, cy); ctx.stroke();
+    if (skin.glowColor) {
+        ctx.save();
+        ctx.globalAlpha = 0.5;
+        ctx.shadowColor = skin.glowColor;
+        ctx.shadowBlur = 6;
+        ctx.strokeStyle = skin.glowColor;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + 16, cy); ctx.stroke();
+        ctx.restore();
+    }
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI * 2); ctx.fill();
 }
 
 window.closeShop = function() {
@@ -926,7 +1591,15 @@ window.closeShop = function() {
 
 // Shop helper functions (callable from onclick)
 window.buyShopSkin = function(id) {
-    import('./progression.js').then(m => { m.buySkin(id); window.showShop(); });
+    import('./progression.js').then(m => {
+        const result = m.buySkin(id);
+        if (result && result.ok) {
+            closeShop();
+            showCelebration(id);
+        } else {
+            window.showShop();
+        }
+    });
 };
 window.buyShopWeapon = function(id) {
     import('./progression.js').then(m => { m.buyWeapon(id); window.showShop(); });
@@ -1062,6 +1735,7 @@ window.showWeaponPreview3D = function(weaponId) {
             cannon: 0xe67e22,
             shotgun: 0xf1c40f,
             sniper: 0x8e44ad,
+            minigun: 0xe74c3c,
         };
         const baseColor = COLORS[weaponId] || 0xcccccc;
 
@@ -1109,6 +1783,23 @@ window.showWeaponPreview3D = function(weaponId) {
                 }
                 break;
             }
+            case 'minigun': {
+                mesh(new THREE.BoxGeometry(0.6, 0.5, 0.7), new THREE.MeshStandardMaterial({ color: 0x3a1c1c, roughness: 0.7, metalness: 0.3 })).position.set(-0.7, 0, 0);
+                const barrelMat = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.4, metalness: 0.6 });
+                for (let i = 0; i < 6; i++) {
+                    const angle = (i / 6) * Math.PI * 2;
+                    const bx = Math.cos(angle) * 0.22;
+                    const by = Math.sin(angle) * 0.22;
+                    const b = mesh(new THREE.CylinderGeometry(0.06, 0.07, 1.4, 8), barrelMat);
+                    b.rotation.z = Math.PI / 2;
+                    b.position.set(0.15, bx, by);
+                }
+                const ring = mesh(new THREE.TorusGeometry(0.28, 0.04, 6, 16), new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.8 }));
+                ring.rotation.x = Math.PI / 2;
+                ring.position.set(0.85, 0, 0);
+                mesh(new THREE.BoxGeometry(0.4, 0.22, 0.3), new THREE.MeshStandardMaterial({ color: 0x5c3a1c, roughness: 0.9 })).position.set(-0.3, 0.35, 0);
+                break;
+            }
         }
         const ground = new THREE.Mesh(new THREE.CircleGeometry(2.5, 32), new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.9, metalness: 0.1, transparent: true, opacity: 0.5, side: THREE.DoubleSide }));
         ground.rotation.x = -Math.PI / 2; ground.position.y = -0.5;
@@ -1128,3 +1819,217 @@ window.showWeaponPreview3D = function(weaponId) {
         log('error','UI','3D preview failed: ' + err.message);
     });
 };
+
+let _loadoutTimer = null;
+let _loadoutSeconds = 5;
+let _loadoutPhase = 'weapon';
+let _selectedWeapon = null;
+let _selectedSkin = null;
+let _pendingGameStart = null;
+
+export function showLoadout(onConfirm) {
+    _selectedWeapon = null;
+    _selectedSkin = null;
+    _loadoutPhase = 'weapon';
+    _loadoutSeconds = 5;
+    _pendingGameStart = onConfirm;
+    document.getElementById('loadoutTitle').textContent = 'SELECT WEAPON';
+    renderLoadoutOptions();
+    showOverlay('loadoutOverlay');
+    startLoadoutTimer();
+}
+
+function startLoadoutTimer() {
+    if (_loadoutTimer) clearInterval(_loadoutTimer);
+    _loadoutTimer = setInterval(() => {
+        _loadoutSeconds--;
+        const timerEl = document.getElementById('loadoutTimer');
+        if (timerEl) timerEl.textContent = _loadoutSeconds;
+        if (_loadoutSeconds <= 0) {
+            clearInterval(_loadoutTimer);
+            _loadoutTimer = null;
+            if (_loadoutPhase === 'weapon') {
+                _selectedWeapon = _selectedWeapon || getWeaponData(getEquippedWeapon())?.id || 'standard';
+                _loadoutPhase = 'skin';
+                _loadoutSeconds = 5;
+                document.getElementById('loadoutTitle').textContent = 'SELECT SKIN';
+                renderLoadoutOptions();
+                const timerEl = document.getElementById('loadoutTimer');
+                if (timerEl) timerEl.textContent = _loadoutSeconds;
+                startLoadoutTimer();
+            } else {
+                confirmLoadout();
+            }
+        }
+    }, 1000);
+}
+
+function renderLoadoutOptions() {
+    const container = document.getElementById('loadoutContent');
+    if (!container) return;
+    container.innerHTML = '';
+    if (_loadoutPhase === 'weapon') {
+        const owned = getOwnedWeapons();
+        const equipped = _selectedWeapon || getEquippedWeapon();
+        WEAPONS.forEach(w => {
+            const isOwned = owned.includes(w.id);
+            const isSelected = equipped === w.id;
+            const btn = document.createElement('button');
+            btn.style.cssText = 'padding:12px 16px;font-size:13px;cursor:pointer;border-radius:8px;border:2px solid ' + (isSelected ? '#f39c12' : '#444') + ';background:' + (isOwned ? 'rgba(46,204,113,0.2)' : 'rgba(100,100,100,0.2)') + ';color:' + (isOwned ? '#eaeaea' : '#666') + ';opacity:' + (isOwned ? '1' : '0.5');
+            btn.textContent = w.name + (isSelected ? ' ✓' : '');
+            btn.disabled = !isOwned;
+            btn.onclick = () => { _selectedWeapon = w.id; renderLoadoutOptions(); };
+            container.appendChild(btn);
+        });
+    } else {
+        const owned = getOwnedSkins();
+        const equipped = _selectedSkin || getEquippedSkin();
+        SKINS.forEach(s => {
+            const isOwned = owned.includes(s.id);
+            const isSelected = equipped === s.id;
+            const btn = document.createElement('button');
+            btn.style.cssText = 'padding:12px 16px;font-size:13px;cursor:pointer;border-radius:8px;border:3px solid ' + (isSelected ? '#f39c12' : '#444') + ';background:' + (isOwned ? s.color + '33' : 'rgba(100,100,100,0.2)') + ';color:' + (isOwned ? s.color : '#666') + ';opacity:' + (isOwned ? '1' : '0.5');
+            btn.textContent = s.name + (isSelected ? ' ✓' : '');
+            btn.disabled = !isOwned;
+            btn.onclick = () => { _selectedSkin = s.id; renderLoadoutOptions(); };
+            container.appendChild(btn);
+        });
+    }
+}
+
+window.confirmLoadout = function() {
+    if (_loadoutTimer) { clearInterval(_loadoutTimer); _loadoutTimer = null; }
+    showOverlay(null);
+    if (_selectedWeapon) equipWeapon(_selectedWeapon);
+    if (_selectedSkin) equipSkin(_selectedSkin);
+    if (_pendingGameStart) _pendingGameStart();
+    _pendingGameStart = null;
+};
+
+// ===================== PURCHASE CELEBRATION =====================
+let _celebrationAnimId = null;
+let _celebrationParticles = [];
+
+window.showCelebration = function(skinId) {
+    import('./config.js').then(m => {
+        const skin = m.SKINS.find(s => s.id === skinId) || m.SKINS[0];
+        const overlay = document.getElementById('celebrationOverlay');
+        if (!overlay) return;
+        overlay.classList.add('open');
+
+        // Set text
+        document.getElementById('celebrationTitle').style.color = skin.color;
+        document.getElementById('celebrationTitle').textContent = 'PURCHASED!';
+        document.getElementById('celebrationName').textContent = skin.name;
+        document.getElementById('celebrationName').style.color = skin.color;
+
+        // Draw tank preview
+        const tankCanvas = document.getElementById('celebrationTankBox');
+        if (tankCanvas) drawSkinPreview(tankCanvas, skin);
+
+        // Start confetti
+        const canvas = document.getElementById('celebrationCanvas');
+        if (canvas) startCelebrationConfetti(canvas, skin.color);
+    });
+};
+
+window.closeCelebration = function() {
+    const overlay = document.getElementById('celebrationOverlay');
+    if (overlay) overlay.classList.remove('open');
+    if (_celebrationAnimId) {
+        cancelAnimationFrame(_celebrationAnimId);
+        _celebrationAnimId = null;
+    }
+    _celebrationParticles = [];
+};
+
+function startCelebrationConfetti(canvas, color) {
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    _celebrationParticles = [];
+
+    // Parse color to RGB for variation
+    const r = parseInt(color.slice(1,3), 16);
+    const g = parseInt(color.slice(3,5), 16);
+    const b = parseInt(color.slice(5,7), 16);
+
+    for (let i = 0; i < 80; i++) {
+        _celebrationParticles.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height - canvas.height,
+            vx: (Math.random() - 0.5) * 4,
+            vy: Math.random() * 3 + 1,
+            size: Math.random() * 6 + 3,
+            color: `hsl(${Math.random() * 60 + 30}, 80%, ${50 + Math.random() * 30}%)`,
+            rotation: Math.random() * 360,
+            rotSpeed: (Math.random() - 0.5) * 6,
+            opacity: 0.8 + Math.random() * 0.2,
+        });
+    }
+    // Gold particles
+    for (let i = 0; i < 40; i++) {
+        _celebrationParticles.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height - canvas.height,
+            vx: (Math.random() - 0.5) * 3,
+            vy: Math.random() * 2 + 0.5,
+            size: Math.random() * 3 + 1.5,
+            color: `hsl(${42 + Math.random() * 20}, 100%, ${50 + Math.random() * 30}%)`,
+            rotation: Math.random() * 360,
+            rotSpeed: (Math.random() - 0.5) * 4,
+            opacity: 0.6 + Math.random() * 0.4,
+        });
+    }
+
+    if (_celebrationAnimId) cancelAnimationFrame(_celebrationAnimId);
+    animateCelebrationConfetti(ctx, canvas);
+}
+
+function animateCelebrationConfetti(ctx, canvas) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let alive = false;
+    _celebrationParticles.forEach(p => {
+        p.x += p.vx;
+        p.vy += 0.05;
+        p.y += p.vy;
+        p.rotation += p.rotSpeed;
+        if (p.y < canvas.height + 20) alive = true;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rotation * Math.PI / 180);
+        ctx.globalAlpha = p.opacity * Math.max(0, 1 - (p.y / (canvas.height + 50)));
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
+        ctx.restore();
+    });
+    if (alive) {
+        _celebrationAnimId = requestAnimationFrame(() => animateCelebrationConfetti(ctx, canvas));
+    }
+}
+
+// ===================== HOME MENU TOGGLES =====================
+window.toggleMoreMenu = function() {
+    const menu = document.getElementById('moreMenu');
+    if (menu) menu.classList.toggle('open');
+};
+
+window.toggleLog = function() {
+    const lp = document.getElementById('logPanel');
+    if (lp) lp.style.display = lp.style.display === 'none' ? 'block' : 'none';
+    closeMoreMenu();
+};
+
+function closeMoreMenu() {
+    const menu = document.getElementById('moreMenu');
+    if (menu) menu.classList.remove('open');
+}
+
+// Close more menu when clicking outside
+document.addEventListener('click', function(e) {
+    const menu = document.getElementById('moreMenu');
+    const btn = document.querySelector('.more-btn');
+    if (menu && menu.classList.contains('open') && !menu.contains(e.target) && !btn?.contains(e.target)) {
+        menu.classList.remove('open');
+    }
+});

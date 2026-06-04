@@ -14,19 +14,28 @@ function generateCode() {
 }
 
 export async function ensureFriendCode(uid) {
-    const userSnap = await get(ref(db, 'users/' + uid + '/friendCode'));
-    if (userSnap.exists()) return userSnap.val();
+  const userSnap = await get(ref(db, 'users/' + uid + '/friendCode'));
+  if (userSnap.exists()) return userSnap.val();
 
-    for (let attempt = 0; attempt < 10; attempt++) {
-        const code = generateCode();
-        const codeSnap = await get(ref(db, 'friendCodes/' + code));
-        if (!codeSnap.exists()) {
-            await set(ref(db, 'friendCodes/' + code), uid);
-            await update(ref(db, 'users/' + uid), { friendCode: code });
-            return code;
-        }
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const code = generateCode();
+    const codeRef = ref(db, 'friendCodes/' + code);
+    const codeSnap = await get(codeRef);
+    if (!codeSnap.exists()) {
+      // Use set with a prior check to avoid race: if another user wrote it since our get, this will fail
+      // We rely on Firebase security rules or the retry loop to handle the rare collision
+      await set(codeRef, uid);
+      // Verify we actually own it (in case of race)
+      const verifySnap = await get(codeRef);
+      if (verifySnap.val() === uid) {
+        await update(ref(db, 'users/' + uid), { friendCode: code });
+        return code;
+      }
+      // Another user won the race — retry
+      log('warn', 'FRIENDS', 'Friend code collision on attempt ' + attempt + ', retrying');
     }
-    throw new Error('Could not generate unique friend code');
+  }
+  throw new Error('Could not generate unique friend code');
 }
 
 // ==================== FRIEND REQUESTS ====================
@@ -51,27 +60,39 @@ export async function sendFriendRequest(code) {
         if (existing.status === 'pending') throw new Error('Friend request already sent');
     }
 
-    await set(ref(db, 'friendRequests/' + reqId), {
-        from: G.currentUser.uid,
-        to: targetUid,
-        fromName: G.currentUser.displayName || G.currentUser.email || 'Player',
-        fromCode: c,
-        status: 'pending',
-        createdAt: serverTimestamp()
-    });
+  await set(ref(db, 'friendRequests/' + reqId), {
+    from: G.currentUser.uid,
+    to: targetUid,
+    fromName: G.currentUser.displayName || G.currentUser.email || 'Player',
+    fromCode: c,
+    status: 'pending',
+    createdAt: serverTimestamp()
+  }).catch(e => {
+    log('error', 'FRIENDS', 'Failed to send friend request: ' + e.message);
+    throw e;
+  });
     log('info', 'FRIENDS', 'Friend request sent to ' + targetUid);
 }
 
 export async function respondToFriendRequest(fromUid, accept) {
-    const reqId = fromUid + '_' + G.currentUser.uid;
-    const status = accept ? 'accepted' : 'declined';
-    await update(ref(db, 'friendRequests/' + reqId), { status });
+  const reqId = fromUid + '_' + G.currentUser.uid;
+  const status = accept ? 'accepted' : 'declined';
+  await update(ref(db, 'friendRequests/' + reqId), { status }).catch(e => {
+    log('error', 'FRIENDS', 'Failed to update friend request status: ' + e.message);
+    throw e;
+  });
 
-    if (accept) {
-        await set(ref(db, 'friends/' + G.currentUser.uid + '/' + fromUid), true);
-        await set(ref(db, 'friends/' + fromUid + '/' + G.currentUser.uid), true);
-        log('info', 'FRIENDS', 'Friend request accepted from ' + fromUid);
-    }
+  if (accept) {
+    await set(ref(db, 'friends/' + G.currentUser.uid + '/' + fromUid), true).catch(e => {
+      log('error', 'FRIENDS', 'Failed to add friend (self): ' + e.message);
+      throw e;
+    });
+    await set(ref(db, 'friends/' + fromUid + '/' + G.currentUser.uid), true).catch(e => {
+      log('error', 'FRIENDS', 'Failed to add friend (other): ' + e.message);
+      throw e;
+    });
+    log('info', 'FRIENDS', 'Friend request accepted from ' + fromUid);
+  }
 }
 
 // ==================== QUERIES ====================
@@ -80,14 +101,16 @@ let _requestListener = null;
 export function listenFriendRequests(callback) {
     if (_requestListener) { off(_requestListener.ref, 'value', _requestListener.handler); }
     const reqRef = query(ref(db, 'friendRequests'), orderByChild('to'), equalTo(G.currentUser.uid));
-    const handler = onValue(reqRef, snapshot => {
-        const requests = [];
-        snapshot.forEach(child => {
-            const val = child.val();
-            if (val.status === 'pending') requests.push({ id: child.key, ...val });
-        });
-        callback(requests);
-    });
+  const handler = onValue(reqRef, snapshot => {
+    const requests = [];
+    if (snapshot.exists()) {
+      snapshot.forEach(child => {
+        const val = child.val();
+        if (val.status === 'pending') requests.push({ id: child.key, ...val });
+      });
+    }
+    callback(requests);
+  });
     _requestListener = { ref: reqRef, handler };
 }
 
@@ -102,9 +125,11 @@ let _friendsListener = null;
 export function listenFriends(callback) {
     if (_friendsListener) { off(_friendsListener.ref, 'value', _friendsListener.handler); }
     const friendsRef = ref(db, 'friends/' + G.currentUser.uid);
-    const handler = onValue(friendsRef, async snapshot => {
-        const friendUids = [];
-        snapshot.forEach(child => friendUids.push(child.key));
+  const handler = onValue(friendsRef, async snapshot => {
+    const friendUids = [];
+    if (snapshot.exists()) {
+      snapshot.forEach(child => friendUids.push(child.key));
+    }
         const friendList = [];
         for (const uid of friendUids) {
             try {
@@ -113,7 +138,7 @@ export function listenFriends(callback) {
                     const d = userSnap.val();
                     friendList.push({ uid, name: d.name || d.email || 'Unknown', friendCode: d.friendCode || '—', online: d.online || false });
                 }
-            } catch (e) { /* skip failed lookups */ }
+            } catch (e) { log('warn', 'FRIENDS', 'Failed to lookup friend ' + uid + ': ' + e.message); }
         }
         callback(friendList);
     });
@@ -130,19 +155,24 @@ export function stopListeningFriends() {
 // ==================== LOBBY INVITES ====================
 
 export async function inviteToLobby(friendUid, lobbyId, roomCode, mode) {
-    await set(ref(db, 'invitations/' + friendUid + '/' + G.currentUser.uid), {
-        from: G.currentUser.uid,
-        fromName: G.currentUser.displayName || G.currentUser.email || 'Player',
-        lobbyId: lobbyId,
-        roomCode: roomCode,
-        mode: mode,
-        createdAt: serverTimestamp()
-    });
-    log('info', 'INVITE', 'Invited friend to lobby');
+  await set(ref(db, 'invitations/' + friendUid + '/' + G.currentUser.uid), {
+    from: G.currentUser.uid,
+    fromName: G.currentUser.displayName || G.currentUser.email || 'Player',
+    lobbyId: lobbyId,
+    roomCode: roomCode,
+    mode: mode,
+    createdAt: serverTimestamp()
+  }).catch(e => {
+    log('error', 'INVITE', 'Failed to send lobby invite: ' + e.message);
+    throw e;
+  });
+  log('info', 'INVITE', 'Invited friend to lobby');
 }
 
 export async function clearInvitation(fromUid) {
-    await remove(ref(db, 'invitations/' + G.currentUser.uid + '/' + fromUid));
+  await remove(ref(db, 'invitations/' + G.currentUser.uid + '/' + fromUid)).catch(e => {
+    log('warn', 'INVITE', 'Failed to clear invitation: ' + e.message);
+  });
 }
 
 let _invitationListener = null;
@@ -150,13 +180,15 @@ export function listenInvitations(callback) {
     if (!G.currentUser) return;
     if (_invitationListener) { off(_invitationListener.ref, 'value', _invitationListener.handler); }
     const invRef = ref(db, 'invitations/' + G.currentUser.uid);
-    const handler = onValue(invRef, snapshot => {
-        const invites = [];
-        snapshot.forEach(child => {
-            invites.push({ from: child.key, ...child.val() });
-        });
-        callback(invites);
-    });
+  const handler = onValue(invRef, snapshot => {
+    const invites = [];
+    if (snapshot.exists()) {
+      snapshot.forEach(child => {
+        invites.push({ from: child.key, ...child.val() });
+      });
+    }
+    callback(invites);
+  });
     _invitationListener = { ref: invRef, handler };
 }
 
@@ -171,14 +203,21 @@ export function stopListeningInvitations() {
 
 let _initialized = false;
 export async function initFriendSystem() {
-    if (!G.currentUser || _initialized) return;
-    _initialized = true;
-    try {
-        const code = await ensureFriendCode(G.currentUser.uid);
-        G.friendCode = code;
-        log('info', 'FRIENDS', 'Your friend code: ' + code);
-        return code;
-    } catch (e) {
-        log('warn', 'FRIENDS', 'Failed to init friend system: ' + e.message);
-    }
+  if (!G.currentUser || _initialized) return;
+  _initialized = true;
+  try {
+    const code = await ensureFriendCode(G.currentUser.uid);
+    G.friendCode = code;
+    log('info', 'FRIENDS', 'Your friend code: ' + code);
+    return code;
+  } catch (e) {
+    log('warn', 'FRIENDS', 'Failed to init friend system: ' + e.message);
+  }
+}
+
+export function resetFriendSystem() {
+  _initialized = false;
+  stopListeningFriendRequests();
+  stopListeningFriends();
+  stopListeningInvitations();
 }

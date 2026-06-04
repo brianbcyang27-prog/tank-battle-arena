@@ -1,4 +1,5 @@
-import { SKINS, WEAPONS, RANKS, MISSION_POOL } from './config.js';
+import { SKINS, WEAPONS, RANKS, MISSION_POOL, STAGE_COUNT, LEVELS_PER_STAGE } from './config.js';
+import { SESSION, SESSION_TIERS } from './sessionConfig.js';
 import { log } from './log.js';
 
 const STORAGE_KEY = 'tankBattle_progression';
@@ -23,6 +24,10 @@ function defaultProgression() {
         highestSingleScore: 0,
         upgradePoints: 0,
         upgrades: { speed: 0, fuel: 0, mineRadius: 0 },
+        // Session / Battle Pass
+        sessionXp: 0,
+        sessionRewardsClaimed: [],
+        sessionLifetimeXp: 0, // total earned this session (for display)
     };
 }
 
@@ -389,9 +394,10 @@ export function awardLevelComplete(level) {
     const xp = 30 + level * 20;
     addCoins(coins);
     addXp(xp);
+    const sessionXp = awardSessionXpFromMatch(xp);
     trackLevelComplete();
-    log('info', 'PROG', 'Level ' + level + ' rewards: +' + coins + ' coins, +' + xp + ' xp');
-    return { coins, xp };
+    log('info', 'PROG', 'Level ' + level + ' rewards: +' + coins + ' coins, +' + xp + ' xp, +' + sessionXp + ' session XP');
+    return { coins, xp, sessionXp };
 }
 
 export function awardGameOver(score) {
@@ -399,45 +405,384 @@ export function awardGameOver(score) {
     const xp = Math.max(5, Math.floor(score / 100));
     addCoins(coins);
     addXp(xp);
+    const sessionXp = awardSessionXpFromMatch(xp);
     trackHighScore(score);
-    log('info', 'PROG', 'Game over rewards: +' + coins + ' coins, +' + xp + ' xp');
-    return { coins, xp };
+    log('info', 'PROG', 'Game over rewards: +' + coins + ' coins, +' + xp + ' xp, +' + sessionXp + ' session XP');
+    return { coins, xp, sessionXp };
 }
 
 export function awardAiWin() {
     addCoins(60);
     addXp(100);
+    const sessionXp = awardSessionXpFromMatch(100);
     trackAiWin();
-    log('info', 'PROG', 'AI match win: +60 coins, +100 xp');
-    return { coins: 60, xp: 100 };
+    log('info', 'PROG', 'AI match win: +60 coins, +100 xp, +' + sessionXp + ' session XP');
+    return { coins: 60, xp: 100, sessionXp };
 }
 
 export function awardAiRoundWin() {
     addCoins(15);
     addXp(25);
-    return { coins: 15, xp: 25 };
+    const sessionXp = awardSessionXpFromMatch(25);
+    return { coins: 15, xp: 25, sessionXp };
 }
 
-// ==================== CAMPAIGN LEVEL (persistent across sessions) ====================
-const CAMPAIGN_KEY = 'tankBattle_campaignLevel';
+// ==================== CAMPAIGN STAGE SYSTEM (persistent across sessions) ====================
+const CAMPAIGN_KEY = 'tankBattle_campaign';
+
+function defaultCampaignData() {
+    return {
+        unlockedStage: 0,
+        stages: Array.from({ length: STAGE_COUNT }, () => ({
+            completed: Array.from({ length: LEVELS_PER_STAGE }, () => false),
+            records: {}
+        }))
+    };
+}
+
+function migrateOldCampaign() {
+    try {
+        const old = localStorage.getItem('tankBattle_campaignLevel');
+        if (old === null) return null;
+        const oldLevel = parseInt(old) || 1;
+        const data = defaultCampaignData();
+        for (let g = 1; g < oldLevel; g++) {
+            const si = Math.min(Math.floor((g - 1) / LEVELS_PER_STAGE), STAGE_COUNT - 1);
+            const li = (g - 1) % LEVELS_PER_STAGE;
+            data.stages[si].completed[li] = true;
+        }
+        for (let si = 0; si < STAGE_COUNT; si++) {
+            if (!data.stages[si].completed.every(Boolean)) {
+                data.unlockedStage = si;
+                break;
+            }
+            data.unlockedStage = Math.min(si + 1, STAGE_COUNT - 1);
+        }
+        localStorage.removeItem('tankBattle_campaignLevel');
+        saveCampaignData(data);
+        log('info', 'PROG', 'Campaign data migrated from old format (level ' + oldLevel + ')');
+        return data;
+    } catch (e) {
+        log('warn', 'PROG', 'Migration failed: ' + e);
+        return null;
+    }
+}
+
+export function getCampaignData() {
+    try {
+        const raw = localStorage.getItem(CAMPAIGN_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+        if (parsed && parsed.stages && parsed.stages.length === STAGE_COUNT) {
+                // Normalize each stage — admin saves may leave sparse/null stages
+                const stages = parsed.stages.map(s => {
+                    if (!s || typeof s !== 'object') return { completed: Array.from({ length: LEVELS_PER_STAGE }, () => false), records: {} };
+                    const completed = Array.isArray(s.completed) && s.completed.length === LEVELS_PER_STAGE
+                        ? s.completed
+                        : Array.from({ length: LEVELS_PER_STAGE }, () => false);
+                    return { completed, records: s.records || {} };
+                });
+                return { ...parsed, stages };
+            }
+        }
+    } catch (e) {
+        log('warn', 'PROG', 'Failed to load campaign: ' + e);
+    }
+    const migrated = migrateOldCampaign();
+    return migrated || defaultCampaignData();
+}
+
+export function saveCampaignData(data) {
+    try {
+        localStorage.setItem(CAMPAIGN_KEY, JSON.stringify(data));
+    } catch (e) {
+        log('warn', 'PROG', 'Failed to save campaign: ' + e);
+    }
+    // Sync to Firebase if logged in (fire-and-forget)
+    import('./state.js').then(mState => {
+        if (mState.G.currentUser) {
+            import('./firebase.js').then(mFB => {
+                mFB.set(mFB.ref(mFB.db, 'user_progression/' + mState.G.currentUser.uid + '/campaign'), data)
+                    .catch(e => log('warn', 'PROG', 'Firebase campaign sync failed: ' + e.message));
+            }).catch(() => {});
+        }
+    }).catch(() => {});
+}
+
+export function getGlobalLevel(stageIdx, levelIdx) {
+    return stageIdx * LEVELS_PER_STAGE + levelIdx + 1;
+}
+
+export function getStageAndLevel(globalLevel) {
+    const g = Math.max(1, Math.min(globalLevel, STAGE_COUNT * LEVELS_PER_STAGE));
+    return { stageIdx: Math.floor((g - 1) / LEVELS_PER_STAGE), levelIdx: (g - 1) % LEVELS_PER_STAGE };
+}
+
+export function getCurrentCampaignLevel() {
+    const data = getCampaignData();
+    for (let si = 0; si <= data.unlockedStage && si < STAGE_COUNT; si++) {
+        for (let li = 0; li < LEVELS_PER_STAGE; li++) {
+            if (!data.stages[si].completed[li]) {
+                return getGlobalLevel(si, li);
+            }
+        }
+    }
+    return null;
+}
+
+export function completeLevelInCampaign(stageIdx, levelIdx, score, time) {
+    if (stageIdx < 0 || stageIdx >= STAGE_COUNT || levelIdx < 0 || levelIdx >= LEVELS_PER_STAGE) return;
+    const data = getCampaignData();
+    data.stages[stageIdx].completed[levelIdx] = true;
+    const key = String(levelIdx);
+    const existing = data.stages[stageIdx].records[key];
+    if (!existing || score > existing.score || (score === existing.score && time < existing.time)) {
+        data.stages[stageIdx].records[key] = { score, time };
+    }
+    if (data.stages[stageIdx].completed.every(Boolean) && stageIdx + 1 < STAGE_COUNT) {
+        data.unlockedStage = Math.max(data.unlockedStage, stageIdx + 1);
+    }
+    saveCampaignData(data);
+    log('info', 'CAMPAIGN', 'Stage ' + stageIdx + ' level ' + (levelIdx + 1) + ' complete! Score: ' + score);
+}
+
+export function getStageProgress(stageIdx) {
+    if (stageIdx < 0 || stageIdx >= STAGE_COUNT) return null;
+    const data = getCampaignData();
+    const stage = data.stages[stageIdx];
+    if (!stage || !Array.isArray(stage.completed)) return null;
+    return {
+        completed: stage.completed,
+        records: stage.records,
+        completedCount: stage.completed.filter(Boolean).length,
+        totalCount: LEVELS_PER_STAGE,
+    };
+}
+
+export function isStageUnlocked(stageIdx) {
+    const data = getCampaignData();
+    return stageIdx <= data.unlockedStage;
+}
+
+export function isLevelCompleted(stageIdx, levelIdx) {
+    const data = getCampaignData();
+    if (!data.stages[stageIdx]) return false;
+    return !!data.stages[stageIdx].completed[levelIdx];
+}
+
+export function getLevelRecord(stageIdx, levelIdx) {
+    const data = getCampaignData();
+    if (!data.stages[stageIdx]) return null;
+    return data.stages[stageIdx].records[String(levelIdx)] || null;
+}
+
+export function getCampaignStats() {
+    const data = getCampaignData();
+    let totalCompleted = 0;
+    for (const stage of data.stages) {
+        totalCompleted += stage.completed.filter(Boolean).length;
+    }
+    return {
+        totalCompleted,
+        totalLevels: STAGE_COUNT * LEVELS_PER_STAGE,
+        currentStage: data.unlockedStage,
+    };
+}
+
+export function getStageAggregateStats(stageIdx) {
+    if (stageIdx < 0 || stageIdx >= STAGE_COUNT) return null;
+    const data = getCampaignData();
+    const stage = data.stages[stageIdx];
+    const records = Object.values(stage.records);
+    return {
+        completedCount: stage.completed.filter(Boolean).length,
+        totalCount: LEVELS_PER_STAGE,
+        bestScore: records.length ? Math.max(...records.map(r => r.score)) : null,
+        bestTime: records.length ? Math.min(...records.map(r => r.time)) : null,
+    };
+}
+
+export function resetCampaign() {
+    try {
+        localStorage.removeItem(CAMPAIGN_KEY);
+    } catch (e) {}
+}
 
 export function getCampaignLevel() {
-    try {
-        const saved = parseInt(localStorage.getItem(CAMPAIGN_KEY)) || 1;
-        return Math.max(1, saved);
-    } catch (e) {
-        return 1;
+    const level = getCurrentCampaignLevel();
+    return level !== null ? level : STAGE_COUNT * LEVELS_PER_STAGE;
+}
+
+
+// ==================== SESSION / BATTLE PASS ====================
+
+export function getSessionData() {
+    return {
+        sessionXp: P.sessionXp || 0,
+        sessionRewardsClaimed: P.sessionRewardsClaimed || [],
+        sessionLifetimeXp: P.sessionLifetimeXp || 0,
+    };
+}
+
+export function getSessionXp() {
+    return P.sessionXp || 0;
+}
+
+export function getSessionTier() {
+    const xp = getSessionXp();
+    const xpPerTier = SESSION.xpPerTier;
+    const tier = Math.min(Math.floor(xp / xpPerTier), SESSION.tiers);
+    return Math.max(0, tier);
+}
+
+export function getSessionProgressInTier() {
+    const xp = getSessionXp();
+    const xpPerTier = SESSION.xpPerTier;
+    const currentTier = getSessionTier();
+    const tierStartXp = currentTier * xpPerTier;
+    const progress = xp - tierStartXp;
+    return {
+        currentTier,
+        tierProgress: progress,
+        tierMax: xpPerTier,
+        totalXp: xp,
+        xpToNextTier: currentTier < SESSION.tiers ? xpPerTier - progress : 0,
+        isMaxTier: currentTier >= SESSION.tiers,
+    };
+}
+
+export function getSessionLifetimeXp() {
+    return P.sessionLifetimeXp || 0;
+}
+
+export function addSessionXp(amount) {
+    if (amount <= 0) return;
+    const oldTier = getSessionTier();
+    P.sessionXp = (P.sessionXp || 0) + amount;
+    P.sessionLifetimeXp = (P.sessionLifetimeXp || 0) + amount;
+    saveProgression();
+    const newTier = getSessionTier();
+    if (newTier > oldTier) {
+        log('info', 'SESSION', 'Advanced to battle pass tier ' + newTier + '!');
+    }
+    log('info', 'SESSION', '+' + amount + ' session XP (total: ' + P.sessionXp + ')');
+}
+
+export function getCurrentSessionId() {
+    return SESSION.id;
+}
+
+export function getSessionRewards() {
+    return SESSION_TIERS;
+}
+
+export function getClaimedRewards() {
+    return P.sessionRewardsClaimed || [];
+}
+
+export function isTierClaimed(tier) {
+    return (P.sessionRewardsClaimed || []).includes(tier);
+}
+
+function grantSkin(skinId) {
+    if (!P.ownedSkins.includes(skinId)) {
+        P.ownedSkins.push(skinId);
+        log('info', 'SESSION', 'Granted skin: ' + skinId);
     }
 }
 
-export function saveCampaignLevel(level) {
-    const current = getCampaignLevel();
-    // Only move forward — never regress
-    if (level >= current) {
-        try {
-            localStorage.setItem(CAMPAIGN_KEY, String(level));
-        } catch (e) {}
+function grantWeapon(weaponId) {
+    if (!P.ownedWeapons.includes(weaponId)) {
+        P.ownedWeapons.push(weaponId);
+        log('info', 'SESSION', 'Granted weapon: ' + weaponId);
     }
+}
+
+function grantTitle(title) {
+    // Titles are stored as an array of earned titles
+    if (!P.titles) P.titles = [];
+    if (!P.titles.includes(title)) {
+        P.titles.push(title);
+        log('info', 'SESSION', 'Granted title: ' + title);
+    }
+}
+
+export function getTitles() {
+    return P.titles || [];
+}
+
+export function getEquippedTitle() {
+    return P.equippedTitle || null;
+}
+
+export function equipTitle(titleId) {
+    if (!P.titles) P.titles = [];
+    if (!P.titles.includes(titleId)) return false;
+    P.equippedTitle = titleId;
+    saveProgression();
+    return true;
+}
+
+export function claimReward(tier) {
+    const rewards = getSessionRewards();
+    const entry = rewards.find(r => r.tier === tier);
+    if (!entry) return { ok: false, reason: 'Tier not found' };
+    if (isTierClaimed(tier)) return { ok: false, reason: 'Already claimed' };
+    if (getSessionTier() < tier) return { ok: false, reason: 'Tier not yet reached (current: ' + getSessionTier() + ', need: ' + tier + ')' };
+
+    const reward = entry.reward;
+    if (!P.sessionRewardsClaimed) P.sessionRewardsClaimed = [];
+
+    switch (reward.type) {
+        case 'coins':
+            addCoins(reward.amount);
+            break;
+        case 'gems':
+            addGems(reward.amount);
+            break;
+        case 'skin':
+            grantSkin(reward.id);
+            break;
+        case 'weapon':
+            grantWeapon(reward.id);
+            break;
+        case 'title':
+            grantTitle(reward.title);
+            break;
+        case 'bundle':
+            if (reward.coins) addCoins(reward.coins);
+            if (reward.gems) addGems(reward.gems);
+            if (reward.title) grantTitle(reward.title);
+            break;
+    }
+
+    // Extra coins/gems from grand bundle tiers (e.g. tier 20, 30)
+    if (reward.coins && reward.type !== 'bundle') addCoins(reward.coins);
+    if (reward.gems && reward.type !== 'bundle') addGems(reward.gems);
+
+    P.sessionRewardsClaimed.push(tier);
+    saveProgression();
+    log('info', 'SESSION', 'Claimed tier ' + tier + ' reward: ' + reward.type);
+    return { ok: true, reward };
+}
+
+export function claimAllAvailableRewards() {
+    const currentTier = getSessionTier();
+    let claimed = 0;
+    for (let t = 1; t <= currentTier; t++) {
+        if (!isTierClaimed(t)) {
+            const result = claimReward(t);
+            if (result.ok) claimed++;
+        }
+    }
+    return claimed;
+}
+
+// Called automatically when earning XP in any game mode
+export function awardSessionXpFromMatch(matchXp) {
+    const sessionXp = Math.max(1, Math.floor(matchXp * 0.1));
+    addSessionXp(sessionXp);
+    return sessionXp;
 }
 
 // ==================== APPLY TO PLAYER ====================
@@ -447,6 +792,16 @@ export function applyProgressionToPlayer(player) {
     if (skin && skin.color) {
         player.color = skin.color;
         player.bulletTrailColor = skin.trailColor || null;
+        player.skinPattern = skin.bodyPattern || null;
+        player.skinGlowColor = skin.glowColor || null;
+        player.skinVisorColor = skin.visorColor || null;
+        if (skin.trailColor) {
+            const r = parseInt(skin.trailColor.slice(1,3), 16);
+            const g = parseInt(skin.trailColor.slice(3,5), 16);
+            const b = parseInt(skin.trailColor.slice(5,7), 16);
+            player.traceColor = 'rgba(' + r + ',' + g + ',' + b + ',0.12)';
+        }
+        player.traceFade = !!skin.traceFade;
     }
     const weapon = getWeaponData(P.equippedWeapon);
     if (weapon) {
@@ -466,6 +821,14 @@ export function applyProgressionToPlayer(player) {
         player.bulletBounce = weapon.bounce || 0;
         player.bulletTrailEffect = weapon.trailEffect || 'normal';
         player.bulletImpactEffect = weapon.impactEffect || 'normal';
+        player.recoil = weapon.recoil || 0;
     }
     applyUpgradesToPlayer(player);
+    if (weapon && weapon.weight !== undefined) {
+        const w = weapon.weight;
+        const speedMod = 1 + (1 - w) * 0.4;
+        const gripMod = 1 + (1 - w) * 0.3;
+        player.speed *= speedMod;
+        player.grip *= gripMod;
+    }
 }

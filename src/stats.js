@@ -26,14 +26,15 @@ function defaultLifetime() {
 }
 
 function loadLifetime() {
-    if (lifetime) return;
-    try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        lifetime = raw ? { ...defaultLifetime(), ...JSON.parse(raw) } : defaultLifetime();
-    } catch (e) {
-        log('warn', 'STATS', 'Failed to load stats: ' + e);
-        lifetime = defaultLifetime();
-    }
+  if (lifetime) return;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    lifetime = raw ? { ...defaultLifetime(), ...JSON.parse(raw) } : defaultLifetime();
+  } catch (e) {
+    log('warn', 'STATS', 'Failed to load stats: ' + e);
+    lifetime = defaultLifetime();
+  }
+  if (!lifetime) lifetime = defaultLifetime();
 }
 
 function saveLifetime() {
@@ -74,12 +75,13 @@ export function recordDamageTaken(d = 1){ if (current) current.damageTaken += d;
 
 /** Call when the match ends (win or lose). Saves lifetime stats to localStorage. */
 export function finalizeStats(won = false) {
-    if (!current) return;
-    current.playTime = (performance.now() - current.startTime) / 1000;
-    current.won = won;
+  if (!current) return;
+  current.playTime = (performance.now() - current.startTime) / 1000;
+  current.won = won;
 
-    loadLifetime();
-    lifetime.gamesPlayed++;
+  loadLifetime();
+  if (!lifetime) lifetime = defaultLifetime();
+  lifetime.gamesPlayed++;
     if (won) lifetime.wins++; else lifetime.losses++;
     lifetime.totalKills         += current.kills;
     lifetime.totalDeaths        += current.deaths;
@@ -110,8 +112,9 @@ export function getCurrentStats() {
 }
 
 export function getLifetimeStats() {
-    loadLifetime();
-    return {
+  loadLifetime();
+  if (!lifetime) lifetime = defaultLifetime();
+  return {
         ...lifetime,
         accuracy:  calcAccuracy(lifetime.totalShotsFired, lifetime.totalShotsHit),
         winRate:   calcWinRate(lifetime.wins, lifetime.gamesPlayed),
@@ -122,16 +125,16 @@ export function getLifetimeStats() {
 // ==================== HELPERS ====================
 
 function calcAccuracy(fired, hit) {
-    if (!fired) return '0.0';
-    return ((hit / fired) * 100).toFixed(1);
+  if (!fired || fired <= 0) return '0.0';
+  return (((hit || 0) / fired) * 100).toFixed(1);
 }
 
 function calcWinRate(wins, total) {
-    if (!total) return '0.0';
-    return ((wins / total) * 100).toFixed(1);
+  if (!total || total <= 0) return '0.0';
+  return (((wins || 0) / total) * 100).toFixed(1);
 }
 
 function calcKD(kills, deaths) {
-    if (!deaths) return kills > 0 ? kills.toFixed(2) : '0.00';
-    return (kills / deaths).toFixed(2);
+  if (!deaths || deaths <= 0) return (kills || 0) > 0 ? (kills || 0).toFixed(2) : '0.00';
+  return ((kills || 0) / deaths).toFixed(2);
 }

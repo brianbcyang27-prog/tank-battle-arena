@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://tank-battle-arena-897c0.web.app/sitemap.xml

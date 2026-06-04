@@ -3,6 +3,19 @@
 
 const ADMIN_EMAIL = 'brian.bcyang27@gmail.com';
 
+function isAdmin() {
+  return currentUser && currentUser.email === ADMIN_EMAIL;
+}
+
+function requireAdmin(operation) {
+  if (!isAdmin()) {
+    showToast('Access denied. Admin privileges required.', true);
+    log('warn', 'ADMIN', 'Unauthorized ' + operation + ' attempt');
+    return false;
+  }
+  return true;
+}
+
 const firebaseConfig = {
     apiKey: "AIzaSyDom3iJV-ad6I04J9Vq_RiBLIMsCUs0sHw",
     authDomain: "tank-battle-arena-897c0.firebaseapp.com",
@@ -16,7 +29,7 @@ const firebaseConfig = {
 
 let app, auth, db;
 let currentUser = null;
-let cachedData = { users: null, leaderboard: null, lobbies: null };
+let cachedData = { users: null, leaderboard: null, lobbies: null, feedback: null };
 let cachedProgression = {}; // uid -> progression data
 let userFilter = 'all'; // 'all' | 'real' | 'test'
 let selectedUsers = new Set();
@@ -39,6 +52,7 @@ function init() {
             document.getElementById('adminUserEmail').textContent = user.email;
             loadAllData();
             loadProgressionTab();
+            loadNvidiaKey();
         } else if (user && user.email) {
             loginScreen.style.display = 'flex';
             dashboard.style.display = 'none';
@@ -75,8 +89,11 @@ window.adminSignOut = function() {
 
 // ===================== CLEANUP TEST DATA =====================
 window.cleanupTestData = function() {
-    const testUids = Object.keys(cachedData.users).filter(isTestUid);
-    const testLbUids = Object.keys(cachedData.leaderboard).filter(isTestUid);
+  if (!requireAdmin('cleanupTestData')) return;
+  const users = cachedData.users || {};
+  const lb = cachedData.leaderboard || [];
+  const testUids = Object.keys(users).filter(isTestUid);
+  const testLbUids = [...new Set(lb.filter(e => isTestUid(e.uid)).map(e => e.uid))];
     const allTestUids = new Set([...testUids, ...testLbUids]);
 
     if (allTestUids.size === 0) {
@@ -92,13 +109,15 @@ window.cleanupTestData = function() {
     const promises = [];
     let deletedCount = 0;
 
-    allTestUids.forEach(uid => {
-        promises.push(db.ref('users/' + uid).remove());
-        promises.push(db.ref('leaderboard/' + uid).remove());
-        promises.push(db.ref('user_progression/' + uid).remove());
-        deletedCount++;
-        delete cachedData.users[uid];
-        delete cachedData.leaderboard[uid];
+  allTestUids.forEach(uid => {
+    promises.push(db.ref('users/' + uid).remove());
+    lb.filter(e => e.uid === uid).forEach(e => {
+        promises.push(db.ref('leaderboard/' + e.mode + '/' + uid).remove());
+    });
+    promises.push(db.ref('user_progression/' + uid).remove());
+    deletedCount++;
+    if (cachedData.users) delete cachedData.users[uid];
+    if (cachedData.leaderboard) cachedData.leaderboard = lb.filter(e => e.uid !== uid);
         delete cachedProgression[uid];
     });
 
@@ -128,6 +147,7 @@ window.switchTab = function(name) {
     if (name === 'leaderboard') renderLeaderboard();
     if (name === 'lobbies') renderLobbies();
     if (name === 'controls') loadControlsData();
+    if (name === 'feedback') { renderFeedback(); loadNvidiaKey(); }
 };
 
 // ===================== USER FILTER =====================
@@ -138,6 +158,7 @@ function isTestUid(uid) {
 window.setUserFilter = function(filter) {
     userFilter = filter;
     document.querySelectorAll('.user-filter-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.filter === filter);
         b.style.background = b.dataset.filter === filter ? 'rgba(52,152,219,0.3)' : 'transparent';
         b.style.color = b.dataset.filter === filter ? '#f39c12' : '#999';
     });
@@ -150,12 +171,31 @@ function loadAllData() {
     ref.once('value').then(snap => {
         const data = snap.val() || {};
         cachedData.users = data.users || {};
-        cachedData.leaderboard = data.leaderboard || {};
+
+        // Flatten nested leaderboard/{mode}/{uid} into array of {uid, mode, name, score, level, timestamp}
+        const rawLb = data.leaderboard || {};
+        const lbEntries = [];
+        for (const mode in rawLb) {
+            const modeData = rawLb[mode];
+            if (!modeData || typeof modeData !== 'object') continue;
+            for (const uid in modeData) {
+                const entry = modeData[uid];
+                if (entry && typeof entry === 'object' && entry.score != null) {
+                    entry.uid = uid;
+                    entry.mode = mode;
+                    lbEntries.push(entry);
+                }
+            }
+        }
+        cachedData.leaderboard = lbEntries;
+
         cachedData.lobbies = data.lobbies || {};
+        cachedData.feedback = data.feedback || {};
         renderOverview();
         renderUsers();
         renderLeaderboard();
         renderLobbies();
+        renderFeedback();
     }).catch(e => showToast('Failed to load data: ' + e.message, true));
 }
 
@@ -173,7 +213,7 @@ function renderOverview() {
 
     document.getElementById('statUsers').textContent = uids.length;
     document.getElementById('statOnline').textContent = onlineCount;
-    document.getElementById('statLB').textContent = Object.keys(lb).length;
+    document.getElementById('statLB').textContent = lb.length;
     document.getElementById('statLobbies').textContent = activeLobbies;
 
     // Show breakdown
@@ -182,7 +222,7 @@ function renderOverview() {
         <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;">
             <div class="stat-card"><div class="num">${realUids.length}</div><div class="lbl">REAL USERS</div></div>
             <div class="stat-card"><div class="num">${testUids.length}</div><div class="lbl">TEST PROFILES</div></div>
-            <div class="stat-card"><div class="num">${Object.keys(lb).length}</div><div class="lbl">LEADERBOARD</div></div>
+            <div class="stat-card"><div class="num">${lb.length}</div><div class="lbl">LEADERBOARD</div></div>
         </div>
         <p style="color:#888;font-size:9px;letter-spacing:1px;margin-bottom:8px;">RECENT REAL USER LOGINS</p>
     `;
@@ -216,13 +256,14 @@ window.renderUsers = function() {
     // Apply filter
     if (userFilter === 'real') uids = uids.filter(uid => !isTestUid(uid));
     else if (userFilter === 'test') uids = uids.filter(isTestUid);
-    // Apply search
+        // Apply search
     if (query) {
         uids = uids.filter(uid => {
             const u = users[uid];
             return uid.toLowerCase().includes(query)
                 || (u.email || '').toLowerCase().includes(query)
-                || (u.name || '').toLowerCase().includes(query);
+                || (u.name || '').toLowerCase().includes(query)
+                || (u.friendCode || '').toLowerCase().includes(query);
         });
     }
     uids.sort();
@@ -241,12 +282,13 @@ window.renderUsers = function() {
         const hasProg = cachedProgression[uid] ? 'Yes' : '—';
         const dotClass = online ? 'dot-online' : 'dot-offline';
         const isTest = isTestUid(uid);
-        const rowBg = isTest ? 'style="opacity:0.5;"' : '';
+        const dimTest = isTest && userFilter !== 'test';
+        const rowBg = dimTest ? 'style="opacity:0.5;"' : '';
         const checked = selectedUsers.has(uid) ? 'checked' : '';
 
         html += `<tr ${rowBg}>
             <td><input type="checkbox" class="user-checkbox" value="${uid}" ${checked} onchange="toggleUserSelection('${uid}', this.checked)" style="accent-color:#f39c12;"></td>
-            <td class="id-cell">${isTest ? '🧪 ' : ''}${esc(uid.slice(0, 20))}…</td>
+            <td class="id-cell">${isTest ? '🧪 ' : ''}${esc(u.friendCode || uid.slice(0, 8))}</td>
             <td>${esc(email)}</td>
             <td>${esc(name)}</td>
             <td><span class="${dotClass}"></span>${online ? 'Online' : 'Offline'}</td>
@@ -313,7 +355,8 @@ window.clearSelection = function() {
 };
 
 window.deleteSelectedUsers = function() {
-    if (selectedUsers.size === 0) return;
+  if (!requireAdmin('deleteSelectedUsers')) return;
+  if (selectedUsers.size === 0) return;
     const count = selectedUsers.size;
     if (!confirm(`Delete ${count} selected user${count > 1 ? 's' : ''}?\nThis will remove data from users, leaderboard, and progression for all selected UIDs.\n\nThis cannot be undone.`)) return;
 
@@ -404,21 +447,56 @@ window.viewUser = function(uid) {
             </div>
         </div>`;
 
+        const rawCampaign = prog.campaign || {};
+        _campaignEditState[uid] = _ensureFullCampaign(rawCampaign);
+        const campaignHtml = `<div style="margin-top:12px;border-top:1px solid #333;padding-top:10px;">
+            <p style="color:#f39c12;font-size:9px;letter-spacing:1px;margin-bottom:6px;">CAMPAIGN — Stage/Level Completion
+                <span style="color:#666;font-weight:400;">— click level numbers to toggle, then SAVE</span>
+            </p>
+            <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;">
+                <div class="field" style="margin:0;"><label>Unlocked Stage (0-4)</label>
+                    <input id="campaign_unlockedStage" type="number" min="0" max="4" value="${_campaignEditState[uid].unlockedStage}"
+                        onchange="renderCampaignGrid('${uid}')">
+                </div>
+            </div>
+            <div id="campaignGrid_${uid}" style="margin-bottom:4px;"></div>
+        </div>`;
+
+        const ls = prog.lifetimeStats || {};
+        const lsHtml = `<div style="margin-top:12px;border-top:1px solid #333;padding-top:10px;">
+            <p style="color:#3498db;font-size:9px;letter-spacing:1px;margin-bottom:6px;">LIFETIME STATS
+                <span style="color:#666;font-weight:400;">— read-only, synced from game client</span>
+            </p>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;font-size:11px;">
+                <div><span style="color:#888;">Total Games:</span> ${ls.totalGames || 0}</div>
+                <div><span style="color:#888;">Wins:</span> ${ls.wins || 0}</div>
+                <div><span style="color:#888;">Losses:</span> ${ls.losses || 0}</div>
+                <div><span style="color:#888;">Kills:</span> ${ls.kills || 0}</div>
+                <div><span style="color:#888;">Deaths:</span> ${ls.deaths || 0}</div>
+                <div><span style="color:#888;">Best Score:</span> ${ls.bestScore || 0}</div>
+            </div>
+        </div>`;
+
         showModal(`Edit User${isTest ? ' 🧪' : ''}: ${uid.slice(0, 20)}…`, `
             ${fields}
             ${profileFields}
             ${settingsFields}
             ${progHtml}
+            ${campaignHtml}
+            ${lsHtml}
             <div class="modal-actions">
                 <button class="btn-sm" onclick="closeModal()">CANCEL</button>
                 <button class="btn-sm success" onclick="saveUser('${uid}')">SAVE USER DATA</button>
                 <button class="btn-sm success" onclick="saveUserProgression('${uid}')" style="border-color:#27ae60;background:rgba(39,174,96,0.15);">SAVE PROGRESSION</button>
+                <button class="btn-sm success" onclick="saveUserCampaign('${uid}')" style="border-color:#8e44ad;background:rgba(142,68,173,0.15);">SAVE CAMPAIGN</button>
             </div>
         `);
+        renderCampaignGrid(uid);
     }).catch(e => showToast('Error loading progression: ' + e.message, true));
 };
 
 window.saveUser = function(uid) {
+  if (!requireAdmin('saveUser')) return;
     const fields = document.querySelectorAll('#modalContent [id^="editUser_"]');
     const update = {};
     fields.forEach(el => {
@@ -448,6 +526,7 @@ window.saveUser = function(uid) {
 
 // Save progression data for any user to Firebase user_progression/<uid>
 window.saveUserProgression = function(uid) {
+  if (!requireAdmin('saveUserProgression')) return;
     const getVal = (id) => parseInt(document.getElementById(id).value) || 0;
     const getStr = (id) => document.getElementById(id).value.trim();
 
@@ -476,17 +555,129 @@ window.saveUserProgression = function(uid) {
     }).catch(e => showToast('Save failed: ' + e.message, true));
 };
 
+// ===================== CAMPAIGN EDITING (User Modal) =====================
+
+let _campaignEditState = {};
+
+// Ensure campaign data always has 5 complete stages with 12 levels each,
+// so it passes the stages.length === 5 validation in progression.js:getCampaignData()
+function _ensureFullCampaign(data) {
+    if (!data || typeof data !== 'object') data = {};
+    const stages = [];
+    for (let si = 0; si < 5; si++) {
+        const existingStage = data.stages && data.stages[si];
+        const completed = [];
+        for (let li = 0; li < 12; li++) {
+            completed.push(!!(existingStage && existingStage.completed && existingStage.completed[li]));
+        }
+        stages.push({
+            completed,
+            records: (existingStage && existingStage.records) || {}
+        });
+    }
+    return {
+        unlockedStage: Math.min(Math.max(0, data.unlockedStage || 0), 4),
+        stages
+    };
+}
+
+window.renderCampaignGrid = function(uid) {
+    const state = _campaignEditState[uid];
+    if (!state) return;
+
+    const unlockedInput = document.getElementById('campaign_unlockedStage');
+    if (unlockedInput) {
+        state.unlockedStage = parseInt(unlockedInput.value) || 0;
+    }
+
+    const container = document.getElementById('campaignGrid_' + uid);
+    if (!container) return;
+
+    let html = '';
+    for (let si = 0; si < 5; si++) {
+        const stageData = state.stages && state.stages[si] ? state.stages[si] : { completed: [] };
+        html += `<div style="margin-bottom:5px;font-size:9px;color:#888;">
+            <span style="display:inline-block;width:50px;font-weight:700;color:#f39c12;">S${si + 1}</span>`;
+        for (let li = 0; li < 12; li++) {
+            const completed = !!(stageData.completed && stageData.completed[li]);
+            const unlocked = si <= state.unlockedStage;
+            html += `<span
+                onclick="${unlocked ? `toggleCampaignLevel('${uid}', ${si}, ${li})` : ''}"
+                style="display:inline-block;width:18px;height:18px;line-height:18px;text-align:center;
+                       margin:1px;border-radius:3px;cursor:${unlocked ? 'pointer' : 'default'};
+                       background:${completed ? '#27ae60' : unlocked ? '#444' : '#222'};
+                       color:${completed ? '#fff' : unlocked ? '#888' : '#444'};
+                       border:1px solid ${completed ? '#2ecc71' : unlocked ? '#555' : '#2a2a2a'};
+                       transition:all 0.1s;">${li + 1}</span>`;
+        }
+        if (state.stages && state.stages[si] && state.stages[si].records) {
+            const recordKeys = Object.keys(state.stages[si].records);
+            if (recordKeys.length > 0) {
+                html += `<span style="margin-left:6px;color:#666;font-size:7px;">(${recordKeys.length} records)</span>`;
+            }
+        }
+        html += `</div>`;
+    }
+    container.innerHTML = html;
+};
+
+window.toggleCampaignLevel = function(uid, stageIdx, levelIdx) {
+    const state = _campaignEditState[uid];
+    if (!state) return;
+
+    if (!state.stages) state.stages = [];
+    if (!state.stages[stageIdx]) {
+        state.stages[stageIdx] = { completed: [] };
+    }
+    if (!state.stages[stageIdx].completed) {
+        state.stages[stageIdx].completed = [];
+    }
+
+    state.stages[stageIdx].completed[levelIdx] = !state.stages[stageIdx].completed[levelIdx];
+    renderCampaignGrid(uid);
+};
+
+window.saveUserCampaign = function(uid) {
+    if (!requireAdmin('saveUserCampaign')) return;
+
+    const unlockedInput = document.getElementById('campaign_unlockedStage');
+    if (!unlockedInput) return;
+
+    const unlockedStage = parseInt(unlockedInput.value) || 0;
+    const editedState = _campaignEditState[uid];
+    if (!editedState) return;
+
+    editedState.unlockedStage = unlockedStage;
+
+    // Normalize to full 5-stage structure so progression.js:getCampaignData() doesn't reject it
+    const normalized = _ensureFullCampaign(editedState);
+
+    const existing = cachedProgression[uid] || {};
+    const progression = { ...existing };
+    progression.campaign = normalized;
+    progression.updatedAt = Date.now();
+
+    db.ref('user_progression/' + uid).set(progression).then(() => {
+        showToast('Campaign saved for ' + uid.slice(0, 12));
+        cachedProgression[uid] = progression;
+        _campaignEditState[uid] = JSON.parse(JSON.stringify(normalized));
+    }).catch(e => showToast('Save failed: ' + e.message, true));
+};
+
 window.deleteUser = function(uid) {
-    if (!confirm('Delete user ' + uid + ' and all their data? This cannot be undone.')) return;
+  if (!requireAdmin('deleteUser')) return;
+  if (!confirm('Delete user ' + uid + ' and all their data? This cannot be undone.')) return;
+    const lb = cachedData.leaderboard || [];
+    const lbPromises = lb.filter(e => e.uid === uid).map(e => db.ref('leaderboard/' + e.mode + '/' + uid).remove());
     const promises = [
         db.ref('users/' + uid).remove(),
-        db.ref('leaderboard/' + uid).remove(),
+        ...lbPromises,
         db.ref('user_progression/' + uid).remove()
     ];
     Promise.all(promises).then(() => {
         showToast('User deleted');
         delete cachedData.users[uid];
-        delete cachedData.leaderboard[uid];
+        cachedData.leaderboard = lb.filter(e => e.uid !== uid);
         delete cachedProgression[uid];
         renderUsers();
         renderLeaderboard();
@@ -495,73 +686,96 @@ window.deleteUser = function(uid) {
 };
 
 // ===================== LEADERBOARD =====================
+let _lbMode = 'all';
+
+window.setLBMode = function(mode) {
+    _lbMode = mode;
+    document.querySelectorAll('.admin-lb-mode').forEach(b => {
+        const isActive = b.dataset.mode === mode;
+        b.style.background = isActive ? 'rgba(52,152,219,0.3)' : 'transparent';
+        b.style.color = isActive ? '#f39c12' : '#999';
+    });
+    renderLeaderboard();
+};
+
 window.renderLeaderboard = function() {
-    const lb = cachedData.leaderboard || {};
+    const lb = cachedData.leaderboard || [];
     const query = (document.getElementById('lbSearch').value || '').toLowerCase();
-    let uids = Object.keys(lb);
-    if (query) {
-        uids = uids.filter(uid => {
-            const e = lb[uid];
-            return uid.toLowerCase().includes(query)
-                || (e.name || '').toLowerCase().includes(query);
-        });
-    }
-    uids.sort((a, b) => (lb[b].score || 0) - (lb[a].score || 0));
+    const modeFilter = _lbMode;
+
+    let entries = lb.filter(e => {
+        if (query && !e.uid.toLowerCase().includes(query) && !(e.name || '').toLowerCase().includes(query)) return false;
+        if (modeFilter !== 'all' && (e.mode || '') !== modeFilter) return false;
+        return true;
+    });
+    entries.sort((a, b) => (b.score || 0) - (a.score || 0));
 
     let html = '';
-    uids.forEach((uid, i) => {
-        const e = lb[uid];
+    entries.forEach((e, i) => {
         const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '';
-        const isTest = isTestUid(uid);
+        const isTest = isTestUid(e.uid);
+        const users = cachedData.users || {};
+        const friendCode = users[e.uid] ? users[e.uid].friendCode : null;
         html += `<tr${isTest ? ' style="opacity:0.5;"' : ''}>
-            <td class="id-cell">${medal} ${isTest ? '🧪 ' : ''}${esc(uid.slice(0, 20))}…</td>
+            <td class="id-cell">${medal} ${isTest ? '🧪 ' : ''}${esc(friendCode || e.uid.slice(0, 12))}</td>
             <td>${esc(e.name || '—')}</td>
+            <td><span class="mode-badge" style="font-size:9px;color:#888;background:rgba(255,255,255,0.06);padding:2px 6px;border-radius:3px;">${(e.mode || '?').toUpperCase()}</span></td>
             <td style="color:#27ae60;font-weight:700;">${(e.score || 0).toLocaleString()}</td>
             <td>Lv.${e.level || 1}</td>
             <td style="font-size:8px;color:#666;">${e.timestamp ? new Date(e.timestamp).toLocaleString() : '—'}</td>
             <td>
-                <button class="btn-sm" onclick="editLBEntry('${uid}')">EDIT</button>
-                <button class="btn-sm danger" onclick="deleteLBEntry('${uid}')">DELETE</button>
+                <button class="btn-sm" onclick="editLBEntry('${e.uid}','${e.mode}')">EDIT</button>
+                <button class="btn-sm danger" onclick="deleteLBEntry('${e.uid}','${e.mode}')">DELETE</button>
             </td>
         </tr>`;
     });
-    document.getElementById('lbBody').innerHTML = html || '<tr><td colspan="6" style="text-align:center;color:#555;padding:20px;">No leaderboard entries.</td></tr>';
+    document.getElementById('lbBody').innerHTML = html || '<tr><td colspan="7" style="text-align:center;color:#555;padding:20px;">No leaderboard entries.</td></tr>';
 };
 
-window.editLBEntry = function(uid) {
-    const e = cachedData.leaderboard[uid] || {};
+window.editLBEntry = function(uid, mode) {
+    const lb = cachedData.leaderboard || [];
+    const e = lb.find(x => x.uid === uid && x.mode === mode) || {};
     showModal('Edit Leaderboard Entry', `
+        <div class="field"><label>Mode</label><input id="lbEditMode" value="${esc(mode)}" style="color:#888;background:#222;"></div>
         <div class="field"><label>Name</label><input id="lbEditName" value="${esc(e.name || '')}"></div>
         <div class="field"><label>Score</label><input id="lbEditScore" value="${e.score || 0}"></div>
         <div class="field"><label>Level</label><input id="lbEditLevel" value="${e.level || 1}"></div>
         <div class="modal-actions">
             <button class="btn-sm" onclick="closeModal()">CANCEL</button>
-            <button class="btn-sm success" onclick="saveLBEntry('${uid}')">SAVE</button>
+            <button class="btn-sm success" onclick="saveLBEntry('${uid}','${mode}')">SAVE</button>
         </div>
     `);
 };
 
-window.saveLBEntry = function(uid) {
+window.saveLBEntry = function(uid, mode) {
     const name = document.getElementById('lbEditName').value.trim();
     const score = parseInt(document.getElementById('lbEditScore').value) || 0;
     const level = parseInt(document.getElementById('lbEditLevel').value) || 1;
-    const timestamp = cachedData.leaderboard[uid]?.timestamp || Date.now();
+    const lb = cachedData.leaderboard || [];
+    const existing = lb.find(x => x.uid === uid && x.mode === mode);
+    const timestamp = existing ? existing.timestamp : Date.now();
 
-    db.ref('leaderboard/' + uid).set({ name, score, level, timestamp }).then(() => {
+    db.ref('leaderboard/' + mode + '/' + uid).set({ name, score, level, timestamp }).then(() => {
         showToast('Leaderboard entry saved');
         closeModal();
-        if (!cachedData.leaderboard[uid]) cachedData.leaderboard[uid] = {};
-        cachedData.leaderboard[uid] = { name, score, level, timestamp };
+        if (existing) {
+            existing.name = name;
+            existing.score = score;
+            existing.level = level;
+            existing.timestamp = timestamp;
+        } else {
+            lb.push({ uid, mode, name, score, level, timestamp });
+        }
         renderLeaderboard();
         renderOverview();
     }).catch(e => showToast('Save failed: ' + e.message, true));
 };
 
-window.deleteLBEntry = function(uid) {
-    if (!confirm('Delete leaderboard entry for ' + uid + '?')) return;
-    db.ref('leaderboard/' + uid).remove().then(() => {
+window.deleteLBEntry = function(uid, mode) {
+    if (!confirm('Delete leaderboard entry for ' + uid + ' (' + mode + ')?')) return;
+    db.ref('leaderboard/' + mode + '/' + uid).remove().then(() => {
         showToast('Entry deleted');
-        delete cachedData.leaderboard[uid];
+        cachedData.leaderboard = (cachedData.leaderboard || []).filter(e => !(e.uid === uid && e.mode === mode));
         renderLeaderboard();
         renderOverview();
     }).catch(e => showToast('Delete failed: ' + e.message, true));
@@ -700,7 +914,7 @@ window.deleteLobby = function(id) {
 window.loadControlsData = function() {
     const panel = document.getElementById('panel-controls');
     if (!panel || !panel.classList.contains('active')) return;
-    document.getElementById('controlsBody').innerHTML = '<tr><td colspan="10" class="loading">Loading...</td></tr>';
+    document.getElementById('controlsBody').innerHTML = '<tr><td colspan="15" class="loading">Loading...</td></tr>';
 
     db.ref('user_progression').once('value').then(snap => {
         const allProg = snap.val() || {};
@@ -710,7 +924,7 @@ window.loadControlsData = function() {
         });
         renderControls();
     }).catch(e => {
-        document.getElementById('controlsBody').innerHTML = '<tr><td colspan="10" style="text-align:center;color:#e94560;padding:20px;">Error: ' + esc(e.message) + '</td></tr>';
+        document.getElementById('controlsBody').innerHTML = '<tr><td colspan="15" style="text-align:center;color:#e94560;padding:20px;">Error: ' + esc(e.message) + '</td></tr>';
     });
 }
 
@@ -722,7 +936,9 @@ window.renderControls = function() {
     if (query) {
         uids = uids.filter(uid => {
             const u = users[uid];
-            return uid.toLowerCase().includes(query) || (u.name || '').toLowerCase().includes(query);
+            return uid.toLowerCase().includes(query)
+                || (u.name || '').toLowerCase().includes(query)
+                || (u.friendCode || '').toLowerCase().includes(query);
         });
     }
     uids.sort();
@@ -734,11 +950,17 @@ window.renderControls = function() {
         const u = users[uid];
         const name = u.name || uid.slice(0, 12);
         const p = cachedProgression[uid] || {};
+        const campaign = p.campaign || {};
         const test = isTest(uid);
         const rowStyle = test ? 'opacity:0.5;' : '';
 
+        const ownedSkins = (p.ownedSkins || ['classic']).join(', ');
+        const equippedSkin = p.equippedSkin || 'classic';
+        const ownedWeapons = (p.ownedWeapons || ['standard']).join(', ');
+        const equippedWeapon = p.equippedWeapon || 'standard';
+
         html += `<tr style="${rowStyle}">
-            <td class="id-cell">${test ? '🧪 ' : ''}${esc(uid.slice(0, 20))}…</td>
+            <td class="id-cell">${test ? '🧪 ' : ''}${esc(u.friendCode || uid.slice(0, 8))}</td>
             <td>${esc(name)}</td>
             <td><input class="ctrl-input" id="ctrl_${uid}_gems" type="number" value="${p.gems || 0}"></td>
             <td><input class="ctrl-input" id="ctrl_${uid}_coins" type="number" value="${p.coins || 0}"></td>
@@ -747,17 +969,24 @@ window.renderControls = function() {
             <td><input class="ctrl-input" id="ctrl_${uid}_fuel" type="number" value="${(p.upgrades && p.upgrades.fuel) || 0}"></td>
             <td><input class="ctrl-input" id="ctrl_${uid}_mineRadius" type="number" value="${(p.upgrades && p.upgrades.mineRadius) || 0}"></td>
             <td><input class="ctrl-input" id="ctrl_${uid}_upgradePoints" type="number" value="${p.upgradePoints || 0}"></td>
-            <td>
+            <td><input class="ctrl-input" id="ctrl_${uid}_unlockedStage" type="number" min="0" max="4" value="${campaign.unlockedStage || 0}" style="width:50px;"></td>
+            <td><input class="ctrl-input" id="ctrl_${uid}_ownedSkins" value="${esc(ownedSkins)}" style="width:90px;font-size:9px;"></td>
+            <td><input class="ctrl-input" id="ctrl_${uid}_equippedSkin" value="${esc(equippedSkin)}" style="width:70px;font-size:9px;"></td>
+            <td><input class="ctrl-input" id="ctrl_${uid}_ownedWeapons" value="${esc(ownedWeapons)}" style="width:90px;font-size:9px;"></td>
+            <td><input class="ctrl-input" id="ctrl_${uid}_equippedWeapon" value="${esc(equippedWeapon)}" style="width:70px;font-size:9px;"></td>
+            <td style="white-space:nowrap;">
+                <button class="btn-sm" onclick="viewUser('${uid}')" style="border-color:#3498db;">FULL</button>
                 <button class="btn-sm success" onclick="saveControl('${uid}')" style="border-color:#27ae60;">SAVE</button>
             </td>
         </tr>`;
     });
 
-    document.getElementById('controlsBody').innerHTML = html || '<tr><td colspan="10" style="text-align:center;color:#555;padding:20px;">No users found.</td></tr>';
+    document.getElementById('controlsBody').innerHTML = html || '<tr><td colspan="15" style="text-align:center;color:#555;padding:20px;">No users found.</td></tr>';
 };
 
 window.saveControl = function(uid) {
     const getNum = (id) => parseInt(document.getElementById(id).value) || 0;
+    const getStr = (id) => document.getElementById(id).value.trim();
 
     // Start from existing data so admin saves don't wipe out missions, stats, etc.
     const existing = cachedProgression[uid] || {};
@@ -772,6 +1001,17 @@ window.saveControl = function(uid) {
         fuel: getNum('ctrl_' + uid + '_fuel'),
         mineRadius: getNum('ctrl_' + uid + '_mineRadius')
     };
+
+    const existingCampaign = existing.campaign || {};
+    progression.campaign = _ensureFullCampaign({
+        ...existingCampaign,
+        unlockedStage: getNum('ctrl_' + uid + '_unlockedStage')
+    });
+
+    progression.ownedSkins = getStr('ctrl_' + uid + '_ownedSkins').split(',').map(s => s.trim()).filter(Boolean);
+    progression.equippedSkin = getStr('ctrl_' + uid + '_equippedSkin');
+    progression.ownedWeapons = getStr('ctrl_' + uid + '_ownedWeapons').split(',').map(s => s.trim()).filter(Boolean);
+    progression.equippedWeapon = getStr('ctrl_' + uid + '_equippedWeapon');
     progression.updatedAt = Date.now();
 
     db.ref('user_progression/' + uid).set(progression).then(() => {
@@ -789,6 +1029,189 @@ window.loadRaw = function() {
         document.getElementById('rawOutput').textContent = val ? JSON.stringify(val, null, 2) : '(empty / null)';
     }).catch(e => {
         document.getElementById('rawOutput').textContent = 'Error: ' + e.message;
+    });
+};
+
+// ===================== FEEDBACK =====================
+const NVIDIA_KEY_STORAGE = 'tankBattle_nvidiaKey';
+
+window.saveNvidiaKey = function() {
+    const key = document.getElementById('nvidiaApiKey').value.trim();
+    if (key) {
+        try { localStorage.setItem(NVIDIA_KEY_STORAGE, key); } catch(e) {}
+    } else {
+        try { localStorage.removeItem(NVIDIA_KEY_STORAGE); } catch(e) {}
+    }
+};
+
+function loadNvidiaKey() {
+    try {
+        const key = localStorage.getItem(NVIDIA_KEY_STORAGE);
+        if (key) {
+            document.getElementById('nvidiaApiKey').value = key;
+        }
+    } catch(e) {}
+}
+
+window.renderFeedback = function() {
+    const feedback = cachedData.feedback || {};
+    const query = (document.getElementById('feedbackSearch').value || '').toLowerCase();
+
+    let ids = Object.keys(feedback);
+    ids.sort((a, b) => {
+        const ta = feedback[a].timestamp || 0;
+        const tb = feedback[b].timestamp || 0;
+        return typeof ta === 'number' ? tb - ta : 0;
+    });
+
+    if (query) {
+        ids = ids.filter(id => {
+            const f = feedback[id];
+            return (f.message || '').toLowerCase().includes(query)
+                || (f.type || '').toLowerCase().includes(query)
+                || (f.displayName || f.email || '').toLowerCase().includes(query);
+        });
+    }
+
+    document.getElementById('feedbackCount').textContent = ids.length + ' entries';
+
+    let html = '';
+    ids.forEach(id => {
+        const f = feedback[id];
+        const ts = f.timestamp ? new Date(f.timestamp).toLocaleString() : '—';
+        const type = f.type || 'other';
+        const typeLabels = { suggestion: '💡', bug: '🐛', feature: '✨', other: '📝' };
+        const typeIcon = typeLabels[type] || '📝';
+        const user = f.displayName || f.email || f.uid ? (f.uid || '').slice(0, 8) : 'Anonymous';
+        const msg = f.message || '(empty)';
+        const shortMsg = msg.length > 120 ? msg.slice(0, 120) + '…' : msg;
+
+        html += `<tr>
+            <td style="font-size:8px;color:#666;white-space:nowrap;">${ts}</td>
+            <td class="id-cell">${esc(user)}${f.email ? '<br><span style="color:#666;font-size:7px;">' + esc(f.email) + '</span>' : ''}</td>
+            <td>${typeIcon} ${type}</td>
+            <td class="val-cell" style="max-width:300px;" title="${esc(msg)}">${esc(shortMsg)}</td>
+            <td>
+                <button class="btn-sm" onclick="viewFeedback('${id}')">VIEW</button>
+                <button class="btn-sm danger" onclick="deleteFeedback('${id}')">DELETE</button>
+            </td>
+        </tr>`;
+    });
+    document.getElementById('feedbackBody').innerHTML = html || '<tr><td colspan="5" style="text-align:center;color:#555;padding:20px;">No feedback yet.</td></tr>';
+};
+
+window.viewFeedback = function(id) {
+    const f = cachedData.feedback[id];
+    if (!f) return;
+    const ts = f.timestamp ? new Date(f.timestamp).toLocaleString() : '—';
+    const typeLabels = { suggestion: '💡 Suggestion', bug: '🐛 Bug Report', feature: '✨ Feature Request', other: '📝 Other' };
+    const typeLabel = typeLabels[f.type] || f.type || 'Other';
+    showModal('Feedback Details', `
+        <div style="display:grid;gap:6px;font-size:10px;">
+            <div><span style="color:#888;">Date:</span> ${ts}</div>
+            <div><span style="color:#888;">Type:</span> ${typeLabel}</div>
+            <div><span style="color:#888;">User:</span> ${esc(f.displayName || '—')}</div>
+            <div><span style="color:#888;">Email:</span> ${esc(f.email || '—')}</div>
+            <div><span style="color:#888;">UID:</span> <span style="font-size:8px;color:#666;">${esc(f.uid || '—')}</span></div>
+            <div style="margin-top:8px;"><span style="color:#888;">Message:</span></div>
+            <div style="background:rgba(0,0,0,0.3);border:1px solid #222;border-radius:4px;padding:10px;font-size:10px;color:#bdc3c7;white-space:pre-wrap;line-height:1.5;">${esc(f.message || '(empty)')}</div>
+        </div>
+        <div class="modal-actions">
+            <button class="btn-sm" onclick="closeModal()">CLOSE</button>
+        </div>
+    `);
+};
+
+window.deleteFeedback = function(id) {
+    if (!requireAdmin('deleteFeedback')) return;
+    if (!confirm('Delete this feedback entry?')) return;
+    db.ref('feedback/' + id).remove().then(() => {
+        showToast('Feedback deleted');
+        delete cachedData.feedback[id];
+        renderFeedback();
+    }).catch(e => showToast('Delete failed: ' + e.message, true));
+};
+
+window.clearAllFeedback = function() {
+    if (!requireAdmin('clearAllFeedback')) return;
+    if (!confirm('Delete ALL feedback entries? This cannot be undone.')) return;
+    db.ref('feedback').remove().then(() => {
+        showToast('All feedback cleared');
+        cachedData.feedback = {};
+        renderFeedback();
+    }).catch(e => showToast('Clear failed: ' + e.message, true));
+};
+
+window.analyzeFeedback = function() {
+    const apiKey = document.getElementById('nvidiaApiKey').value.trim();
+    if (apiKey) {
+        try { localStorage.setItem(NVIDIA_KEY_STORAGE, apiKey); } catch(e) {}
+    }
+    if (!apiKey) {
+        document.getElementById('aiAnalysisResult').innerHTML = '<span style="color:#e74c3c;">Please enter your NVIDIA API key above.</span>';
+        return;
+    }
+
+    const feedback = cachedData.feedback || {};
+    const entries = Object.values(feedback);
+    if (!entries.length) {
+        document.getElementById('aiAnalysisResult').innerHTML = '<span style="color:#888;">No feedback to analyze.</span>';
+        return;
+    }
+
+    const btn = document.getElementById('analyzeBtn');
+    btn.disabled = true;
+    btn.textContent = 'ANALYZING...';
+    document.getElementById('aiAnalysisResult').innerHTML = '<span style="color:#888;">Analyzing ' + entries.length + ' entries with AI...</span>';
+
+    const feedbackSummary = entries.map((f, i) => {
+        const type = f.type || 'other';
+        const msg = (f.message || '').slice(0, 500);
+        return `[${i + 1}] Type: ${type}\nMessage: ${msg}\n`;
+    }).join('\n');
+
+    const prompt = `You are analyzing player feedback for a tank battle game. Analyze the following feedback entries and provide:
+1. TOP ISSUES — most frequently mentioned problems or bugs (if any)
+2. TOP REQUESTS — most requested features or improvements
+3. SENTIMENT — overall sentiment analysis
+4. ACTION ITEMS — specific, prioritized recommendations for what to improve first
+
+Keep it concise and actionable. Use bullet points.
+
+FEEDBACK ENTRIES:
+${feedbackSummary}`;
+
+    fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + apiKey
+        },
+        body: JSON.stringify({
+            model: 'meta/llama-3.1-8b-instruct',
+            messages: [
+                { role: 'system', content: 'You are a game analytics expert who provides concise, actionable feedback analysis.' },
+                { role: 'user', content: prompt }
+            ],
+            temperature: 0.3,
+            max_tokens: 1024,
+            top_p: 0.9
+        })
+    }).then(res => {
+        if (!res.ok) {
+            return res.text().then(text => {
+                throw new Error('API error (' + res.status + '): ' + text.slice(0, 200));
+            });
+        }
+        return res.json();
+    }).then(data => {
+        const result = data.choices && data.choices[0] && data.choices[0].message ? data.choices[0].message.content : 'No response from AI.';
+        document.getElementById('aiAnalysisResult').innerHTML = result.replace(/\n/g, '<br>');
+    }).catch(err => {
+        document.getElementById('aiAnalysisResult').innerHTML = '<span style="color:#e74c3c;">Analysis failed: ' + esc(err.message) + '</span>';
+    }).finally(() => {
+        btn.disabled = false;
+        btn.textContent = '🔍 ANALYZE WITH AI';
     });
 };
 
