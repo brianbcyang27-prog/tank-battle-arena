@@ -1981,26 +1981,29 @@ window.showWeaponPreview3D = function(weaponId) {
     });
 };
 
-// ===================== LOADOUT SYSTEM =====================
+// ===================== LOADOUT SYSTEM (Tab-based) =====================
+
+const LOADOUT_TABS = [
+    { type: 'weapon', label: 'Weapon', icon: '🔫' },
+    { type: 'skin', label: 'Skin', icon: '🎨' },
+    { type: 'title', label: 'Title', icon: '🏆' },
+    { type: 'gadget', label: 'Gadget', icon: '⚡' },
+    { type: 'trail', label: 'Trail', icon: '🌊' },
+    { type: 'killEffect', label: 'Kill Effect', icon: '💥' },
+];
 
 let _loadoutConfirmCb = null;
-
 let _compactLoadout = false;
+let _pendingType = null;
+let _pendingId = null;
 
 export function showLoadout(onConfirm) {
     _loadoutConfirmCb = onConfirm || null;
     _compactLoadout = !!onConfirm;
-    // Loadout is now a standalone overlay
     showOverlay('loadoutOverlay');
-    // Reset to slot view
-    const slotGrid = document.getElementById('loadoutSlotGrid');
-    const itemGrid = document.getElementById('loadoutItemGrid');
-    if (slotGrid) slotGrid.style.display = 'grid';
-    if (itemGrid) itemGrid.style.display = 'none';
     if (G.gameState === GameState.MENU) {
         document.getElementById('loadoutOverlay').classList.add('overlay-home');
     }
-    // Show START button in compact mode, CLOSE in normal mode
     const closeBtn = document.getElementById('loadoutOverlayCloseBtn');
     if (closeBtn) {
         if (onConfirm) {
@@ -2011,45 +2014,119 @@ export function showLoadout(onConfirm) {
             closeBtn.className = 'btn btn-info';
         }
     }
-    renderLoadoutSlots(_compactLoadout);
+    renderLoadoutTabs();
+    const firstTab = _compactLoadout ? 'weapon' : 'weapon';
+    switchLoadoutTab(firstTab);
     log('info', 'UI', 'Opening loadout' + (onConfirm ? ' (compact)' : ''));
 }
 window.showLoadout = showLoadout;
 
-function renderLoadoutSlots(compact) {
-    const grid = document.getElementById('loadoutSlotGrid');
-    if (!grid) return;
+function renderLoadoutTabs() {
+    const bar = document.getElementById('loadoutTabBar');
+    if (!bar) return;
+    const tabs = _compactLoadout
+        ? LOADOUT_TABS.filter(t => t.type === 'weapon' || t.type === 'gadget')
+        : LOADOUT_TABS;
+    bar.innerHTML = tabs.map(t =>
+        `<button class="lo-tab" onclick="switchLoadoutTab('${t.type}')">${t.icon} ${t.label}</button>`
+    ).join('');
+}
+
+window.switchLoadoutTab = function(type) {
+    _pendingType = null;
+    _pendingId = null;
+
+    document.querySelectorAll('.lo-tab').forEach(el => el.classList.remove('active'));
+    const tabs = document.querySelectorAll('.lo-tab');
+    for (const el of tabs) {
+        if (el.textContent.includes(LOADOUT_TABS.find(t => t.type === type)?.label || type)) {
+            el.classList.add('active');
+            break;
+        }
+    }
+
+    const detailPanel = document.getElementById('loadoutDetailPanel');
+    if (detailPanel) detailPanel.style.display = 'none';
+
+    const tab = LOADOUT_TABS.find(t => t.type === type);
+    document.getElementById('loadoutItemHeader').textContent = tab ? `${tab.icon} SELECT ${tab.label.toUpperCase()}` : '';
+
+    renderLoadoutItems(type);
+};
+
+function renderLoadoutItems(type) {
+    const itemList = document.getElementById('loadoutItemList');
+    if (!itemList) return;
     const P = getPlayerData();
     const loadout = P.loadout || {};
 
-    const allSlots = [
-        { type: 'weapon', label: 'Weapon', icon: '🔫', getEquipped: () => loadout.weapon || 'standard', getItems: () => { const own = getOwnedWeapons(); return WEAPONS.filter(w => own.includes(w.id)); }, getName: (id) => { const w = WEAPONS.find(x => x.id === id); return w ? w.name : id; } },
-        { type: 'skin', label: 'Skin', icon: '🎨', getEquipped: () => loadout.skin || 'classic', getItems: () => { const own = getOwnedSkins(); return SKINS.filter(s => own.includes(s.id)); }, getName: (id) => { const s = SKINS.find(x => x.id === id); return s ? s.name : id; } },
-        { type: 'title', label: 'Title', icon: '🏆', getEquipped: () => loadout.title || null, getItems: () => { const titles = P.titles || []; return titles.map(t => ({ id: t, name: t })); }, getName: (id) => id },
-        { type: 'gadget', label: 'Gadget', icon: '⚡', getEquipped: () => loadout.gadget || null, getItems: () => { return GADGETS.filter(g => isItemOwned('gadget', g.id)); }, getName: (id) => { const g = GADGETS.find(x => x.id === id); return g ? g.name : id; } },
-        { type: 'trail', label: 'Trail', icon: '🌊', getEquipped: () => loadout.trail || 'default', getItems: () => { return TRAILS.filter(t => isItemOwned('trail', t.id)); }, getName: (id) => { const t = TRAILS.find(x => x.id === id); return t ? t.name : id; } },
-        { type: 'killEffect', label: 'Kill Effect', icon: '💥', getEquipped: () => loadout.killEffect || 'default', getItems: () => { return KILL_EFFECTS.filter(k => isItemOwned('killEffect', k.id)); }, getName: (id) => { const k = KILL_EFFECTS.find(x => x.id === id); return k ? k.name : id; } },
-    ];
+    let items = [];
+    let currentEquipped = null;
 
-    const slots = compact ? allSlots.filter(s => s.type === 'weapon' || s.type === 'gadget') : allSlots;
+    switch (type) {
+        case 'weapon': {
+            const owned = getOwnedWeapons();
+            items = WEAPONS.filter(w => owned.includes(w.id));
+            currentEquipped = loadout.weapon || 'standard';
+            break;
+        }
+        case 'skin': {
+            const owned = getOwnedSkins();
+            items = SKINS.filter(s => owned.includes(s.id));
+            currentEquipped = loadout.skin || 'classic';
+            break;
+        }
+        case 'title': {
+            const titles = P.titles || [];
+            items = [{ id: null, name: 'None', desc: 'No title displayed', icon: '\u{1F3C6}' }, ...titles.map(t => ({ id: t, name: t, desc: '', icon: '\u{1F3C6}' }))];
+            currentEquipped = loadout.title || null;
+            break;
+        }
+        case 'gadget': {
+            items = [{ id: null, name: 'None', desc: 'No gadget equipped', icon: '\u2014' }, ...GADGETS.filter(g => isItemOwned('gadget', g.id))];
+            currentEquipped = loadout.gadget || null;
+            break;
+        }
+        case 'trail': {
+            items = TRAILS.filter(t => isItemOwned('trail', t.id));
+            currentEquipped = loadout.trail || 'default';
+            break;
+        }
+        case 'killEffect': {
+            items = KILL_EFFECTS.filter(k => isItemOwned('killEffect', k.id));
+            currentEquipped = loadout.killEffect || 'default';
+            break;
+        }
+    }
 
-    let html = slots.map(slot => {
-        const equippedId = slot.getEquipped();
-        const name = equippedId ? slot.getName(equippedId) : 'None';
-        return `<div class="lo-slot" onclick="selectLoadoutSlot('${slot.type}')">
-            <div class="lo-slot-icon">${slot.icon}</div>
-            <div class="lo-slot-label">${slot.label}</div>
-            <div class="lo-slot-name">${name}</div>
+    itemList.innerHTML = items.map((item, i) => {
+        const isSelected = item.id === currentEquipped;
+        const previewHTML = getItemPreviewHTML(type, item, 'card');
+        const delay = (0.04 + i * 0.04).toFixed(2);
+        return `<div class="lo-item-card${isSelected ? ' equipped' : ''}" style="animation-delay:${delay}s" onclick="selectLoadoutItem('${type}','${(item.id || '').replace(/'/g, "\\'")}')">
+            ${previewHTML}
+            <div class="item-name">${item.name || 'None'}</div>
+            <div class="item-sub">${item.desc ? item.desc.substring(0, 30) : ''}</div>
+            ${isSelected ? '<div class="item-badge equipped-badge">EQUIPPED</div>' : '<div class="item-badge">OWNED</div>'}
         </div>`;
     }).join('');
-
-    grid.innerHTML = html;
 }
 
-let _pendingType = null;
-let _pendingId = null;
+window.closeLoadoutOverlay = function() {
+    _pendingType = null;
+    _pendingId = null;
+    if (_loadoutConfirmCb) {
+        const cb = _loadoutConfirmCb;
+        _loadoutConfirmCb = null;
+        _compactLoadout = false;
+        showOverlay(null);
+        cb();
+    } else {
+        showOverlay('loginOverlay');
+    }
+};
 
-function getItemPreviewHTML(type, item, size) {
+window.selectLoadoutItem = function(type, id) {
     const isLarge = size === 'detail';
     const cls = isLarge ? 'lo-detail-preview' : 'item-preview';
     switch (type) {
@@ -2095,102 +2172,12 @@ function getItemStatsText(type, item) {
     }
 }
 
-function renderLoadoutPicker(type) {
-    const slotGrid = document.getElementById('loadoutSlotGrid');
-    const itemGrid = document.getElementById('loadoutItemGrid');
-    const itemHeader = document.getElementById('loadoutItemHeader');
-    const itemList = document.getElementById('loadoutItemList');
-    const detailPanel = document.getElementById('loadoutDetailPanel');
-    const P = getPlayerData();
-    const loadout = P.loadout || {};
-    if (!slotGrid || !itemGrid || !itemHeader || !itemList) return;
-
-    slotGrid.style.display = 'none';
-    itemGrid.style.display = 'flex';
-    if (detailPanel) detailPanel.style.display = 'none';
-    _pendingType = null;
-    _pendingId = null;
-
-    let items = [];
-    let currentEquipped = null;
-
-    switch (type) {
-        case 'weapon': {
-            itemHeader.textContent = 'SELECT WEAPON';
-            const owned = getOwnedWeapons();
-            items = WEAPONS.filter(w => owned.includes(w.id));
-            currentEquipped = loadout.weapon || 'standard';
-            break;
-        }
-        case 'skin': {
-            itemHeader.textContent = 'SELECT SKIN';
-            const owned = getOwnedSkins();
-            items = SKINS.filter(s => owned.includes(s.id));
-            currentEquipped = loadout.skin || 'classic';
-            break;
-        }
-        case 'title': {
-            itemHeader.textContent = 'SELECT TITLE';
-            const titles = P.titles || [];
-            items = [{ id: null, name: 'None', desc: 'No title displayed', icon: '\u{1F3C6}' }, ...titles.map(t => ({ id: t, name: t, desc: '', icon: '\u{1F3C6}' }))];
-            currentEquipped = loadout.title || null;
-            break;
-        }
-        case 'gadget': {
-            itemHeader.textContent = 'SELECT GADGET';
-            items = [{ id: null, name: 'None', desc: 'No gadget equipped', icon: '\u2014' }, ...GADGETS.filter(g => isItemOwned('gadget', g.id))];
-            currentEquipped = loadout.gadget || null;
-            break;
-        }
-        case 'trail': {
-            itemHeader.textContent = 'SELECT TRAIL';
-            items = TRAILS.filter(t => isItemOwned('trail', t.id));
-            currentEquipped = loadout.trail || 'default';
-            break;
-        }
-        case 'killEffect': {
-            itemHeader.textContent = 'SELECT KILL EFFECT';
-            items = KILL_EFFECTS.filter(k => isItemOwned('killEffect', k.id));
-            currentEquipped = loadout.killEffect || 'default';
-            break;
-        }
-    }
-
-    itemList.innerHTML = items.map((item, i) => {
-        const isSelected = item.id === currentEquipped;
-        const previewHTML = getItemPreviewHTML(type, item, 'card');
-        const delay = (0.04 + i * 0.04).toFixed(2);
-        return `<div class="lo-item-card${isSelected ? ' equipped' : ''}" style="animation-delay:${delay}s" onclick="selectLoadoutItem('${type}','${(item.id || '').replace(/'/g, "\\'")}')">
-            ${previewHTML}
-            <div class="item-name">${item.name || 'None'}</div>
-            <div class="item-sub">${item.desc ? item.desc.substring(0, 30) : ''}</div>
-            ${isSelected ? '<div class="item-badge equipped-badge">EQUIPPED</div>' : '<div class="item-badge">OWNED</div>'}
-        </div>`;
-    }).join('');
-}
-
-window.selectLoadoutSlot = function(type) {
-    renderLoadoutPicker(type);
+window.saveLoadout = function() {
+    log('info', 'UI', 'Loadout saved');
 };
 
-window.closeLoadoutPicker = function() {
-    document.getElementById('loadoutSlotGrid').style.display = 'grid';
-    document.getElementById('loadoutItemGrid').style.display = 'none';
-    _pendingType = null;
-    _pendingId = null;
-    renderLoadoutSlots(_compactLoadout);
-};
-
-window.closeLoadoutOverlay = function() {
-    closeLoadoutPicker();
-    if (_loadoutConfirmCb) {
-        const cb = _loadoutConfirmCb;
-        _loadoutConfirmCb = null;
-        showOverlay(null);
-        cb();
-    } else {
-        showOverlay('loginOverlay');
-    }
+window.closeLoadout = function() {
+    log('info', 'UI', 'Loadout closed');
 };
 
 window.selectLoadoutItem = function(type, id) {
@@ -2248,7 +2235,11 @@ window.confirmEquipLoadoutItem = function() {
     } else {
         equipItem(type, id);
     }
-    closeLoadoutPicker();
+    _pendingType = null;
+    _pendingId = null;
+    const detailPanel = document.getElementById('loadoutDetailPanel');
+    if (detailPanel) detailPanel.style.display = 'none';
+    renderLoadoutItems(type);
 };
 
 // Keep old equipLoadoutItem for backward compatibility with any inline handlers
