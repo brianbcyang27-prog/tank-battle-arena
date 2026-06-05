@@ -113,6 +113,9 @@ let moveStartPos = null;
 // Spotlight
 let spotlightHighlightEl = null;
 
+// Previous keys snapshot for move detection
+let prevKeys = {};
+
 // Target dummy
 let targetDummy = null;
 

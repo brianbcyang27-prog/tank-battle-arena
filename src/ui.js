@@ -1804,6 +1804,29 @@ function renderUpgradeGrid(prog) {
     if (stageUpContainer) {
         stageUpContainer.style.display = prog.canStageUp() ? 'block' : 'none';
     }
+
+    const roadmap = document.getElementById('stageRoadmap');
+    if (roadmap) {
+        const totalStages = 10;
+        const currentStage = stage;
+        let roadHtml = '<div class="roadmap-title">STAGE ROADMAP</div><div class="roadmap-track">';
+        for (let i = 1; i <= totalStages; i++) {
+            const mult = prog.getTankStageMultiplier(i);
+            const isHere = i === currentStage;
+            const isReached = i <= currentStage;
+            roadHtml += `<div class="roadmap-node ${isHere ? 'here' : ''} ${isReached ? 'reached' : ''}">
+                <div class="roadmap-node-stage">S${i}</div>
+                <div class="roadmap-node-mult">×${mult.toFixed(2)}</div>
+                ${isHere ? '<div class="roadmap-arrow">▲</div>' : ''}
+            </div>`;
+            if (i < totalStages) {
+                roadHtml += `<div class="roadmap-connector ${isReached && i === currentStage ? 'next' : isReached ? 'done' : ''}"></div>`;
+            }
+        }
+        roadHtml += '</div>';
+        roadHtml += '<div class="roadmap-hint">★ Each stage: max all upgrades → Stage Up → +3 pts & ×1.12 permanent bonus. Bonuses stack for endless progression!</div>';
+        roadmap.innerHTML = roadHtml;
+    }
 }
 
 window.buyUpgrade = function(category) {
@@ -2046,7 +2069,7 @@ window.switchLoadoutTab = function(type) {
     }
 
     const detailPanel = document.getElementById('loadoutDetailPanel');
-    if (detailPanel) detailPanel.style.display = 'none';
+    if (detailPanel) detailPanel.classList.remove('visible');
 
     const tab = LOADOUT_TABS.find(t => t.type === type);
     document.getElementById('loadoutItemHeader').textContent = tab ? `${tab.icon} SELECT ${tab.label.toUpperCase()}` : '';
@@ -2102,7 +2125,7 @@ function renderLoadoutItems(type) {
     itemList.innerHTML = items.map((item, i) => {
         const isSelected = item.id === currentEquipped;
         const previewHTML = getItemPreviewHTML(type, item, 'card');
-        const delay = (0.04 + i * 0.04).toFixed(2);
+        const delay = (i * 0.06).toFixed(2);
         return `<div class="lo-item-card${isSelected ? ' equipped' : ''}" style="animation-delay:${delay}s" onclick="selectLoadoutItem('${type}','${(item.id || '').replace(/'/g, "\\'")}')">
             ${previewHTML}
             <div class="item-name">${item.name || 'None'}</div>
@@ -2126,7 +2149,7 @@ window.closeLoadoutOverlay = function() {
     }
 };
 
-window.selectLoadoutItem = function(type, id) {
+function getItemPreviewHTML(type, item, size) {
     const isLarge = size === 'detail';
     const cls = isLarge ? 'lo-detail-preview' : 'item-preview';
     switch (type) {
@@ -2150,6 +2173,41 @@ window.selectLoadoutItem = function(type, id) {
         }
         default:
             return `<div class="${cls}" style="background:#333;"></div>`;
+    }
+}
+
+function applyDetailPreview(type, item) {
+    const el = document.getElementById('loadoutDetailPreview');
+    if (!el) return;
+    el.innerHTML = '';
+    switch (type) {
+        case 'weapon': {
+            const color = item.bulletColor || '#ffffff';
+            el.style.background = `radial-gradient(circle at 35% 35%, ${color}, ${color}88)`;
+            el.style.boxShadow = `0 0 12px ${color}44`;
+            break;
+        }
+        case 'skin': {
+            const color = item.color || '#e94560';
+            el.style.background = color;
+            el.style.boxShadow = `0 0 12px ${color}44`;
+            break;
+        }
+        case 'gadget':
+        case 'title':
+        case 'killEffect': {
+            const icon = item.icon || '\u{2B50}';
+            el.style.background = 'rgba(0,0,0,0.35)';
+            el.style.boxShadow = 'none';
+            el.innerHTML = `<span style="font-size:36px;">${icon}</span>`;
+            break;
+        }
+        case 'trail': {
+            const color = item.color || 'rgba(60,55,50,0.08)';
+            el.style.background = color;
+            el.style.boxShadow = 'none';
+            break;
+        }
     }
 }
 
@@ -2201,8 +2259,8 @@ window.selectLoadoutItem = function(type, id) {
     _pendingType = type;
     _pendingId = actualId;
 
-    detailPanel.style.display = 'flex';
-    document.getElementById('loadoutDetailPreview').innerHTML = getItemPreviewHTML(type, item, 'detail');
+    detailPanel.classList.add('visible');
+    applyDetailPreview(type, item);
     document.getElementById('loadoutDetailName').textContent = item.name || 'Unknown';
     document.getElementById('loadoutDetailDesc').textContent = item.desc || '';
     document.getElementById('loadoutDetailStats').textContent = getItemStatsText(type, item);
@@ -2238,7 +2296,7 @@ window.confirmEquipLoadoutItem = function() {
     _pendingType = null;
     _pendingId = null;
     const detailPanel = document.getElementById('loadoutDetailPanel');
-    if (detailPanel) detailPanel.style.display = 'none';
+    if (detailPanel) detailPanel.classList.remove('visible');
     renderLoadoutItems(type);
 };
 
