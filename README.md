@@ -1,5 +1,7 @@
 # Tank Battle Arena
 
+> 🎮 **Play Now: [https://tank-battle-arena-897c0.web.app/](https://tank-battle-arena-897c0.web.app/)** — No download required, works in any browser!
+
 A fast-paced 2D top-down tank battle game inspired by Wii Play. Navigate maze-like arenas, eliminate enemy tanks, and compete in solo campaign, 1v1 AI practice, or real-time multiplayer battles!
 
 ## 🎮 Game Modes
@@ -76,15 +78,22 @@ A fast-paced 2D top-down tank battle game inspired by Wii Play. Navigate maze-li
 - **Keyboard shortcuts** — Enter to submit login, Escape to close any overlay
 - **3D weapon preview** — inspect weapons with Three.js rotation viewer
 
-## 📦 What's New in v5.0
+## 📦 What's New in v6.5
 
-- **Season Pass system** — 30 tiers of free rewards with XP progression
-- **Session-exclusive content** — 3 unique skins (Blaze, Magma, Ignition Overlord) and 2 weapons (Flamethrower, Plasma Cannon)
-- **Streamlined home navigation** — 6 primary buttons with a MORE dropdown (Settings, Tutorial, Stats, Progression, Leaderboard, About, Feedback, Log)
-- **Rank display fix** — rank titles now visible on dark background
-- **Cleaner project root** — removed accumulated test snapshots and artifacts
+- **Tab-based Loadout redesign** — Single-view tab layout replaces the old two-step slot/picker flow. Switch between Weapon, Skin, Title, Gadget, Trail, and Kill Effect instantly. Compact mode (Weapon + Gadget only) for pre-game loadout. Staggered card entrance animations.
+- **Tank Stage / Prestige system** — When all 3 upgrade categories reach level 10, Stage Up to reset upgrades and gain a permanent ×1.12 stat multiplier. Bonuses stack across stages for endless progression.
+- **Stage Roadmap** — Visual progression track in the upgrades overlay showing stages 1–10 with multipliers and current stage highlighted.
+- **Standalone Settings page** — Settings and Loadout are now completely separate overlays (not tabbed together). Expanded settings with Audio toggles, volume slider, Language/Region selectors, Delete Account, and Info section.
+- **Game Guide overlay** — Scrollable reference covering Home Screen, Game Modes, Loadout, Upgrades & Stages, Shop, Season Pass, and Controls.
+- **Standalone Settings page** — Audio toggles, volume, language, region, delete account, and info sections.
+- **Camera fix** — Map no longer drifts with tank movement. Screen shake preserved.
+- **Bug fixes** — Loadout preview rendering, tutorial ReferenceError, game frozen watchdog narrowed, upgrade close button error, loadout close/start button reliability.
 
 ## 🚀 Quick Start
+
+**Play online (no setup needed):** [https://tank-battle-arena-897c0.web.app/](https://tank-battle-arena-897c0.web.app/)
+
+Or run locally:
 
 ```bash
 git clone https://github.com/brianbcyang27-prog/tank-battle-arena.git
@@ -92,9 +101,7 @@ cd tank-battle-arena
 open index.html
 ```
 
-Or simply open `index.html` in any modern browser.
-
-> **Note:** Multiplayer features require Firebase configuration. For solo + VS AI, no setup needed — just open the file.
+For solo + VS AI, no build tools or server needed — just open the file.
 
 ## 🏗️ Tech Stack
 
