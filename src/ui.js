@@ -26,6 +26,14 @@ export function applySettingsToUI() {
     document.getElementById('settingVolume').value = G.settings.volume;
     const volLabel = document.getElementById('volumeValue');
     if (volLabel) volLabel.textContent = G.settings.volume;
+    const bgmEl = document.getElementById('settingBackgroundMusic');
+    if (bgmEl) bgmEl.checked = G.settings.backgroundMusic !== false;
+    const sfxEl = document.getElementById('settingSoundEffects');
+    if (sfxEl) sfxEl.checked = G.settings.soundEffects !== false;
+    const langEl = document.getElementById('settingLanguage');
+    if (langEl) langEl.value = G.settings.language || 'en';
+    const regionEl = document.getElementById('settingRegion');
+    if (regionEl) regionEl.value = G.settings.region || 'global';
 }
 
 export function saveSettings() {
@@ -35,6 +43,14 @@ export function saveSettings() {
     G.settings.volume = parseInt(document.getElementById('settingVolume').value);
     const volLabel = document.getElementById('volumeValue');
     if (volLabel) volLabel.textContent = G.settings.volume;
+    const bgmEl = document.getElementById('settingBackgroundMusic');
+    if (bgmEl) G.settings.backgroundMusic = bgmEl.checked;
+    const sfxEl = document.getElementById('settingSoundEffects');
+    if (sfxEl) G.settings.soundEffects = sfxEl.checked;
+    const langEl = document.getElementById('settingLanguage');
+    if (langEl) G.settings.language = langEl.value;
+    const regionEl = document.getElementById('settingRegion');
+    if (regionEl) G.settings.region = regionEl.value;
     localStorage.setItem('tankBattleSettings', JSON.stringify(G.settings));
     // Sync to Firebase for cross-session persistence
     if (G.currentUser) {
@@ -43,11 +59,28 @@ export function saveSettings() {
                 .catch(e => log('warn','SETTINGS','Firebase save failed: '+e.message));
         });
     }
+    if (typeof window.updateAudioSettings === 'function') {
+        window.updateAudioSettings(G.settings);
+    }
     log('info','SETTINGS','Settings saved: '+JSON.stringify(G.settings));
 }
 
-window.showSettings = function(onClose) {
-    _loadoutConfirmCb = onClose || null;
+window.deleteAccount = function() {
+    if (!G.currentUser) {
+        alert('No account to delete. You are playing as guest.');
+        return;
+    }
+    import('./firebase.js').then(({ ref, remove, db }) => {
+        remove(ref(db, 'users/' + G.currentUser.uid)).catch(e => log('warn','SETTINGS','Failed to delete user data: '+e.message));
+        remove(ref(db, 'leaderboard/' + G.currentUser.uid)).catch(e => log('warn','SETTINGS','Failed to delete leaderboard: '+e.message));
+        import('./firebase.js').then(m => m.signOut ? m.signOut() : null).catch(() => {});
+        localStorage.clear();
+        alert('Account deleted. Refresh the page to start fresh.');
+        location.reload();
+    });
+};
+
+window.showSettings = function() {
     applySettingsToUI();
     showOverlay('settingsOverlay');
     switchSettingsTab('settings');
@@ -60,12 +93,7 @@ window.showSettings = function(onClose) {
 
 window.closeSettings = function() {
     saveSettings();
-    if (_loadoutConfirmCb) {
-        const cb = _loadoutConfirmCb;
-        _loadoutConfirmCb = null;
-        showOverlay(null);
-        cb();
-    } else if (G.gameState === GameState.PAUSED) {
+    if (G.gameState === GameState.PAUSED) {
         showOverlay('pauseOverlay');
     } else {
         showOverlay('loginOverlay');
@@ -73,13 +101,8 @@ window.closeSettings = function() {
     log('info','SETTINGS','Closing settings panel');
 };
 
-window.switchSettingsTab = function(tab, compact) {
-    const isSettings = tab === 'settings';
-    document.getElementById('settingsTabSettings').classList.toggle('selected', isSettings);
-    document.getElementById('settingsTabLoadout').classList.toggle('selected', !isSettings);
-    document.getElementById('settingsPanel').classList.toggle('hidden', !isSettings);
-    document.getElementById('settingsLoadoutPanel').classList.toggle('hidden', isSettings);
-    if (!isSettings) renderLoadoutSlots(compact);
+window.switchSettingsTab = function(tab) {
+    // Settings is now standalone — no loadout tab here
 };
 
 window.openPauseSettings = function() {
@@ -94,6 +117,16 @@ window.showAbout = function() {
 window.closeAbout = function() {
     showOverlay('loginOverlay');
     log('info','UI','Closing about panel');
+};
+
+window.showGameGuide = function() {
+    showOverlay('gameGuideOverlay');
+    log('info','UI','Opening game guide');
+};
+
+window.closeGameGuide = function() {
+    showOverlay('loginOverlay');
+    log('info','UI','Closing game guide');
 };
 
 // ==================== FEEDBACK ====================
@@ -230,7 +263,7 @@ window.showStats = function() {
 };
 
 // ==================== UI HELPERS ====================
-const HOME_OVERLAYS = ['loginOverlay','missionsOverlay','shopOverlay','statsOverlay','leaderboardOverlay','friendsOverlay','aboutOverlay','upgradeOverlay','tutorialOverlay','progressionOverlay','seasonPassOverlay'];
+const HOME_OVERLAYS = ['loginOverlay','missionsOverlay','shopOverlay','statsOverlay','leaderboardOverlay','friendsOverlay','aboutOverlay','upgradeOverlay','tutorialOverlay','progressionOverlay','seasonPassOverlay','loadoutOverlay','gameGuideOverlay'];
 
 export function showOverlay(id){
     document.querySelectorAll('.overlay').forEach(o=>{
@@ -1712,14 +1745,16 @@ window.equipShopItem = function(type, id) {
 
 // ==================== UPGRADE SHOP ====================
 const UPGRADE_CATEGORIES = [
-    { id: 'speed',     icon: '⚡', name: 'Speed',       desc: 'Faster tank movement',      perLevel: '+12% speed' },
-    { id: 'fuel',      icon: '⛽', name: 'Fuel Capacity', desc: 'Larger fuel tank',          perLevel: '+25 fuel' },
-    { id: 'mineRadius', icon: '💥', name: 'Mine Radius',  desc: 'Bigger mine explosions',    perLevel: '+15px radius' },
+    { id: 'speed',     icon: '⚡', name: 'Speed',       desc: 'Faster tank movement',      perLevel: '+10% speed' },
+    { id: 'fuel',      icon: '⛽', name: 'Fuel Capacity', desc: 'Larger fuel tank',          perLevel: '+20 fuel' },
+    { id: 'mineRadius', icon: '💥', name: 'Mine Radius',  desc: 'Bigger mine explosions',    perLevel: '+12px radius' },
 ];
 
 window.showUpgrades = function() {
     import('./progression.js').then(m => {
         document.getElementById('upgradePoints').textContent = m.getUpgradePoints();
+        const stage = m.getTankStage();
+        document.getElementById('upgradeStage').textContent = stage;
         renderUpgradeGrid(m);
     });
     showOverlay('upgradeOverlay');
@@ -1729,7 +1764,12 @@ window.showUpgrades = function() {
 function renderUpgradeGrid(prog) {
     const grid = document.getElementById('upgradeGrid');
     if (!grid) return;
-    let html = '';
+    const stage = prog.getTankStage();
+    const stageMult = prog.getTankStageMultiplier(stage);
+    document.getElementById('upgradeStage').textContent = stage;
+
+    let html = `<div style="color:#888;font-size:10px;margin-bottom:8px;text-align:center;">Stage ${stage} — All stats ×${stageMult.toFixed(2)}</div>`;
+
     for (const cat of UPGRADE_CATEGORIES) {
         const level = prog.getUpgradeLevel(cat.id);
         const maxed = level >= prog.getUpgradeMaxLevel();
@@ -1759,6 +1799,11 @@ function renderUpgradeGrid(prog) {
         </div>`;
     }
     grid.innerHTML = html;
+
+    const stageUpContainer = document.getElementById('stageUpContainer');
+    if (stageUpContainer) {
+        stageUpContainer.style.display = prog.canStageUp() ? 'block' : 'none';
+    }
 }
 
 window.buyUpgrade = function(category) {
@@ -1768,6 +1813,23 @@ window.buyUpgrade = function(category) {
             document.getElementById('upgradePoints').textContent = m.getUpgradePoints();
             renderUpgradeGrid(m);
             log('info','UPGRADE','Upgraded ' + category + ' to level ' + result.level);
+        }
+    });
+};
+
+window.stageUp = function() {
+    import('./progression.js').then(m => {
+        const result = m.stageUp();
+        if (result.ok) {
+            document.getElementById('upgradeStage').textContent = result.stage;
+            document.getElementById('upgradePoints').textContent = m.getUpgradePoints();
+            renderUpgradeGrid(m);
+            const btn = document.querySelector('#stageUpContainer button');
+            if (btn) {
+                btn.textContent = '✔ STAGE UP!';
+                setTimeout(() => { btn.textContent = '🌟 STAGE UP'; }, 1500);
+            }
+            log('info','UPGRADE','Tank staged up to stage ' + result.stage);
         }
     });
 };
@@ -1928,21 +1990,28 @@ let _compactLoadout = false;
 export function showLoadout(onConfirm) {
     _loadoutConfirmCb = onConfirm || null;
     _compactLoadout = !!onConfirm;
-    showOverlay('settingsOverlay');
+    // Loadout is now a standalone overlay
+    showOverlay('loadoutOverlay');
+    // Reset to slot view
+    const slotGrid = document.getElementById('loadoutSlotGrid');
+    const itemGrid = document.getElementById('loadoutItemGrid');
+    if (slotGrid) slotGrid.style.display = 'grid';
+    if (itemGrid) itemGrid.style.display = 'none';
     if (G.gameState === GameState.MENU) {
-        document.getElementById('settingsOverlay').classList.add('overlay-home');
+        document.getElementById('loadoutOverlay').classList.add('overlay-home');
     }
-    // In compact mode (pre-game), hide the SETTINGS/LOADOUT tabs and change button
-    const tabBar = document.querySelector('.settings-tab-bar');
-    const saveBtn = document.getElementById('settingsSaveBtn');
-    if (onConfirm) {
-        if (tabBar) tabBar.style.display = 'none';
-        if (saveBtn) saveBtn.textContent = 'START';
-    } else {
-        if (tabBar) tabBar.style.display = '';
-        if (saveBtn) saveBtn.textContent = 'SAVE & CLOSE';
+    // Show START button in compact mode, CLOSE in normal mode
+    const closeBtn = document.getElementById('loadoutOverlayCloseBtn');
+    if (closeBtn) {
+        if (onConfirm) {
+            closeBtn.textContent = 'START GAME';
+            closeBtn.className = 'btn btn-success';
+        } else {
+            closeBtn.textContent = 'CLOSE';
+            closeBtn.className = 'btn btn-info';
+        }
     }
-    switchSettingsTab('loadout', !!onConfirm);
+    renderLoadoutSlots(_compactLoadout);
     log('info', 'UI', 'Opening loadout' + (onConfirm ? ' (compact)' : ''));
 }
 window.showLoadout = showLoadout;
@@ -1977,17 +2046,70 @@ function renderLoadoutSlots(compact) {
     grid.innerHTML = html;
 }
 
+let _pendingType = null;
+let _pendingId = null;
+
+function getItemPreviewHTML(type, item, size) {
+    const isLarge = size === 'detail';
+    const cls = isLarge ? 'lo-detail-preview' : 'item-preview';
+    switch (type) {
+        case 'weapon': {
+            const color = item.bulletColor || '#ffffff';
+            return `<div class="${cls}" style="background:radial-gradient(circle at 35% 35%, ${color}, ${color}88);box-shadow:0 0 12px ${color}44;"></div>`;
+        }
+        case 'skin': {
+            const color = item.color || '#e94560';
+            return `<div class="${cls} skin-preview" style="background:${color};box-shadow:0 0 12px ${color}44;"></div>`;
+        }
+        case 'gadget':
+        case 'title':
+        case 'killEffect': {
+            const icon = item.icon || '⭐';
+            return `<div class="${cls}" style="background:rgba(0,0,0,0.35);display:flex;align-items:center;justify-content:center;font-size:${isLarge ? '36px' : '22px'};">${icon}</div>`;
+        }
+        case 'trail': {
+            const color = item.color || 'rgba(60,55,50,0.08)';
+            return `<div class="${cls} trail-preview" style="background:${color};"></div>`;
+        }
+        default:
+            return `<div class="${cls}" style="background:#333;"></div>`;
+    }
+}
+
+function getItemStatsText(type, item) {
+    switch (type) {
+        case 'weapon': {
+            const dps = (item.damage * (item.bullets || 1) / (item.fireRate || 1)).toFixed(1);
+            return `⚔ DMG ${item.damage} \u00d7${item.bullets || 1}  |  \u{1F525} ${dps}/s  |  \u{1F4E6} ${item.magazineSize || '\u221E'} rds  |  \u23F1 ${item.reloadTime || 0}s reload`;
+        }
+        case 'skin':
+            return `Pattern: ${item.bodyPattern || 'none'}  ${item.glowColor ? '|  \u2728 Glow' : ''}  ${item.visorColor ? '|  \u{1F441} Visor' : ''}`;
+        case 'gadget':
+            return `\u23F1 Cooldown: ${item.cooldown || 0}s  |  \u26A1 Duration: ${item.duration || 0}s`;
+        case 'trail':
+            return item.glowColor ? '\u2728 Glowing trail effect' : 'Standard tank tracks';
+        case 'killEffect':
+            return `Effect: ${item.effect || 'none'}`;
+        default:
+            return '';
+    }
+}
+
 function renderLoadoutPicker(type) {
     const slotGrid = document.getElementById('loadoutSlotGrid');
     const itemGrid = document.getElementById('loadoutItemGrid');
     const itemHeader = document.getElementById('loadoutItemHeader');
     const itemList = document.getElementById('loadoutItemList');
+    const detailPanel = document.getElementById('loadoutDetailPanel');
     const P = getPlayerData();
     const loadout = P.loadout || {};
     if (!slotGrid || !itemGrid || !itemHeader || !itemList) return;
 
     slotGrid.style.display = 'none';
     itemGrid.style.display = 'flex';
+    if (detailPanel) detailPanel.style.display = 'none';
+    _pendingType = null;
+    _pendingId = null;
 
     let items = [];
     let currentEquipped = null;
@@ -2010,13 +2132,13 @@ function renderLoadoutPicker(type) {
         case 'title': {
             itemHeader.textContent = 'SELECT TITLE';
             const titles = P.titles || [];
-            items = [{ id: null, name: 'None' }, ...titles.map(t => ({ id: t, name: t }))];
+            items = [{ id: null, name: 'None', desc: 'No title displayed', icon: '\u{1F3C6}' }, ...titles.map(t => ({ id: t, name: t, desc: '', icon: '\u{1F3C6}' }))];
             currentEquipped = loadout.title || null;
             break;
         }
         case 'gadget': {
             itemHeader.textContent = 'SELECT GADGET';
-            items = [{ id: null, name: 'None' }, ...GADGETS.filter(g => isItemOwned('gadget', g.id))];
+            items = [{ id: null, name: 'None', desc: 'No gadget equipped', icon: '\u2014' }, ...GADGETS.filter(g => isItemOwned('gadget', g.id))];
             currentEquipped = loadout.gadget || null;
             break;
         }
@@ -2034,11 +2156,16 @@ function renderLoadoutPicker(type) {
         }
     }
 
-    itemList.innerHTML = items.map(item => {
+    itemList.innerHTML = items.map((item, i) => {
         const isSelected = item.id === currentEquipped;
-        const cls = isSelected ? 'lo-item-btn equipped' : 'lo-item-btn owned';
-        const check = isSelected ? ' ✓' : '';
-        return `<button class="${cls}" onclick="equipLoadoutItem('${type}','${item.id || ''}')">${item.name}${check}</button>`;
+        const previewHTML = getItemPreviewHTML(type, item, 'card');
+        const delay = (0.04 + i * 0.04).toFixed(2);
+        return `<div class="lo-item-card${isSelected ? ' equipped' : ''}" style="animation-delay:${delay}s" onclick="selectLoadoutItem('${type}','${(item.id || '').replace(/'/g, "\\'")}')">
+            ${previewHTML}
+            <div class="item-name">${item.name || 'None'}</div>
+            <div class="item-sub">${item.desc ? item.desc.substring(0, 30) : ''}</div>
+            ${isSelected ? '<div class="item-badge equipped-badge">EQUIPPED</div>' : '<div class="item-badge">OWNED</div>'}
+        </div>`;
     }).join('');
 }
 
@@ -2049,21 +2176,86 @@ window.selectLoadoutSlot = function(type) {
 window.closeLoadoutPicker = function() {
     document.getElementById('loadoutSlotGrid').style.display = 'grid';
     document.getElementById('loadoutItemGrid').style.display = 'none';
+    _pendingType = null;
+    _pendingId = null;
     renderLoadoutSlots(_compactLoadout);
 };
 
-window.equipLoadoutItem = function(type, id) {
-    const actualId = id === '' ? null : id;
-    if (type === 'weapon') {
-        if (actualId) equipWeapon(actualId);
-    } else if (type === 'skin') {
-        if (actualId) equipSkin(actualId);
-    } else if (type === 'title') {
-        equipTitle(actualId || '');
+window.closeLoadoutOverlay = function() {
+    closeLoadoutPicker();
+    if (_loadoutConfirmCb) {
+        const cb = _loadoutConfirmCb;
+        _loadoutConfirmCb = null;
+        showOverlay(null);
+        cb();
     } else {
-        equipItem(type, actualId);
+        showOverlay('loginOverlay');
+    }
+};
+
+window.selectLoadoutItem = function(type, id) {
+    const actualId = id === '' ? null : id;
+    const detailPanel = document.getElementById('loadoutDetailPanel');
+    const equipBtn = document.getElementById('loadoutEquipBtn');
+    if (!detailPanel || !equipBtn) return;
+
+    let item = null;
+    const P = getPlayerData();
+    switch (type) {
+        case 'weapon': { const owned = getOwnedWeapons(); item = WEAPONS.find(w => w.id === actualId && owned.includes(w.id)); break; }
+        case 'skin': { const owned = getOwnedSkins(); item = SKINS.find(s => s.id === actualId && owned.includes(s.id)); break; }
+        case 'title': { const titles = P.titles || []; item = actualId ? { id: actualId, name: actualId, desc: '', icon: '\u{1F3C6}' } : { id: null, name: 'None', desc: 'No title displayed', icon: '\u{1F3C6}' }; break; }
+        case 'gadget': { item = actualId ? GADGETS.find(g => g.id === actualId && isItemOwned('gadget', g.id)) : { id: null, name: 'None', desc: 'No gadget equipped', icon: '\u2014' }; break; }
+        case 'trail': { item = TRAILS.find(t => t.id === actualId && isItemOwned('trail', t.id)); break; }
+        case 'killEffect': { item = KILL_EFFECTS.find(k => k.id === actualId && isItemOwned('killEffect', k.id)); break; }
+    }
+    if (!item) return;
+
+    _pendingType = type;
+    _pendingId = actualId;
+
+    detailPanel.style.display = 'flex';
+    document.getElementById('loadoutDetailPreview').innerHTML = getItemPreviewHTML(type, item, 'detail');
+    document.getElementById('loadoutDetailName').textContent = item.name || 'Unknown';
+    document.getElementById('loadoutDetailDesc').textContent = item.desc || '';
+    document.getElementById('loadoutDetailStats').textContent = getItemStatsText(type, item);
+
+    const loadout = P.loadout || {};
+    const currentEquipped = type === 'weapon' ? (loadout.weapon || 'standard') :
+                            type === 'skin' ? (loadout.skin || 'classic') :
+                            type === 'title' ? (loadout.title || null) :
+                            type === 'gadget' ? (loadout.gadget || null) :
+                            type === 'trail' ? (loadout.trail || 'default') :
+                            type === 'killEffect' ? (loadout.killEffect || 'default') : null;
+    const already = actualId === currentEquipped;
+    equipBtn.textContent = already ? 'ALREADY EQUIPPED' : 'EQUIP';
+    equipBtn.disabled = already;
+    equipBtn.style.opacity = already ? '0.5' : '1';
+    equipBtn.style.cursor = already ? 'not-allowed' : 'pointer';
+};
+
+window.confirmEquipLoadoutItem = function() {
+    if (!_pendingType || _pendingId === undefined) return;
+    const type = _pendingType;
+    const id = _pendingId;
+
+    if (type === 'weapon') {
+        if (id) equipWeapon(id);
+    } else if (type === 'skin') {
+        if (id) equipSkin(id);
+    } else if (type === 'title') {
+        equipTitle(id || '');
+    } else {
+        equipItem(type, id);
     }
     closeLoadoutPicker();
+};
+
+// Keep old equipLoadoutItem for backward compatibility with any inline handlers
+window.equipLoadoutItem = function(type, id) {
+    _pendingType = type;
+    _pendingId = id === '' ? null : id;
+    confirmEquipLoadoutItem();
 };
 
 window.saveLoadout = function() {

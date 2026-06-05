@@ -19,6 +19,10 @@ export const DEFAULT_SETTINGS = {
     showFPS: false,
     autoReady: true,
     volume: 50,
+    backgroundMusic: true,
+    soundEffects: true,
+    language: 'en',
+    region: 'global',
 };
 
 // ==================== WEAPONS ====================

@@ -1047,7 +1047,7 @@
         /* (shop-weapon-preview removed; using emoji icons now) */
 
         /* Settings redesign */
-        .settings-container { width:340px; text-align:left; display:flex; flex-direction:column; gap:14px; }
+        .settings-container { width:400px; max-width:90vw; text-align:left; display:flex; flex-direction:column; gap:14px; }
         .settings-section { background:rgba(255,255,255,0.03); border:1px solid #2a2a2a; border-radius:10px; padding:14px 16px; }
         .settings-section-title { color:#666; font-size:9px; font-weight:400; letter-spacing:2px; margin:0 0 12px; }
         .settings-row { display:flex; align-items:center; justify-content:space-between; padding:6px 0; }
@@ -1230,47 +1230,148 @@
         }
         .sp-tier.claimed.milestone { border-color: #6a3a00; }
 
-        /* ===== LOADOUT OVERLAY ===== */
-        .lo-container {
-            width: 95%; max-width: 700px; max-height: 88vh;
-            display: flex; flex-direction: column; align-items: center;
-            gap: 10px; padding: 10px 0;
-        }
-        .lo-header { text-align: center; display: flex; flex-direction: column; gap: 2px; }
-        .lo-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 8px; width: 100%;
-            padding: 4px;
-        }
-        .lo-slot {
-            display: flex; flex-direction: column; align-items: center;
-            background: rgba(0,0,0,0.3); border: 1px solid #333;
-            border-radius: 8px; padding: 10px 8px; cursor: pointer;
-            transition: all 0.2s; gap: 4px;
-            min-height: 80px;
-        }
-        .lo-slot:hover { border-color: var(--warning); background: rgba(0,0,0,0.45); }
-        .lo-slot-icon { font-size: 24px; }
-        .lo-slot-label { font-size: 9px; color: #888; letter-spacing: 1px; text-transform: uppercase; }
-        .lo-slot-name { font-size: 12px; color: var(--gold); text-align: center; line-height: 1.2; }
-        .lo-slot-empty { font-size: 10px; color: #555; font-style: italic; }
-        .lo-item-grid {
-            width: 100%; max-width: 600px;
-            display: flex; flex-direction: column; align-items: center;
-            background: rgba(0,0,0,0.25); border: 1px solid #333;
-            border-radius: 8px; padding: 12px;
-        }
-        .lo-item-btn {
-            padding: 8px 14px; font-size: 11px; cursor: pointer;
-            border-radius: 6px; border: 2px solid #444;
-            background: rgba(60,60,60,0.3); color: #ccc;
-            font-family: 'Orbitron', monospace; transition: all 0.2s;
-        }
-        .lo-item-btn:hover { border-color: var(--warning); }
-        .lo-item-btn.equipped { border-color: var(--gold); background: rgba(241,196,15,0.15); color: var(--gold); }
-        .lo-item-btn.owned { border-color: #555; background: rgba(46,204,113,0.1); }
-        .lo-item-btn.locked { opacity: 0.4; cursor: not-allowed; }
+/* ===== LOADOUT OVERLAY ===== */
+
+/* --- Loadout card entrance animation --- */
+@keyframes lo-card-enter {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* --- Detail panel slide-in animation --- */
+@keyframes lo-detail-enter {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.lo-container {
+width: 96%; max-width: 1100px; max-height: 92vh;
+display: flex; flex-direction: column; align-items: center;
+gap: 12px; padding: 14px 0;
+}
+.lo-header { text-align: center; display: flex; flex-direction: column; gap: 2px; }
+.lo-grid {
+display: grid;
+grid-template-columns: repeat(3, 1fr);
+gap: 10px; width: 100%; padding: 6px;
+}
+.lo-slot {
+display: flex; flex-direction: column; align-items: center;
+background: rgba(0,0,0,0.3); border: 1px solid #333;
+border-radius: 10px; padding: 12px 10px; cursor: pointer;
+transition: all 0.25s ease; gap: 5px; min-height: 88px;
+}
+.lo-slot:hover { border-color: var(--warning); background: rgba(0,0,0,0.45); transform: translateY(-2px); }
+.lo-slot-icon { font-size: 26px; }
+.lo-slot-label { font-size: 9px; color: #888; letter-spacing: 1px; text-transform: uppercase; }
+.lo-slot-name { font-size: 12px; color: var(--gold); text-align: center; line-height: 1.2; }
+.lo-slot-empty { font-size: 10px; color: #555; font-style: italic; }
+.lo-item-grid {
+width: 100%; max-width: 100%;
+display: flex; flex-direction: column; align-items: center;
+background: rgba(0,0,0,0.25); border: 1px solid #333;
+border-radius: 10px; padding: 16px;
+}
+.lo-item-btn {
+padding: 8px 14px; font-size: 11px; cursor: pointer;
+border-radius: 6px; border: 2px solid #444;
+background: rgba(60,60,60,0.3); color: #ccc;
+font-family: 'Orbitron', monospace; transition: all 0.2s;
+}
+.lo-item-btn:hover { border-color: var(--warning); }
+.lo-item-btn.equipped { border-color: var(--gold); background: rgba(241,196,15,0.15); color: var(--gold); }
+.lo-item-btn.owned { border-color: #555; background: rgba(46,204,113,0.1); }
+.lo-item-btn.locked { opacity: 0.4; cursor: not-allowed; }
+
+/* Visual item cards — full-width grid, animated entrance */
+.lo-item-card {
+display: flex; flex-direction: column; align-items: center;
+background: rgba(0,0,0,0.35); border: 2px solid #444;
+border-radius: 12px; padding: 14px 10px; cursor: pointer;
+transition: all 0.25s ease, box-shadow 0.25s ease; gap: 6px;
+width: calc(25% - 10px); min-width: 100px; max-width: 180px;
+box-sizing: border-box;
+opacity: 0;
+animation: lo-card-enter 0.4s ease forwards;
+}
+.lo-item-card:hover {
+border-color: var(--warning); background: rgba(0,0,0,0.5);
+transform: translateY(-3px) scale(1.04);
+box-shadow: 0 4px 20px rgba(233,69,96,0.15);
+}
+.lo-item-card.equipped {
+border-color: var(--gold); background: rgba(241,196,15,0.1);
+box-shadow: 0 0 18px rgba(241,196,15,0.25), inset 0 0 12px rgba(241,196,15,0.08);
+}
+.lo-item-card.equipped:hover {
+box-shadow: 0 0 24px rgba(241,196,15,0.35), inset 0 0 12px rgba(241,196,15,0.1);
+}
+.lo-item-card .item-preview {
+width: 52px; height: 52px; border-radius: 50%;
+border: 2px solid rgba(255,255,255,0.12); flex-shrink: 0;
+}
+.lo-item-card .item-preview.skin-preview { border-radius: 10px; }
+.lo-item-card .item-preview.trail-preview { width: 52px; height: 16px; border-radius: 5px; }
+.lo-item-card .item-name { font-size: 12px; color: #ddd; text-align: center; line-height: 1.2; font-weight: 600; }
+.lo-item-card .item-sub { font-size: 9px; color: #777; text-align: center; line-height: 1.2; }
+.lo-item-card .item-badge {
+font-size: 9px; padding: 2px 8px; border-radius: 4px;
+background: rgba(46,204,113,0.2); color: #2ecc71;
+}
+.lo-item-card .item-badge.equipped-badge { background: rgba(241,196,15,0.2); color: var(--gold); }
+
+/* Detail panel — slide-in from below with fade */
+.lo-detail-panel {
+width: 100%; max-width: 520px;
+display: flex; flex-direction: column; align-items: center;
+gap: 14px; padding: 24px;
+background: rgba(0,0,0,0.5); border: 1px solid #555;
+border-radius: 16px; margin-top: 12px; box-sizing: border-box;
+opacity: 0; transform: translateY(24px);
+transition: opacity 0.35s ease, transform 0.35s ease;
+}
+.lo-detail-panel.visible {
+opacity: 1; transform: translateY(0);
+}
+.lo-detail-preview {
+width: 100px; height: 100px; border-radius: 50%;
+border: 3px solid rgba(255,255,255,0.18); flex-shrink: 0;
+}
+.lo-detail-preview.skin-preview { border-radius: 16px; }
+.lo-detail-preview.trail-preview { width: 100px; height: 30px; border-radius: 8px; }
+.lo-detail-name { font-size: 20px; color: var(--gold); font-weight: 700; letter-spacing: 1px; }
+.lo-detail-desc { font-size: 13px; color: #aaa; text-align: center; line-height: 1.5; max-width: 440px; }
+.lo-detail-stats { font-size: 11px; color: #777; text-align: center; line-height: 1.7; max-width: 440px; }
+.lo-equip-btn {
+padding: 12px 52px; font-size: 14px; cursor: pointer;
+border-radius: 8px; border: none;
+background: linear-gradient(135deg, #e94560, #c0392b); color: #fff;
+font-family: 'Orbitron', monospace; font-weight: 700;
+transition: all 0.25s ease; letter-spacing: 2px; margin-top: 6px;
+}
+.lo-equip-btn:hover { transform: scale(1.06); box-shadow: 0 0 28px rgba(233,69,96,0.5); }
+.lo-equip-btn:active { transform: scale(0.97); }
+
+/* Loadout overlay — use full screen width */
+#loadoutOverlay {
+  justify-content: flex-start !important;
+  padding-top: 24px !important;
+  overflow-y: auto;
+}
+#loadoutOverlay > div {
+  max-width: 1100px !important;
+  max-height: none !important;
+}
+#loadoutItemList {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 10px !important;
+  justify-content: center !important;
+  max-height: 360px !important;
+  overflow-y: auto !important;
+  padding: 8px !important;
+  width: 100% !important;
+}
 
         /* ===== SIDEBAR ===== */
         .sidebar-backdrop {
@@ -1337,10 +1438,12 @@
             #welcomeEmblem, #welcomeTitle1, #welcomeTitle2, #welcomeTagline, #welcomeProgressArea {
                 animation: none !important; opacity: 1 !important; transform: none !important;
             }
-            .go-star { animation: none !important; }
-            .btn:hover { transform: none !important; }
-            canvas { filter: none !important; }
-        }
+.go-star { animation: none !important; }
+.lo-item-card { animation: none !important; opacity: 1 !important; transform: none !important; }
+.lo-detail-panel { transition: none !important; opacity: 1 !important; transform: none !important; }
+.btn:hover { transform: none !important; }
+canvas { filter: none !important; }
+}
 
         /* ===== FOCUS VISIBLE ===== */
         :focus-visible {
@@ -1560,6 +1663,7 @@
                 <button class="nav-btn" onclick="closeSidebar();showProgression()">📈 PROGRESSION</button>
                 <button class="nav-btn" onclick="closeSidebar();showLeaderboard()">🏆 LEADERBOARD</button>
                 <button class="nav-btn" onclick="closeSidebar();showAbout()">ℹ ABOUT</button>
+                <button class="nav-btn" onclick="closeSidebar();showGameGuide()">📖 GUIDE</button>
                 <button class="nav-btn" onclick="closeSidebar();openFeedback()">💬 FEEDBACK</button>
                 <button class="nav-btn" onclick="closeSidebar();toggleLog()">📋 LOG</button>
             </div>
@@ -1917,11 +2021,8 @@
         </div>
 
         <div id="settingsOverlay" class="overlay">
-            <div class="settings-tab-bar">
-                <button class="mode-tab selected" id="settingsTabSettings" onclick="switchSettingsTab('settings')">⚙ SETTINGS</button>
-                <button class="mode-tab" id="settingsTabLoadout" onclick="switchSettingsTab('loadout')">🎒 LOADOUT</button>
-            </div>
-            <div id="settingsPanel" class="settings-content-panel">
+            <div style="text-align:center;padding:8px 0 4px;font-size:16px;font-weight:700;color:#eaeaea;letter-spacing:2px;">⚙ SETTINGS</div>
+            <div id="settingsPanel" class="settings-content-panel" style="overflow-y:auto;max-height:70vh;">
                 <div class="settings-container">
                     <div class="settings-section">
                         <h3 class="settings-section-title">GAMEPLAY</h3>
@@ -1952,44 +2053,180 @@
                     </div>
                     <div class="settings-section">
                         <h3 class="settings-section-title">AUDIO</h3>
+                        <label class="settings-row">
+                            <span class="settings-label">Background Music</span>
+                            <label class="toggle">
+                                <input type="checkbox" id="settingBackgroundMusic" checked onchange="saveSettings()">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </label>
+                        <label class="settings-row">
+                            <span class="settings-label">Sound Effects</span>
+                            <label class="toggle">
+                                <input type="checkbox" id="settingSoundEffects" checked onchange="saveSettings()">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </label>
                         <div class="settings-row">
-                            <span class="settings-label">Sound Volume</span>
+                            <span class="settings-label">Master Volume</span>
                             <div class="volume-control">
                                 <input type="range" id="settingVolume" min="0" max="100" value="50" onchange="saveSettings()">
                                 <span id="volumeValue" class="volume-value">50</span>
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
-            <div id="settingsLoadoutPanel" class="settings-content-panel hidden">
-                <div class="lo-container" style="padding:0;max-height:60vh;">
-                    <div class="lo-header">
-                        <span style="color:#888;font-size:11px;">Customize your tank's equipment and appearance</span>
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">LANGUAGE & REGION</h3>
+                        <div class="settings-row">
+                            <span class="settings-label">Language</span>
+                            <select id="settingLanguage" onchange="saveSettings()" style="background:#222;color:#ddd;border:1px solid #444;border-radius:4px;padding:4px 8px;font-size:11px;">
+                                <option value="en">English</option>
+                                <option value="zh">中文</option>
+                                <option value="ja">日本語</option>
+                                <option value="ko">한국어</option>
+                                <option value="es">Español</option>
+                                <option value="fr">Français</option>
+                            </select>
+                        </div>
+                        <div class="settings-row">
+                            <span class="settings-label">Region</span>
+                            <select id="settingRegion" onchange="saveSettings()" style="background:#222;color:#ddd;border:1px solid #444;border-radius:4px;padding:4px 8px;font-size:11px;">
+                                <option value="global">Global</option>
+                                <option value="na">North America</option>
+                                <option value="eu">Europe</option>
+                                <option value="asia">Asia</option>
+                                <option value="sa">South America</option>
+                            </select>
+                        </div>
                     </div>
-                    <div id="loadoutSlotGrid" class="lo-grid">
-                        <!-- Slots rendered by JS -->
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">ACCOUNT</h3>
+                        <button class="btn btn-danger" onclick="if(confirm('Are you sure you want to delete your account? This cannot be undone.'))deleteAccount()" style="width:100%;padding:8px;font-size:11px;margin-top:4px;">DELETE ACCOUNT</button>
                     </div>
-                    <div id="loadoutItemGrid" class="lo-item-grid" style="display:none;">
-                        <div id="loadoutItemHeader" style="color:var(--warning);font-size:14px;margin-bottom:8px;"></div>
-                        <div id="loadoutItemList" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-height:280px;overflow-y:auto;padding:4px;"></div>
-                        <button onclick="closeLoadoutPicker()" style="margin-top:10px;padding:8px 24px;font-size:12px;cursor:pointer;background:#555;border:none;border-radius:6px;color:white;">BACK TO LOADOUT</button>
+                    <div class="settings-section">
+                        <h3 class="settings-section-title">INFO</h3>
+                        <div class="settings-row" style="cursor:pointer;" onclick="showAbout()">
+                            <span class="settings-label">📄 Credits</span>
+                            <span style="color:#555;">→</span>
+                        </div>
+                        <div class="settings-row" style="cursor:pointer;" onclick="showAbout()">
+                            <span class="settings-label">❓ Help & Support</span>
+                            <span style="color:#555;">→</span>
+                        </div>
+                        <div class="settings-row" style="cursor:pointer;" onclick="alert('Terms of Service:\n\nThis game is provided as-is. By playing you agree to not abuse exploits or hack the game. Data is stored locally and via Firebase for gameplay purposes.')">
+                            <span class="settings-label">📋 Terms of Service</span>
+                            <span style="color:#555;">→</span>
+                        </div>
+                        <div class="settings-row" style="cursor:pointer;" onclick="alert('Privacy Policy:\n\nWe store minimal data: game progress, settings, and scores via localStorage and Firebase. No personal data is shared with third parties. You can delete your account and all associated data at any time.')">
+                            <span class="settings-label">🔒 Privacy Policy</span>
+                            <span style="color:#555;">→</span>
+                        </div>
                     </div>
                 </div>
             </div>
             <button id="settingsSaveBtn" class="btn btn-success" onclick="closeSettings()" style="margin-top:16px;">SAVE & CLOSE</button>
         </div>
 
+        <!-- LOADOUT OVERLAY (standalone, full-screen) -->
+        <div id="loadoutOverlay" class="overlay">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:10px;width:95%;max-width:800px;max-height:88vh;padding:10px 0;">
+                <div style="font-size:16px;font-weight:700;color:#eaeaea;letter-spacing:2px;margin-bottom:4px;">🎒 LOADOUT</div>
+                <div style="color:#888;font-size:11px;">Customize your tank's equipment and appearance</div>
+                <div id="loadoutSlotGrid" class="lo-grid" style="width:100%;padding:4px;">
+                    <!-- Slots rendered by JS -->
+                </div>
+                <div id="loadoutItemGrid" class="lo-item-grid" style="display:none;width:100%;">
+                    <div id="loadoutItemHeader" style="color:var(--warning);font-size:14px;margin-bottom:8px;"></div>
+                    <div id="loadoutItemList" style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-height:300px;overflow-y:auto;padding:4px;width:100%;"></div>
+                    <div id="loadoutDetailPanel" class="lo-detail-panel" style="display:none;">
+                        <div id="loadoutDetailPreview" class="lo-detail-preview"></div>
+                        <div id="loadoutDetailName" class="lo-detail-name"></div>
+                        <div id="loadoutDetailDesc" class="lo-detail-desc"></div>
+                        <div id="loadoutDetailStats" class="lo-detail-stats"></div>
+                        <button id="loadoutEquipBtn" class="lo-equip-btn" onclick="confirmEquipLoadoutItem()">EQUIP</button>
+                    </div>
+                    <button onclick="closeLoadoutOverlay()" style="margin-top:10px;padding:8px 24px;font-size:12px;cursor:pointer;background:#555;border:none;border-radius:6px;color:white;">CLOSE LOADOUT</button>
+                </div>
+                <button id="loadoutOverlayCloseBtn" class="btn btn-info" onclick="closeLoadoutOverlay()" style="margin-top:4px;">CLOSE</button>
+            </div>
+        </div>
+
         <!-- UPGRADE SHOP OVERLAY -->
         <div id="upgradeOverlay" class="overlay">
             <h2 style="margin-bottom:10px;">UPGRADES</h2>
-            <div style="color:#888;font-size:11px;letter-spacing:1px;margin-bottom:18px;">
-                POINTS: <span id="upgradePoints" style="color:var(--gold);font-size:18px;">0</span>
+            <div style="display:flex;justify-content:center;gap:20px;color:#888;font-size:11px;letter-spacing:1px;margin-bottom:18px;">
+                <span>POINTS: <span id="upgradePoints" style="color:var(--gold);font-size:18px;">0</span></span>
+                <span>STAGE: <span id="upgradeStage" style="color:var(--info);font-size:18px;">1</span></span>
             </div>
             <div class="upgrade-grid" id="upgradeGrid">
                 <!-- populated by JS -->
             </div>
+            <div id="stageUpContainer" style="display:none;margin-top:12px;">
+                <button class="btn btn-warning" onclick="stageUp()" style="font-size:14px;padding:10px 30px;letter-spacing:2px;">🌟 STAGE UP</button>
+                <div style="color:#888;font-size:10px;margin-top:6px;">Reset upgrades for a permanent stage bonus</div>
+            </div>
             <button class="btn btn-info" onclick="closeUpgrades()" style="margin-top:22px;">CLOSE</button>
+        </div>
+
+        <!-- GAME GUIDE OVERLAY -->
+        <div id="gameGuideOverlay" class="overlay">
+            <h2 style="margin-bottom:8px;">📖 GAME GUIDE</h2>
+            <p style="color:#888;font-size:11px;margin-bottom:16px;">Everything you need to know about Tank Battle Arena</p>
+            <div style="display:flex;flex-direction:column;gap:10px;width:90%;max-width:500px;max-height:60vh;overflow-y:auto;text-align:left;padding:4px;">
+                <div class="settings-section">
+                    <h3 class="settings-section-title">🏠 HOME SCREEN</h3>
+                    <div style="color:#ccc;font-size:11px;line-height:1.6;">
+                        <b>Main buttons</b>: SOLO (campaign), VS AI (practice), VERSUS (online multiplayer).<br>
+                        <b>Bottom bar</b>: Missions, Shop, Upgrades, Loadout, Friends, Season Pass.<br>
+                        <b>Top bar</b>: Your avatar, rank, currencies (gems/coins), sidebar menu ☰.<br>
+                        <b>Sidebar</b>: Full navigation including Settings, Tutorial, Stats, and more.
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h3 class="settings-section-title">🎯 GAME MODES</h3>
+                    <div style="color:#ccc;font-size:11px;line-height:1.6;">
+                        <b>SOLO Campaign</b>: Progress through procedurally generated levels. 4 tiers of enemy AI. Earn scores and stars.<br>
+                        <b>VS AI (Arcade)</b>: Best-of-9 adaptive AI that learns your playstyle. 3 difficulty levels.<br>
+                        <b>VERSUS (Multiplayer)</b>: Real-time 1v1, 2v2, or 3v3 via Firebase. Create or join lobbies with room codes.
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h3 class="settings-section-title">🎒 LOADOUT</h3>
+                    <div style="color:#ccc;font-size:11px;line-height:1.6;">
+                        Customize your tank: <b>Weapon</b> (different cannons), <b>Skin</b> (visual appearance), <b>Title</b> (displayed name), <b>Gadget</b> (special abilities), <b>Trail</b> (movement effects), <b>Kill Effect</b> (elimination effects). Items are unlocked via the Shop or Season Pass.
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h3 class="settings-section-title">🔧 UPGRADES & STAGES</h3>
+                    <div style="color:#ccc;font-size:11px;line-height:1.6;">
+                        Spend <b>Upgrade Points</b> to improve Speed, Fuel Capacity, and Mine Radius (max level 10 each). When ALL three are maxed, you can <b>Stage Up</b> — resets upgrades to 0 but grants a permanent ×1.12 stat multiplier per stage. This allows endless progression!
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h3 class="settings-section-title">🛒 SHOP</h3>
+                    <div style="color:#ccc;font-size:11px;line-height:1.6;">
+                        Buy weapons, skins, gadgets, trails, and kill effects using <b>Coins</b> or <b>Gems</b>. Items you own can be equipped from the Loadout page.
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h3 class="settings-section-title">🔥 SEASON PASS</h3>
+                    <div style="color:#ccc;font-size:11px;line-height:1.6;">
+                        <b>30 free tiers</b> of exclusive rewards: skins, weapons, titles, coins, and gems. Earn XP from all game modes (10% of match XP goes toward season progress). Claim rewards individually or use CLAIM ALL. New seasons bring new exclusive content.
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <h3 class="settings-section-title">🎮 CONTROLS</h3>
+                    <div style="color:#ccc;font-size:11px;line-height:1.6;">
+                        <b>WASD</b> — Move tank<br>
+                        <b>Mouse</b> — Aim turret<br>
+                        <b>Left Click</b> — Fire<br>
+                        <b>C</b> — Place mine<br>
+                        <b>Shift</b> — Boost<br>
+                        <b>Escape</b> — Pause / Close overlays
+                    </div>
+                </div>
+            </div>
+            <button class="btn btn-info" onclick="closeGameGuide()" style="margin-top:18px;">CLOSE</button>
         </div>
 
         <!-- PAUSE OVERLAY -->
