@@ -6,6 +6,7 @@ import { log } from './log.js';
 import { initStats, finalizeStats } from './stats.js';
 import { awardLevelComplete, awardGameOver, awardAiWin, awardAiRoundWin, getCampaignLevel, getStageAndLevel, completeLevelInCampaign, getStageAggregateStats } from './progression.js';
 import { initAudio, playBackgroundMusic, stopMusic } from './audio.js';
+import { SESSION } from './sessionConfig.js';
 
 // ==================== GAME FLOW ====================
 export function startGame(){
@@ -178,6 +179,7 @@ function saveToLeaderboard(mode) {
                         name: G.currentUser.displayName || G.currentUser.email?.split('@')[0] || 'Anonymous',
                         score: fbScore,
                         level: fbLevel,
+                        season: SESSION.id,
                         timestamp: serverTimestamp()
                     }).catch(() => {});
                 }
@@ -186,6 +188,7 @@ function saveToLeaderboard(mode) {
                     name: G.currentUser.displayName || G.currentUser.email?.split('@')[0] || 'Anonymous',
                     score: fbScore,
                     level: fbLevel,
+                    season: SESSION.id,
                     timestamp: serverTimestamp()
                 }).catch(() => {});
             });

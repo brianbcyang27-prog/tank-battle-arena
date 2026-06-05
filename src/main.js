@@ -10,6 +10,10 @@ import { trackKill, trackMineKill, trackSurvivalTime } from './progression.js';
 import './multiplayer.js';
 import { updateTutorial, renderTutorial, closeTutorial } from './tutorial.js';
 import { initAudio } from './audio.js';
+import { initErrorTracking, startWatchdog, frameTick } from './error-tracking.js';
+import { recordFrame, drawGraph, setVisible as setPerfVisible } from './performance-monitor.js';
+import { updateKillFeed, drawKillFeed, addKillEntry } from './kill-feed.js';
+import { playExplosionAt, playImpactAt } from './spatial-audio.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -22,6 +26,20 @@ G._traceCanvas.width = CANVAS_WIDTH;
 G._traceCanvas.height = CANVAS_HEIGHT;
 G._traceCtx = G._traceCanvas.getContext('2d');
 
+
+// ==================== RESPONSIVE CANVAS SCALING ====================
+function resizeCanvas() {
+    const container = document.getElementById('gameContainer');
+    if (!container) return;
+    const maxW = container.clientWidth;
+    const maxH = container.clientHeight;
+    const scale = Math.min(maxW / CANVAS_WIDTH, maxH / CANVAS_HEIGHT);
+    canvas.style.width = Math.floor(CANVAS_WIDTH * scale) + 'px';
+    canvas.style.height = Math.floor(CANVAS_HEIGHT * scale) + 'px';
+}
+window.addEventListener('resize', resizeCanvas);
+window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 200));
+resizeCanvas();
 
 loadSettings();
 import('./ui.js').then(m => { if (m.refreshSpBadge) m.refreshSpBadge(); });
@@ -56,20 +74,47 @@ let lastTime = performance.now();
 function gameLoop(ct) {
     const dt = Math.min((ct - lastTime) / 1000, 0.05);
     lastTime = ct;
+    const frameStart = performance.now();
+    frameTick();
 
     const stageColors = G.stageColors;
     ctx.fillStyle = stageColors ? stageColors.bg : COLORS.background;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
     if (G._traceCanvas) ctx.drawImage(G._traceCanvas, 0, 0);
-    for (let w of G.walls) w.draw();
+    // Fade old trace marks so they gradually disappear instead of accumulating forever
+    if (G._traceCtx) {
+        G._traceCtx.globalCompositeOperation = 'destination-out';
+        G._traceCtx.fillStyle = 'rgba(0,0,0,0.035)';
+        G._traceCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        G._traceCtx.globalCompositeOperation = 'source-over';
+    }
+    let camOffsetX = 0;
+    let camOffsetY = 0;
 
-    // Screen shake transform
-    if (G.screenShake > 0) {
-        const shakeX = (Math.random() - 0.5) * G.screenShake * 20;
-        const shakeY = (Math.random() - 0.5) * G.screenShake * 20;
+    if (G.camera.velX !== 0 || G.camera.velY !== 0) {
+        const maxOffset = 8;
+        G.camera.x += (G.camera.velX * maxOffset - G.camera.x) * 0.08;
+        G.camera.y += (G.camera.velY * maxOffset - G.camera.y) * 0.08;
+        camOffsetX += G.camera.x;
+        camOffsetY += G.camera.y;
+    }
+
+    const s = G.shake;
+    if (s.intensity > 0 && s.elapsed < s.duration) {
+        const progress = s.elapsed / s.duration;
+        const decay = 1 - progress;
+        const magnitude = s.intensity * decay * 20;
+        // Use sin-based offset for smoother shake than pure random
+        const t = s.elapsed * 60;
+        const shakeX = (Math.sin(t * 3.7) * 0.5 + Math.sin(t * 7.1) * 0.3 + Math.sin(t * 13.3) * 0.2) * magnitude;
+        const shakeY = (Math.sin(t * 4.3) * 0.5 + Math.sin(t * 9.7) * 0.3 + Math.sin(t * 15.1) * 0.2) * magnitude;
+        s.elapsed += dt;
         ctx.save();
-        ctx.translate(shakeX, shakeY);
+        ctx.translate(shakeX + camOffsetX, shakeY + camOffsetY);
+    } else if (camOffsetX !== 0 || camOffsetY !== 0) {
+        ctx.save();
+        ctx.translate(camOffsetX, camOffsetY);
     }
 
     if (G.gameState === GameState.PLAYING) {
@@ -79,8 +124,15 @@ function gameLoop(ct) {
 
         if (G.player && G.player.alive) {
             G.player.update(dt, ct);
-            // Track distance traveled
             const speed = G.player.vel.length();
+            // Feed velocity direction to camera for subtle movement offset
+            if (speed > 1) {
+                G.camera.velX = G.player.vel.x / speed;
+                G.camera.velY = G.player.vel.y / speed;
+            } else {
+                G.camera.velX *= 0.85;
+                G.camera.velY *= 0.85;
+            }
             if (speed > 0) { recordDistance(speed * dt); if (G.aiTracker) G.aiTracker.recordDistance(speed * dt); }
             if (G.aiTracker) G.aiTracker.tick(dt);
         }
@@ -136,6 +188,7 @@ function gameLoop(ct) {
         for (let m of G.mines) {
             if (m.armed && !m.exploded) {
                 if (G.player && G.player.alive && m.checkCollision(G.player)) {
+                    playExplosionAt(m.pos.x, m.pos.y);
                     m.explode();
                     if (!G.player.alive) {
                         if (G.aiTracker) G.aiTracker.recordDeath();
@@ -146,12 +199,12 @@ function gameLoop(ct) {
                     }
                 }
                 for (let e of G.enemies) {
-                    if (e.alive && m.checkCollision(e)) { m.explode(); if (!e.alive) trackMineKill(); break; }
+                    if (e.alive && m.checkCollision(e)) { playExplosionAt(m.pos.x, m.pos.y); m.explode(); if (!e.alive) trackMineKill(); break; }
                 }
                 if (G.isMultiplayerGame) {
                     for (let uid in G.remoteTanks) {
                         const rt = G.remoteTanks[uid].tank;
-                        if (rt.alive && m.checkCollision(rt)) { m.explode(); rt.takeDamage(10); if (!rt.alive) multiplayerGameOver(true); break; }
+                        if (rt.alive && m.checkCollision(rt)) { playExplosionAt(m.pos.x, m.pos.y); m.explode(); rt.takeDamage(10); if (!rt.alive) multiplayerGameOver(true); break; }
                     }
                 }
             }
@@ -212,6 +265,7 @@ function gameLoop(ct) {
                     for (let m of G.mines) {
                         if (!m.exploded && b.pos.distanceTo(m.pos) < b.radius + m.radius) {
                             b.alive = false;
+                            playExplosionAt(m.pos.x, m.pos.y);
                             m.explode();
                             break;
                         }
@@ -221,6 +275,7 @@ function gameLoop(ct) {
                 if (!b.alive) continue;
                 if (G.player && G.player.alive && b.checkCollision(G.player)) {
                     b.alive = false;
+                    playImpactAt(b.pos.x, b.pos.y);
                     G.player.takeDamage(b.damage||1);
                     recordDamageTaken(b.damage||1);
                     if (b.owner && b.owner._isQLearning) {
@@ -242,8 +297,13 @@ function gameLoop(ct) {
                         if (!G.settings.friendlyFire && isEnemyBullet) break;
                         if (!b.pierceCount) b.alive = false;
                         e.takeDamage(b.damage||1);
+                        // Hit marker at impact point for player bullets
+                        if (!isEnemyBullet) {
+                            G.hitMarkers.push({ x: b.pos.x, y: b.pos.y, time: 0, maxTime: 0.3 });
+                            playImpactAt(b.pos.x, b.pos.y);
+                        }
                         recordHit(b.damage||1); if (G.aiTracker) G.aiTracker.recordHit();
-                        if (!e.alive) { recordKill(); trackKill(); if (G.aiTracker) G.aiTracker.recordKill(); G.score += 100 * (G.gameMode === 'arcade' ? G.arcadeWave : G.level); log('info', 'KILL', 'Enemy killed! Score: ' + G.score); if (G.player && G.player.killEffectId && G.player.killEffectId !== 'default') { import('./engine.js').then(m => m.spawnKillEffect(G.player.killEffectId, e.pos.x, e.pos.y, e.color)); } }
+                        if (!e.alive) { recordKill(); trackKill(); if (G.aiTracker) G.aiTracker.recordKill(); G.score += 100 * (G.gameMode === 'arcade' ? G.arcadeWave : G.level); log('info', 'KILL', 'Enemy killed! Score: ' + G.score); const w = G.player && G.player.weaponId ? (WEAPONS.find(x => x.id === G.player.weaponId) || {}).name : 'CANNON'; addKillEntry('YOU', 'ENEMY', w); if (G.player && G.player.killEffectId && G.player.killEffectId !== 'default') { import('./engine.js').then(m => m.spawnKillEffect(G.player.killEffectId, e.pos.x, e.pos.y, e.color)); } }
                         break;
                     }
                 }
@@ -385,6 +445,7 @@ function gameLoop(ct) {
         }
     }
 
+    for (let w of G.walls) w.draw();
     for (let p of G.particles) { if (p.life > 0) { p.update(dt); p.draw(); } }
     G.particles = G.particles.filter(p => p.life > 0);
 
@@ -395,18 +456,53 @@ function gameLoop(ct) {
     for (let uid in G.remoteTanks) { const rt = G.remoteTanks[uid].tank; if (rt.alive) rt.draw(); }
     for (let e of G.enemies) { if (e.alive) e.draw(); }
 
-    // End screen shake / restore unshaken canvas for HUD
-    if (G.screenShake > 0) ctx.restore();
+    // Hit markers — cross burst at impact point
+    for (let i = G.hitMarkers.length - 1; i >= 0; i--) {
+        const h = G.hitMarkers[i];
+        h.time += dt;
+        const progress = h.time / h.maxTime;
+        if (progress >= 1) { G.hitMarkers.splice(i, 1); continue; }
+        const alpha = 1 - progress;
+        const size = 6 + progress * 8;
+        ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(h.x - size, h.y - size); ctx.lineTo(h.x + size, h.y + size);
+        ctx.moveTo(h.x + size, h.y - size); ctx.lineTo(h.x - size, h.y + size);
+        ctx.stroke();
+    }
 
-    // Red border overlay on hit
-    if (G.screenShake > 0) {
-        const alpha = Math.min(G.screenShake * 0.8, 0.35);
+    // Damage numbers — float upward and fade
+    for (let i = G.damageNumbers.length - 1; i >= 0; i--) {
+        const n = G.damageNumbers[i];
+        n.time += dt;
+        n.y += n.vy;
+        const progress = n.time / n.maxTime;
+        if (progress >= 1) { G.damageNumbers.splice(i, 1); continue; }
+        const alpha = 1 - progress * progress;
+        ctx.font = 'bold 16px Orbitron, monospace';
+        ctx.textAlign = 'center';
+        ctx.save();
+        ctx.globalAlpha = alpha * 0.5;
+        ctx.fillStyle = '#000';
+        ctx.fillText(n.text, n.x + 1, n.y + 1);
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = n.color || '#f1c40f';
+        ctx.fillText(n.text, n.x, n.y);
+        ctx.restore();
+        ctx.textAlign = 'left';
+    }
+
+    const isShaking = G.shake.intensity > 0 && G.shake.elapsed < G.shake.duration;
+    if (isShaking || camOffsetX !== 0 || camOffsetY !== 0) ctx.restore();
+
+    if (isShaking) {
+        const progress = G.shake.elapsed / G.shake.duration;
+        const alpha = Math.min((1 - progress) * G.shake.intensity * 0.8, 0.35);
         ctx.strokeStyle = `rgba(255,0,0,${alpha})`;
         ctx.lineWidth = 16;
         ctx.strokeRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
-
-    if (G.screenShake > 0) G.screenShake = Math.max(0, G.screenShake - dt * 2);
 
     if (G.gameState === GameState.PLAYING || G.gameState === GameState.TUTORIAL) {
         const isTutorial = G.gameState === GameState.TUTORIAL;
@@ -605,12 +701,62 @@ function gameLoop(ct) {
                 ctx.fillStyle = '#555';
                 ctx.fillText('GADGET', gadgetX + 1, gadgetY - 2);
             }
+
+            // Health bar — bottom-left persistent HUD
+            const hpX = 20;
+            const hpY = CANVAS_HEIGHT - 48;
+            const hpW = 200;
+            const hpH = 18;
+            const hpPct = G.player.health / G.player.maxHealth;
+            const hpColor = hpPct > 0.5 ? '#27ae60' : hpPct > 0.25 ? '#f39c12' : '#e74c3c';
+            ctx.fillStyle = 'rgba(10,10,26,0.7)';
+            ctx.beginPath();
+            ctx.roundRect(hpX - 2, hpY - 2, hpW + 4, hpH + 4, 6);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.roundRect(hpX - 2, hpY - 2, hpW + 4, hpH + 4, 6);
+            ctx.stroke();
+            ctx.fillStyle = 'rgba(255,255,255,0.06)';
+            ctx.beginPath();
+            ctx.roundRect(hpX, hpY, hpW, hpH, 4);
+            ctx.fill();
+            if (hpPct > 0) {
+                ctx.fillStyle = hpColor;
+                ctx.beginPath();
+                ctx.roundRect(hpX, hpY, hpW * hpPct, hpH, 4);
+                ctx.fill();
+            }
+            ctx.textAlign = 'left';
+            ctx.font = '9px Orbitron';
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.fillText('HP', hpX + 6, hpY - 6);
+            ctx.textAlign = 'right';
+            ctx.font = 'bold 11px Orbitron';
+            ctx.fillStyle = '#eaeaea';
+            ctx.fillText(Math.ceil(G.player.health) + ' / ' + G.player.maxHealth, hpX + hpW - 6, hpY + 13);
+
+            // Low-health pulse overlay
+            if (hpPct < 0.35 && G.player.health > 0) {
+                const pulse = 0.25 + Math.sin(performance.now() / 200) * 0.12;
+                const hAlpha = (1 - hpPct / 0.35) * pulse;
+                ctx.fillStyle = `rgba(200,0,0,${Math.min(hAlpha, 0.25)})`;
+                ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            }
         }
     }
+
+    updateKillFeed(dt);
 
     if (G.gameState === GameState.TUTORIAL) {
         renderTutorial(ctx);
     }
+    drawKillFeed(ctx);
+
+    const frameTime = performance.now() - frameStart;
+    recordFrame(frameTime);
+    drawGraph(ctx);
 
     requestAnimationFrame(gameLoop);
 }
@@ -676,6 +822,127 @@ canvas.addEventListener('mousemove', (e) => {
 canvas.addEventListener('mousedown', (e) => { initAudio(); if (e.button === 0) G.mouseDown = true; });
 canvas.addEventListener('mouseup', (e) => { if (e.button === 0) G.mouseDown = false; });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// ==================== TOUCH CONTROLS ====================
+const TOUCH_DEAD_ZONE = 15; // px before joystick registers direction
+const TAP_MAX_DIST = 20;    // max movement to count as tap (not drag)
+const TAP_MAX_TIME = 250;   // ms max duration to count as tap
+
+function touchPos(e) {
+    const r = canvas.getBoundingClientRect();
+    return {
+        x: (e.clientX - r.left) * (CANVAS_WIDTH / r.width),
+        y: (e.clientY - r.top) * (CANVAS_HEIGHT / r.height),
+    };
+}
+
+canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    initAudio();
+    G.touch.active = true;
+
+    for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        const pos = touchPos(t);
+
+        if (pos.x < CANVAS_WIDTH / 2 && G.touch.joystickId === -1) {
+            G.touch.joystickId = t.identifier;
+            G.touch.joystickCenterX = pos.x;
+            G.touch.joystickCenterY = pos.y;
+        } else if (pos.x >= CANVAS_WIDTH / 2 && G.touch.aimId === -1) {
+            G.touch.aimId = t.identifier;
+            G.touch.aimStartX = pos.x;
+            G.touch.aimStartY = pos.y;
+            G.touch.aimStartTime = Date.now();
+            G.touch.tapFired = false;
+            G.mouseX = pos.x;
+            G.mouseY = pos.y;
+        }
+    }
+
+    if (e.touches.length >= 2) {
+        window.placeMine && window.placeMine();
+    }
+});
+
+canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+
+    for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        const pos = touchPos(t);
+
+        if (t.identifier === G.touch.joystickId) {
+            const dx = pos.x - G.touch.joystickCenterX;
+            const dy = pos.y - G.touch.joystickCenterY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            G.keys['KeyW'] = false;
+            G.keys['KeyS'] = false;
+            G.keys['KeyA'] = false;
+            G.keys['KeyD'] = false;
+
+            if (dist > TOUCH_DEAD_ZONE) {
+                const normDx = dx / dist;
+                const normDy = dy / dist;
+                if (Math.abs(normDy) > Math.abs(normDx)) {
+                    G.keys[normDy < 0 ? 'KeyW' : 'KeyS'] = true;
+                } else {
+                    G.keys[normDx < 0 ? 'KeyA' : 'KeyD'] = true;
+                }
+            }
+        } else if (t.identifier === G.touch.aimId) {
+            G.mouseX = pos.x;
+            G.mouseY = pos.y;
+        }
+    }
+});
+
+canvas.addEventListener('touchend', (e) => {
+    e.preventDefault();
+
+    for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+
+        if (t.identifier === G.touch.joystickId) {
+            G.touch.joystickId = -1;
+            G.keys['KeyW'] = false;
+            G.keys['KeyS'] = false;
+            G.keys['KeyA'] = false;
+            G.keys['KeyD'] = false;
+        }
+
+        if (t.identifier === G.touch.aimId) {
+            const pos = touchPos(t);
+            const dt = Date.now() - G.touch.aimStartTime;
+            const dist = Math.sqrt(
+                (pos.x - G.touch.aimStartX) ** 2 +
+                (pos.y - G.touch.aimStartY) ** 2
+            );
+            G.touch.aimId = -1;
+
+            if (dist < TAP_MAX_DIST && dt < TAP_MAX_TIME && !G.touch.tapFired) {
+                G.touch.tapFired = true;
+                G.mouseDown = true;
+                setTimeout(() => { G.mouseDown = false; }, 100);
+            }
+        }
+    }
+
+    if (e.touches.length === 0) {
+        G.touch.active = false;
+    }
+});
+
+canvas.addEventListener('touchcancel', () => {
+    G.touch.joystickId = -1;
+    G.touch.aimId = -1;
+    G.keys['KeyW'] = false;
+    G.keys['KeyS'] = false;
+    G.keys['KeyA'] = false;
+    G.keys['KeyD'] = false;
+    G.touch.active = false;
+});
 
 window.resumeGame = function(){
     if (G.gameState !== GameState.PAUSED) return;
@@ -845,6 +1112,25 @@ if (welcomeCanvas) startWelcomeParticles(welcomeCanvas);
 document.getElementById('welcomeOverlay').style.display = 'flex';
 document.getElementById('welcomeOverlay').classList.add('active');
 startWelcomeSequence();
+
+try {
+    const saved = JSON.parse(localStorage.getItem('tank_arena_settings') || '{}');
+    if (saved.showFps) setPerfVisible(true);
+} catch {}
+initErrorTracking();
+startWatchdog((elapsed) => {
+    const overlay = document.getElementById('gameOverlay');
+    if (overlay) {
+        overlay.innerHTML = `
+            <div style="text-align:center;padding:40px;">
+                <h2 style="color:#e74c3c;">GAME CRASHED</h2>
+                <p style="color:#aaa;margin:16px 0;">Game was frozen for ${(elapsed/1000).toFixed(1)}s</p>
+                <button onclick="location.reload()" style="padding:12px 32px;background:#3498db;border:none;border-radius:6px;color:white;font-size:14px;cursor:pointer;">RELOAD</button>
+            </div>`;
+        overlay.style.display = 'flex';
+        overlay.classList.add('active');
+    }
+});
 
 requestAnimationFrame(gameLoop);
 log('info', 'INIT', 'Game engine initialized and running');

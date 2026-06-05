@@ -938,7 +938,7 @@ export function claimAllAvailableRewards() {
 
 // Called automatically when earning XP in any game mode
 export function awardSessionXpFromMatch(matchXp) {
-    const sessionXp = Math.max(1, Math.floor(matchXp * 0.1));
+    const sessionXp = Math.max(1, Math.floor(matchXp * 0.15));
     addSessionXp(sessionXp);
     return sessionXp;
 }

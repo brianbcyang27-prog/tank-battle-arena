@@ -4,6 +4,151 @@ import { Vector2, Player, Enemy, Wall, Bullet } from './engine.js';
 import { log } from './log.js';
 import { applyProgressionToPlayer } from './progression.js';
 
+// ==================== PRE-DESIGNED ARENA MAPS ====================
+// Hand-crafted layouts for special levels. Each fills a (gc x gr) grid with 0=empty, 1=wall.
+
+function arenaPillars(gc, gr) {
+    // Nine pillars in a 3×3 grid — open movement with cover options
+    const grid = emptyGrid(gc, gr);
+    const cx = Math.floor(gc / 2), cy = Math.floor(gr / 2);
+    const positions = [
+        [cx - 5, cy - 3], [cx, cy - 3], [cx + 5, cy - 3],
+        [cx - 5, cy],     [cx, cy],     [cx + 5, cy],
+        [cx - 5, cy + 3], [cx, cy + 3], [cx + 5, cy + 3],
+    ];
+    for (const [px, py] of positions) {
+        for (let dy = 0; dy < 2; dy++) {
+            for (let dx = 0; dx < 2; dx++) {
+                if (py + dy < gr - 1 && px + dx < gc - 1) grid[py + dy][px + dx] = 1;
+            }
+        }
+    }
+    return grid;
+}
+
+function arenaCorridors(gc, gr) {
+    // Long horizontal and vertical corridors — cat-and-mouse gameplay
+    const grid = emptyGrid(gc, gr);
+    const midX = Math.floor(gc / 2), midY = Math.floor(gr / 2);
+    for (let y = 3; y < gr - 3; y += 4) {
+        for (let x = 2; x < gc - 2; x++) grid[y][x] = 1;
+        const gap = 3 + Math.floor(Math.random() * (gc - 8));
+        grid[y][gap] = 0; grid[y][gap + 1] = 0;
+    }
+    for (let x = 4; x < gc - 4; x += 5) {
+        for (let y = 2; y < gr - 2; y++) grid[y][x] = 1;
+        const gap = 3 + Math.floor(Math.random() * (gr - 8));
+        grid[gap][x] = 0; grid[gap + 1][x] = 0;
+    }
+    grid[1][1] = 0; grid[1][2] = 0; grid[2][1] = 0; grid[2][2] = 0;
+    return grid;
+}
+
+function arenaFortress(gc, gr) {
+    // Central fortress with outer lanes — siege gameplay
+    const grid = emptyGrid(gc, gr);
+    const midX = Math.floor(gc / 2), midY = Math.floor(gr / 2);
+    for (let dy = -3; dy <= 3; dy++) {
+        for (let dx = -4; dx <= 4; dx++) {
+            if (dy === -3 || dy === 3 || dx === -4 || dx === 4) {
+                const gx = midX + dx, gy = midY + dy;
+                if (gx > 0 && gx < gc - 1 && gy > 0 && gy < gr - 1) grid[gy][gx] = 1;
+            }
+        }
+    }
+    grid[midY - 3][midX] = 0; grid[midY + 3][midX] = 0;
+    grid[midY][midX - 4] = 0; grid[midY][midX + 4] = 0;
+    grid[midY - 1][midX - 2] = 1; grid[midY - 1][midX + 2] = 1;
+    grid[midY + 1][midX - 2] = 1; grid[midY + 1][midX + 2] = 1;
+    return grid;
+}
+
+function arenaCrossfire(gc, gr) {
+    // X-shaped walls dividing into quadrants — long sight lines
+    const grid = emptyGrid(gc, gr);
+    const midX = Math.floor(gc / 2), midY = Math.floor(gr / 2);
+    for (let i = -6; i <= 6; i++) {
+        if (midY + i > 0 && midY + i < gr - 1 && midX + i > 0 && midX + i < gc - 1) {
+            grid[midY + i][midX + i] = 1;
+        }
+        if (midY - i > 0 && midY - i < gr - 1 && midX + i > 0 && midX + i < gc - 1) {
+            grid[midY - i][midX + i] = 1;
+        }
+    }
+    for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+            grid[midY + dy][midX + dx] = 0;
+        }
+    }
+    const quadrants = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+    for (const [qy, qx] of quadrants) {
+        for (let i = 0; i < 3; i++) {
+            const wx = midX + qx * (3 + Math.floor(Math.random() * 6));
+            const wy = midY + qy * (3 + Math.floor(Math.random() * 4));
+            if (wx > 1 && wx < gc - 2 && wy > 1 && wy < gr - 2) {
+                grid[wy][wx] = 1;
+                grid[wy + qy][wx + qx] = 1;
+            }
+        }
+    }
+    return grid;
+}
+
+function arenaRing(gc, gr) {
+    // Circular arena with a central pillar and spoke walls — close combat
+    const grid = emptyGrid(gc, gr);
+    const midX = Math.floor(gc / 2), midY = Math.floor(gr / 2);
+    const ringR = 6, innerR = 2;
+    for (let y = 2; y < gr - 2; y++) {
+        for (let x = 2; x < gc - 2; x++) {
+            const dx = x - midX, dy = y - midY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist >= ringR - 0.5 && dist <= ringR + 0.5) {
+                grid[y][x] = 1;
+            }
+        }
+    }
+    for (let r = innerR + 1; r < ringR - 1; r++) {
+        grid[midY][midX + r] = 1; grid[midY][midX - r] = 1;
+        grid[midY + r][midX] = 1; grid[midY - r][midX] = 1;
+    }
+    for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+            grid[midY + dy][midX + dx] = 0;
+        }
+    }
+    grid[midY][midX + ringR] = 0; grid[midY][midX - ringR] = 0;
+    grid[midY + ringR][midX] = 0; grid[midY - ringR][midX] = 0;
+    return grid;
+}
+
+const ARENAS = {
+    pillars:   { name: 'Pillars',   fn: arenaPillars },
+    corridors: { name: 'Corridors', fn: arenaCorridors },
+    fortress:  { name: 'Fortress',  fn: arenaFortress },
+    crossfire: { name: 'Crossfire', fn: arenaCrossfire },
+    ring:      { name: 'Ring',      fn: arenaRing },
+};
+
+export function getArenaList() {
+    return Object.entries(ARENAS).map(([id, a]) => ({ id, name: a.name }));
+}
+
+export function getPreDesignedArena(arenaId, gc, gr) {
+    const arena = ARENAS[arenaId];
+    if (!arena) return null;
+    return arena.fn(gc, gr);
+}
+
+function emptyGrid(gc, gr) {
+    const grid = [];
+    for (let y = 0; y < gr; y++) {
+        grid[y] = [];
+        for (let x = 0; x < gc; x++) grid[y][x] = (x === 0 || x === gc - 1 || y === 0 || y === gr - 1) ? 1 : 0;
+    }
+    return grid;
+}
+
 function generateMaze(grid, gc, gr, lvl) {
     const wallDensityBase = lvl === 1 ? 0.12 : 0.25;
     const targetWalls = Math.floor(gc * gr * Math.min(wallDensityBase + lvl * 0.012, 0.35));
@@ -80,15 +225,14 @@ export function generateLevel(lvl){
         diffLevel = G.currentLevelInStage + 1 + stageInfo.stageIndex;
     }
 
+    const arenaIds = Object.keys(ARENAS);
     if (G.gameMode === 'arcade') {
-        // Simple arena with a few wall clusters for arcade mode
-        for (let y = 0; y < gr; y++) { grid[y] = []; for (let x = 0; x < gc; x++) grid[y][x] = (x === 0 || x === gc - 1 || y === 0 || y === gr - 1) ? 1 : 0; }
-        const wl = 20 + Math.floor(Math.random() * 10);
-        for (let i = 0; i < wl; i++) {
-            const x = 2 + Math.floor(Math.random() * (gc - 4)), y = 2 + Math.floor(Math.random() * (gr - 4));
-            if (y >= 0 && y < gr && x >= 0 && x < gc && grid[y] && grid[y][x] === 0) { grid[y][x] = 1; }
-        }
-    } else if (G.gameMode === 'campaign' && !isSpecialLevel) {
+        const arenaChoice = arenaIds[G.arcadeWave % arenaIds.length];
+        grid = getPreDesignedArena(arenaChoice, gc, gr);
+    } else if (G.gameMode === 'campaign' && isSpecialLevel) {
+        const arenaChoice = arenaIds[(lvl / LEVELS_PER_STAGE - 1) % arenaIds.length];
+        grid = getPreDesignedArena(arenaChoice, gc, gr);
+    } else if (G.gameMode === 'campaign') {
         generateMaze(grid, gc, gr, diffLevel);
     } else {
         for (let y = 0; y < gr; y++) { grid[y] = []; for (let x = 0; x < gc; x++) grid[y][x] = (x === 0 || x === gc - 1 || y === 0 || y === gr - 1) ? 1 : 0; }

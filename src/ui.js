@@ -46,9 +46,11 @@ export function saveSettings() {
     log('info','SETTINGS','Settings saved: '+JSON.stringify(G.settings));
 }
 
-window.showSettings = function() {
+window.showSettings = function(onClose) {
+    _loadoutConfirmCb = onClose || null;
     applySettingsToUI();
     showOverlay('settingsOverlay');
+    switchSettingsTab('settings');
     // Fullscreen when opened from home screen, not from in-game pause
     if (G.gameState === GameState.MENU) {
         document.getElementById('settingsOverlay').classList.add('overlay-home');
@@ -58,12 +60,26 @@ window.showSettings = function() {
 
 window.closeSettings = function() {
     saveSettings();
-    if (G.gameState === GameState.PAUSED) {
+    if (_loadoutConfirmCb) {
+        const cb = _loadoutConfirmCb;
+        _loadoutConfirmCb = null;
+        showOverlay(null);
+        cb();
+    } else if (G.gameState === GameState.PAUSED) {
         showOverlay('pauseOverlay');
     } else {
         showOverlay('loginOverlay');
     }
     log('info','SETTINGS','Closing settings panel');
+};
+
+window.switchSettingsTab = function(tab, compact) {
+    const isSettings = tab === 'settings';
+    document.getElementById('settingsTabSettings').classList.toggle('selected', isSettings);
+    document.getElementById('settingsTabLoadout').classList.toggle('selected', !isSettings);
+    document.getElementById('settingsPanel').classList.toggle('hidden', !isSettings);
+    document.getElementById('settingsLoadoutPanel').classList.toggle('hidden', isSettings);
+    if (!isSettings) renderLoadoutSlots(compact);
 };
 
 window.openPauseSettings = function() {
@@ -221,11 +237,18 @@ export function showOverlay(id){
         o.style.display='none';
         o.classList.remove('active');
         o.classList.remove('overlay-home');
+        o.removeAttribute('aria-modal');
     });
     if(id){
         const el = document.getElementById(id);
         el.style.display='flex';
         el.classList.add('active');
+        el.setAttribute('role', 'dialog');
+        el.setAttribute('aria-modal', 'true');
+        const firstFocusable = el.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+        if (firstFocusable && !document.querySelector(':focus')) {
+            firstFocusable.focus();
+        }
         // Home overlays fill the full viewport
         if (HOME_OVERLAYS.includes(id)) {
             el.classList.add('overlay-home');
@@ -781,11 +804,13 @@ function _lbRender() {
         if (countEl) countEl.textContent = '0 entries';
         return;
     }
-    let html = '<ol style="text-align:left;padding-left:20px;margin:0;">';
+    let html = '<div style="color:#555;font-size:9px;letter-spacing:1px;text-align:center;margin-bottom:6px;padding:4px;border:1px solid #333;border-radius:4px;">' + SESSION.shortName + '</div>';
+    html += '<ol style="text-align:left;padding-left:20px;margin:0;">';
     for (let i = 0; i < entries.length; i++) {
         const n = entries[i].name || 'Anonymous';
         const s = entries[i].score || 0;
         const lvl = entries[i].level || 1;
+        const season = entries[i].season || '';
         const rank = i + 1;
         const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '';
         html += '<li style="color:#f39c12;margin-bottom:4px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.04);display:flex;align-items:center;gap:6px;">';
@@ -794,6 +819,7 @@ function _lbRender() {
         html += '<span style="flex:1;color:#eaeaea;font-size:11px;">' + n.split('@')[0] + '</span>';
         html += '<span style="color:#27ae60;font-weight:700;font-size:11px;">' + s.toLocaleString() + '</span>';
         html += '<span style="color:#666;font-size:9px;min-width:30px;text-align:right;">Lv.' + lvl + '</span>';
+        if (season) html += '<span style="color:#555;font-size:8px;min-width:20px;text-align:right;">' + season + '</span>';
         html += '</li>';
     }
     html += '</ol>';
@@ -1897,21 +1923,37 @@ window.showWeaponPreview3D = function(weaponId) {
 
 let _loadoutConfirmCb = null;
 
+let _compactLoadout = false;
+
 export function showLoadout(onConfirm) {
     _loadoutConfirmCb = onConfirm || null;
-    renderLoadoutSlots();
-    showOverlay('loadoutOverlay');
-    log('info', 'UI', 'Opening loadout');
+    _compactLoadout = !!onConfirm;
+    showOverlay('settingsOverlay');
+    if (G.gameState === GameState.MENU) {
+        document.getElementById('settingsOverlay').classList.add('overlay-home');
+    }
+    // In compact mode (pre-game), hide the SETTINGS/LOADOUT tabs and change button
+    const tabBar = document.querySelector('.settings-tab-bar');
+    const saveBtn = document.getElementById('settingsSaveBtn');
+    if (onConfirm) {
+        if (tabBar) tabBar.style.display = 'none';
+        if (saveBtn) saveBtn.textContent = 'START';
+    } else {
+        if (tabBar) tabBar.style.display = '';
+        if (saveBtn) saveBtn.textContent = 'SAVE & CLOSE';
+    }
+    switchSettingsTab('loadout', !!onConfirm);
+    log('info', 'UI', 'Opening loadout' + (onConfirm ? ' (compact)' : ''));
 }
 window.showLoadout = showLoadout;
 
-function renderLoadoutSlots() {
+function renderLoadoutSlots(compact) {
     const grid = document.getElementById('loadoutSlotGrid');
     if (!grid) return;
     const P = getPlayerData();
     const loadout = P.loadout || {};
 
-    const slots = [
+    const allSlots = [
         { type: 'weapon', label: 'Weapon', icon: '🔫', getEquipped: () => loadout.weapon || 'standard', getItems: () => { const own = getOwnedWeapons(); return WEAPONS.filter(w => own.includes(w.id)); }, getName: (id) => { const w = WEAPONS.find(x => x.id === id); return w ? w.name : id; } },
         { type: 'skin', label: 'Skin', icon: '🎨', getEquipped: () => loadout.skin || 'classic', getItems: () => { const own = getOwnedSkins(); return SKINS.filter(s => own.includes(s.id)); }, getName: (id) => { const s = SKINS.find(x => x.id === id); return s ? s.name : id; } },
         { type: 'title', label: 'Title', icon: '🏆', getEquipped: () => loadout.title || null, getItems: () => { const titles = P.titles || []; return titles.map(t => ({ id: t, name: t })); }, getName: (id) => id },
@@ -1920,7 +1962,9 @@ function renderLoadoutSlots() {
         { type: 'killEffect', label: 'Kill Effect', icon: '💥', getEquipped: () => loadout.killEffect || 'default', getItems: () => { return KILL_EFFECTS.filter(k => isItemOwned('killEffect', k.id)); }, getName: (id) => { const k = KILL_EFFECTS.find(x => x.id === id); return k ? k.name : id; } },
     ];
 
-    grid.innerHTML = slots.map(slot => {
+    const slots = compact ? allSlots.filter(s => s.type === 'weapon' || s.type === 'gadget') : allSlots;
+
+    let html = slots.map(slot => {
         const equippedId = slot.getEquipped();
         const name = equippedId ? slot.getName(equippedId) : 'None';
         return `<div class="lo-slot" onclick="selectLoadoutSlot('${slot.type}')">
@@ -1929,6 +1973,8 @@ function renderLoadoutSlots() {
             <div class="lo-slot-name">${name}</div>
         </div>`;
     }).join('');
+
+    grid.innerHTML = html;
 }
 
 function renderLoadoutPicker(type) {
@@ -2003,7 +2049,7 @@ window.selectLoadoutSlot = function(type) {
 window.closeLoadoutPicker = function() {
     document.getElementById('loadoutSlotGrid').style.display = 'grid';
     document.getElementById('loadoutItemGrid').style.display = 'none';
-    renderLoadoutSlots();
+    renderLoadoutSlots(_compactLoadout);
 };
 
 window.equipLoadoutItem = function(type, id) {
@@ -2021,18 +2067,12 @@ window.equipLoadoutItem = function(type, id) {
 };
 
 window.saveLoadout = function() {
-    showOverlay(null);
-    if (_loadoutConfirmCb) {
-        const cb = _loadoutConfirmCb;
-        _loadoutConfirmCb = null;
-        cb();
-    }
+    closeSettings();
     log('info', 'UI', 'Loadout saved');
 };
 
 window.closeLoadout = function() {
-    showOverlay(null);
-    _loadoutConfirmCb = null;
+    closeSettings();
     log('info', 'UI', 'Loadout closed');
 };
 
@@ -2139,27 +2179,4 @@ function animateCelebrationConfetti(ctx, canvas) {
 }
 
 // ===================== HOME MENU TOGGLES =====================
-window.toggleMoreMenu = function() {
-    const menu = document.getElementById('moreMenu');
-    if (menu) menu.classList.toggle('open');
-};
-
-window.toggleLog = function() {
-    const lp = document.getElementById('logPanel');
-    if (lp) lp.style.display = lp.style.display === 'none' ? 'block' : 'none';
-    closeMoreMenu();
-};
-
-function closeMoreMenu() {
-    const menu = document.getElementById('moreMenu');
-    if (menu) menu.classList.remove('open');
-}
-
-// Close more menu when clicking outside
-document.addEventListener('click', function(e) {
-    const menu = document.getElementById('moreMenu');
-    const btn = document.querySelector('.more-btn');
-    if (menu && menu.classList.contains('open') && !menu.contains(e.target) && !btn?.contains(e.target)) {
-        menu.classList.remove('open');
-    }
-});
+// Sidebar and more-menu toggles are in index.html inline script

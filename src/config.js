@@ -130,19 +130,19 @@ export const GADGETS = [
 // Cosmetic tank track trails
 export const TRAILS = [
     { id: 'default',  name: 'Standard',  cost: 0,    currency: null,   minRank: null,
-      color: 'rgba(60,55,50,0.12)', glowColor: null, icon: '🔘',
+      color: 'rgba(60,55,50,0.08)', glowColor: null, icon: '🔘',
       desc: 'Standard tank tracks' },
     { id: 'flame',    name: 'Flame',     cost: 40,   currency: 'gems', minRank: 'Bronze III',
-      color: 'rgba(255,69,0,0.25)', glowColor: '#ff4500', icon: '🔥',
+      color: 'rgba(255,69,0,0.12)', glowColor: '#ff4500', icon: '🔥',
       desc: 'Burning-hot track marks' },
     { id: 'ice',      name: 'Ice',       cost: 40,   currency: 'gems', minRank: 'Bronze II',
-      color: 'rgba(0,191,255,0.25)', glowColor: '#00bfff', icon: '❄️',
+      color: 'rgba(0,191,255,0.12)', glowColor: '#00bfff', icon: '❄️',
       desc: 'Frozen crystal trails' },
     { id: 'electric', name: 'Electric',  cost: 60,   currency: 'gems', minRank: 'Silver I',
-      color: 'rgba(255,255,0,0.25)', glowColor: '#ffff00', icon: '⚡',
+      color: 'rgba(255,255,0,0.10)', glowColor: '#ffff00', icon: '⚡',
       desc: 'Crackling energy tracks' },
     { id: 'shadow',   name: 'Shadow',    cost: 80,   currency: 'gems', minRank: 'Silver II',
-      color: 'rgba(138,43,226,0.3)', glowColor: '#8a2be2', icon: '🌑',
+      color: 'rgba(138,43,226,0.15)', glowColor: '#8a2be2', icon: '🌑',
       desc: 'Dark ethereal trails' },
 ];
 

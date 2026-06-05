@@ -6,7 +6,22 @@ export const G = {
     ctx: null,
 
     screenShake: 0,
+    shake: { intensity: 0, elapsed: 0, duration: 0 },
+    camera: { x: 0, y: 0, velX: 0, velY: 0 },
     safePeriod: 2.0,
+
+    // HUD visual feedback
+    hitMarkers: [],       // { x, y, time, maxTime }
+    damageNumbers: [],    // { x, y, text, time, maxTime, vy, color }
+
+    ui: {
+        overlayStack: [],
+        sidebarOpen: false,
+        currentSettingsTab: 'loadout',
+        fpsMonitorVisible: false,
+        toastQueue: [],
+        gameOverData: null,
+    },
 
     // Game objects
     player: null,
@@ -29,6 +44,19 @@ export const G = {
     mouseX: 0,
     mouseY: 0,
     mouseDown: false,
+
+    // Touch input state
+    touch: {
+        active: false,
+        joystickId: -1,     // touch identifier for left-half joystick
+        joystickCenterX: 0, // canvas-coordinate center of joystick
+        joystickCenterY: 0,
+        aimId: -1,          // touch identifier for right-half aiming
+        aimStartX: 0,       // used for tap detection
+        aimStartY: 0,
+        aimStartTime: 0,
+        tapFired: false,    // prevent double-fire on tap
+    },
 
     // Multiplayer
     isMultiplayerGame: false,

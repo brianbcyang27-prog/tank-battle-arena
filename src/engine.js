@@ -230,7 +230,23 @@ export class Tank {
         const d=new Vector2(Math.cos(this.turretAngle),Math.sin(this.turretAngle));
         return new Bullet(this.pos.x+d.x*25,this.pos.y+d.y*25,d.mul(bulletSpeed),this);
     }
-    takeDamage(d=1){ if(G.safePeriod > 0 && this === G.player) return; this.health-=d; this.damageFlash=0.2; G.screenShake = 0.3; import('./audio.js').then(m => m.playHit()); if(this.health<=0){ this.alive=false; this.explode(); } }
+    takeDamage(d=1){
+    if(G.safePeriod > 0 && this === G.player) return;
+    this.health-=d; this.damageFlash=0.2;
+    G.shake.intensity = 0.3; G.shake.elapsed = 0; G.shake.duration = 0.3;
+    import('./audio.js').then(m => m.playHit());
+    // Floating damage number at hit position
+    G.damageNumbers.push({
+        x: this.pos.x + (Math.random() - 0.5) * 12,
+        y: this.pos.y - 20,
+        text: '-' + d,
+        time: 0,
+        maxTime: 0.9,
+        vy: -1.8 - Math.random() * 0.8,
+        color: this === G.player ? '#e74c3c' : '#f1c40f'
+    });
+    if(this.health<=0){ this.alive=false; this.explode(); }
+}
     explode(){
         for(let i=0;i<20;i++){
             const a=Math.random()*Math.PI*2;
@@ -1030,9 +1046,11 @@ export class LandMine {
         this.armed=false;
         this.armTimer=0;
         this.placer=placer;
+        this.lifetime = (placer && placer.mineLifetime) ? placer.mineLifetime : 8;
     }
     update(dt){
         if(this.exploded) return;
+        this.lifeTimer+=dt;
         if(!this.armed){
             this.armTimer+=dt;
             if(this.armTimer>=3){
@@ -1041,8 +1059,13 @@ export class LandMine {
                 import('./audio.js').then(m => m.playMineArmed());
             }
         }
+        if(this.armed && this.lifeTimer>=this.lifetime){
+            this.explode();
+            return;
+        }
+        const blinkRate = this.armed ? (this.lifeTimer>=this.lifetime-3 ? 0.08 : 0.25) : 0.5;
         this.blinkTimer+=dt;
-        if(this.blinkTimer>=(this.armed?0.25:0.5)){ this.blinkTimer=0; this.blinkState=!this.blinkState; }
+        if(this.blinkTimer>=blinkRate){ this.blinkTimer=0; this.blinkState=!this.blinkState; }
     }
     checkCollision(tank){ if(this.exploded||!this.armed) return false; return this.pos.distanceTo(tank.pos)<this.radius+18; }
     explode(){

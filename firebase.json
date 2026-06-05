@@ -1,15 +1,11 @@
 {
   "hosting": {
-    "public": ".",
+    "public": "dist",
     "ignore": [
       "firebase.json",
       "database.rules.json",
-      "node_modules",
-      ".git",
-      "SPEC.md",
-      "package.json",
-      "package-lock.json",
-      ".gitignore"
+      ".firebase",
+      ".git"
     ],
     "rewrites": [
       { "source": "/admin", "destination": "/admin.html" }
