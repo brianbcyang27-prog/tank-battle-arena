@@ -89,17 +89,7 @@ function gameLoop(ct) {
         G._traceCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
         G._traceCtx.globalCompositeOperation = 'source-over';
     }
-    let camOffsetX = 0;
-    let camOffsetY = 0;
-
-    if (G.camera.velX !== 0 || G.camera.velY !== 0) {
-        const maxOffset = 8;
-        G.camera.x += (G.camera.velX * maxOffset - G.camera.x) * 0.08;
-        G.camera.y += (G.camera.velY * maxOffset - G.camera.y) * 0.08;
-        camOffsetX += G.camera.x;
-        camOffsetY += G.camera.y;
-    }
-
+    // Screen shake only — no velocity-based camera offset (map stays fixed)
     const s = G.shake;
     if (s.intensity > 0 && s.elapsed < s.duration) {
         const progress = s.elapsed / s.duration;
@@ -111,10 +101,7 @@ function gameLoop(ct) {
         const shakeY = (Math.sin(t * 4.3) * 0.5 + Math.sin(t * 9.7) * 0.3 + Math.sin(t * 15.1) * 0.2) * magnitude;
         s.elapsed += dt;
         ctx.save();
-        ctx.translate(shakeX + camOffsetX, shakeY + camOffsetY);
-    } else if (camOffsetX !== 0 || camOffsetY !== 0) {
-        ctx.save();
-        ctx.translate(camOffsetX, camOffsetY);
+        ctx.translate(shakeX, shakeY);
     }
 
     if (G.gameState === GameState.PLAYING) {
@@ -125,14 +112,6 @@ function gameLoop(ct) {
         if (G.player && G.player.alive) {
             G.player.update(dt, ct);
             const speed = G.player.vel.length();
-            // Feed velocity direction to camera for subtle movement offset
-            if (speed > 1) {
-                G.camera.velX = G.player.vel.x / speed;
-                G.camera.velY = G.player.vel.y / speed;
-            } else {
-                G.camera.velX *= 0.85;
-                G.camera.velY *= 0.85;
-            }
             if (speed > 0) { recordDistance(speed * dt); if (G.aiTracker) G.aiTracker.recordDistance(speed * dt); }
             if (G.aiTracker) G.aiTracker.tick(dt);
         }
@@ -494,7 +473,7 @@ function gameLoop(ct) {
     }
 
     const isShaking = G.shake.intensity > 0 && G.shake.elapsed < G.shake.duration;
-    if (isShaking || camOffsetX !== 0 || camOffsetY !== 0) ctx.restore();
+    if (isShaking) ctx.restore();
 
     if (isShaking) {
         const progress = G.shake.elapsed / G.shake.duration;

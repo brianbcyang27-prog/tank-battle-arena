@@ -63,7 +63,7 @@ export function startWatchdog(onFreeze) {
     stopWatchdog();
     _frameWatchdog = setInterval(() => {
         const elapsed = performance.now() - _lastFrameTime;
-        if (elapsed > WATCHDOG_TIMEOUT && G?.gameState !== 'MENU') {
+        if (elapsed > WATCHDOG_TIMEOUT && (G?.gameState === 'playing' || G?.gameState === 'tutorial')) {
             captureError(new Error('Game frozen'), { elapsed });
             if (onFreeze) onFreeze(elapsed);
         }
