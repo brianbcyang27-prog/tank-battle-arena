@@ -50,6 +50,7 @@ function defaultProgression() {
         highestSingleScore: 0,
         upgradePoints: 0,
         upgrades: { speed: 0, fuel: 0, mineRadius: 0 },
+        tankStage: 1,
         sessionXp: 0,
         sessionRewardsClaimed: [],
         sessionLifetimeXp: 0,
@@ -533,14 +534,44 @@ export function buyUpgrade(category) {
 
 export function applyUpgradesToPlayer(player) {
     if (!player) return;
+    const stage = getTankStage();
+    const stageMult = getTankStageMultiplier(stage);
     const speedLvl = getUpgradeLevel('speed');
-    player.speed = 200 * (1 + speedLvl * 0.12);
+    player.speed = 200 * (1 + speedLvl * 0.10) * stageMult;
     const fuelLvl = getUpgradeLevel('fuel');
     const oldMax = player.maxFuel;
-    player.maxFuel = 100 + fuelLvl * 25;
+    player.maxFuel = (100 + fuelLvl * 20) * stageMult;
     player.fuel = Math.min(player.fuel + (player.maxFuel - oldMax), player.maxFuel);
     const mineLvl = getUpgradeLevel('mineRadius');
-    player.mineRadius = 120 + mineLvl * 15;
+    player.mineRadius = (120 + mineLvl * 12) * stageMult;
+}
+
+// ==================== TANK STAGE (Prestige) ====================
+
+export function getTankStage() {
+    return P.tankStage || 1;
+}
+
+export function getTankStageMultiplier(stage) {
+    return 1 + (stage - 1) * 0.12;
+}
+
+export function canStageUp() {
+    const cats = ['speed', 'fuel', 'mineRadius'];
+    const maxLv = getUpgradeMaxLevel();
+    return cats.every(c => getUpgradeLevel(c) >= maxLv);
+}
+
+export function stageUp() {
+    if (!canStageUp()) {
+        return { ok: false, reason: 'Not all upgrades are at max level' };
+    }
+    P.tankStage = (P.tankStage || 1) + 1;
+    P.upgrades = { speed: 0, fuel: 0, mineRadius: 0 };
+    P.upgradePoints += 3;
+    saveProgression();
+    log('info', 'UPGRADE', 'Tank staged up to stage ' + P.tankStage);
+    return { ok: true, stage: P.tankStage };
 }
 
 // ==================== EARNINGS (called on level complete / game over) ====================

@@ -438,6 +438,7 @@ window.viewUser = function(uid) {
                 <div class="field"><label>Speed</label><input id="prog_up_speed" type="number" value="${(p.upgrades && p.upgrades.speed) || 0}"></div>
                 <div class="field"><label>Fuel</label><input id="prog_up_fuel" type="number" value="${(p.upgrades && p.upgrades.fuel) || 0}"></div>
                 <div class="field"><label>Mine Radius</label><input id="prog_up_mineRadius" type="number" value="${(p.upgrades && p.upgrades.mineRadius) || 0}"></div>
+                <div class="field"><label>Tank Stage</label><input id="prog_tankStage" type="number" value="${p.tankStage || 1}"></div>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">
                 <div class="field"><label>Owned Skins (comma-sep)</label><input id="prog_ownedSkins" value="${(p.ownedSkins || ['classic']).join(', ')}"></div>
@@ -542,6 +543,7 @@ window.saveUserProgression = function(uid) {
         fuel: getVal('prog_up_fuel'),
         mineRadius: getVal('prog_up_mineRadius')
     };
+    progression.tankStage = getVal('prog_tankStage');
     progression.ownedSkins = getStr('prog_ownedSkins').split(',').map(s => s.trim()).filter(Boolean);
     progression.equippedSkin = getStr('prog_equippedSkin');
     progression.ownedWeapons = getStr('prog_ownedWeapons').split(',').map(s => s.trim()).filter(Boolean);
@@ -969,6 +971,7 @@ window.renderControls = function() {
             <td><input class="ctrl-input" id="ctrl_${uid}_fuel" type="number" value="${(p.upgrades && p.upgrades.fuel) || 0}"></td>
             <td><input class="ctrl-input" id="ctrl_${uid}_mineRadius" type="number" value="${(p.upgrades && p.upgrades.mineRadius) || 0}"></td>
             <td><input class="ctrl-input" id="ctrl_${uid}_upgradePoints" type="number" value="${p.upgradePoints || 0}"></td>
+            <td><input class="ctrl-input" id="ctrl_${uid}_tankStage" type="number" min="1" value="${p.tankStage || 1}" style="width:50px;"></td>
             <td><input class="ctrl-input" id="ctrl_${uid}_unlockedStage" type="number" min="0" max="4" value="${campaign.unlockedStage || 0}" style="width:50px;"></td>
             <td><input class="ctrl-input" id="ctrl_${uid}_ownedSkins" value="${esc(ownedSkins)}" style="width:90px;font-size:9px;"></td>
             <td><input class="ctrl-input" id="ctrl_${uid}_equippedSkin" value="${esc(equippedSkin)}" style="width:70px;font-size:9px;"></td>
@@ -996,6 +999,7 @@ window.saveControl = function(uid) {
     progression.coins = getNum('ctrl_' + uid + '_coins');
     progression.xp = getNum('ctrl_' + uid + '_xp');
     progression.upgradePoints = getNum('ctrl_' + uid + '_upgradePoints');
+    progression.tankStage = getNum('ctrl_' + uid + '_tankStage');
     progression.upgrades = {
         speed: getNum('ctrl_' + uid + '_speed'),
         fuel: getNum('ctrl_' + uid + '_fuel'),
