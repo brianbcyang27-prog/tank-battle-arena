@@ -1,0 +1,84 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - heading "Tank Battle Arena — Free 2D Tank Battle Game" [level=1] [ref=e3]
+    - paragraph [ref=e4]: Tank Battle Arena is a fast-paced 2D top-down tank battle game inspired by Wii Play. Navigate maze-like arenas, eliminate enemy tanks, and compete across multiple game modes.
+    - heading "Game Modes" [level=2] [ref=e5]
+    - list [ref=e6]:
+      - listitem [ref=e7]:
+        - strong [ref=e8]: Solo Campaign
+        - text: — Progress through procedurally generated levels with increasing enemy difficulty. Beat your personal best score across 60+ levels.
+      - listitem [ref=e9]:
+        - strong [ref=e10]: Arcade Wave Survival
+        - text: — Fight waves of AI enemies powered by Q-learning machine learning. Each wave gets harder as enemies adapt to your tactics.
+      - listitem [ref=e11]:
+        - strong [ref=e12]: VS AI
+        - text: — Best-of-9 match against a self-learning adaptive opponent that studies your playstyle across rounds.
+      - listitem [ref=e13]:
+        - strong [ref=e14]: Multiplayer
+        - text: — Real-time online tank battles with friends via Firebase. Create or join lobbies with room codes.
+    - heading "Features" [level=2] [ref=e15]
+    - list [ref=e16]:
+      - listitem [ref=e17]: 4 tiers of enemy AI with increasing difficulty
+      - listitem [ref=e18]: "5 weapon types: standard, rapid-fire, cannon, shotgun, sniper"
+      - listitem [ref=e19]: Deployable mines with 120px blast radius
+      - listitem [ref=e20]: Procedurally generated maze arenas
+      - listitem [ref=e21]: "Upgrade system: speed, fuel capacity, mine radius"
+      - listitem [ref=e22]: Online leaderboard with Firebase integration
+      - listitem [ref=e23]: Guest sign-in or email authentication
+      - listitem [ref=e24]: Friend codes and invitation system
+    - heading "Controls" [level=2] [ref=e25]
+    - paragraph [ref=e26]: WASD to move, mouse to aim, left-click to fire, C to place mines, Escape to pause. Free browser game with no download required — works on desktop and mobile browsers.
+  - generic [ref=e27]:
+    - dialog [ref=e46]:
+      - heading "TANK BATTLE" [level=1] [ref=e47]
+      - heading "ARENA" [level=2] [ref=e48]
+      - generic [ref=e76]:
+        - generic [ref=e78]:
+          - generic [ref=e79] [cursor=pointer]:
+            - generic [ref=e80]: 🎯
+            - generic [ref=e81]: SOLO
+            - generic [ref=e82]: Campaign Mode
+            - generic [ref=e83]: PLAY
+          - generic [ref=e84] [cursor=pointer]:
+            - generic [ref=e85]: ⚔️
+            - generic [ref=e86]: VERSUS
+            - generic [ref=e87]: Multiplayer Battle
+            - generic [ref=e88]: PLAY
+          - generic [ref=e89] [cursor=pointer]:
+            - generic [ref=e90]: 🧠
+            - generic [ref=e91]: ARCADE
+            - generic [ref=e92]: Wave Survival — ML Enemies
+            - generic [ref=e93]: FIGHT
+          - generic [ref=e94] [cursor=pointer]:
+            - generic [ref=e95]: 🤖
+            - generic [ref=e96]: VS AI
+            - generic [ref=e97]: Best-of-9 Adaptive Bot
+            - generic [ref=e98]: FIGHT
+          - generic [ref=e99] [cursor=pointer]:
+            - generic [ref=e100]: 🏆
+            - generic [ref=e101]: CAMPAIGN
+            - generic [ref=e102]: 🌋 Volcanic Forge — 0/60 levels
+            - generic [ref=e103]: CONTINUE
+        - generic [ref=e104]:
+          - button "🎯 MISSIONS" [ref=e105] [cursor=pointer]
+          - button "🛒 SHOP" [ref=e106] [cursor=pointer]
+          - button "🔧 UPGRADE" [ref=e107] [cursor=pointer]
+          - button "🎒 LOADOUT" [ref=e108] [cursor=pointer]
+          - button "👥 FRIENDS" [ref=e109] [cursor=pointer]
+          - button "🔥 SEASON" [ref=e110] [cursor=pointer]
+    - generic [ref=e29]:
+      - generic [ref=e30]:
+        - generic [ref=e31]: NAVIGATION
+        - button "✕" [ref=e32] [cursor=pointer]
+      - generic [ref=e33]:
+        - button "🎒 LOADOUT" [ref=e34] [cursor=pointer]
+        - button "⚙ SETTINGS" [ref=e35] [cursor=pointer]
+        - button "🎮 TUTORIAL" [ref=e36] [cursor=pointer]
+        - button "📊 STATS" [ref=e37] [cursor=pointer]
+        - button "📈 PROGRESSION" [ref=e38] [cursor=pointer]
+        - button "🏆 LEADERBOARD" [ref=e39] [cursor=pointer]
+        - button "ℹ ABOUT" [ref=e40] [cursor=pointer]
+        - button "📖 GUIDE" [ref=e41] [cursor=pointer]
+        - button "💬 FEEDBACK" [ref=e42] [cursor=pointer]
+        - button "📋 LOG" [ref=e43] [cursor=pointer]
+      - button "🚪 LOGOUT" [ref=e45] [cursor=pointer]
