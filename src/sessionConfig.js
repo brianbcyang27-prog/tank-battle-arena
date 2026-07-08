@@ -1,6 +1,6 @@
 // ==================== SESSION / BATTLE PASS SYSTEM ====================
 // Session 1: "Ignition" — 30 free tiers, no premium track.
-// Session XP is earned passively at 10% of match XP from all game modes.
+// Session XP is earned passively at 15% of match XP from all game modes.
 
 export const SESSION = {
     id: 's1',
