@@ -89,19 +89,45 @@ function gameLoop(ct) {
         G._traceCtx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
         G._traceCtx.globalCompositeOperation = 'source-over';
     }
-    // Screen shake only — no velocity-based camera offset (map stays fixed)
+    // Camera follow — smooth lerp toward player offset from center
+    const CAMERA_LERP = 0.06;     // Smoothing factor (lower = smoother)
+    const CAMERA_DEAD_ZONE = 60;  // Pixels of dead zone before camera moves
+    const CAMERA_MAX_OFFSET = 160; // Max camera shift in any direction
+    let camTargetX = 0, camTargetY = 0;
+    if (G.player && G.player.alive && (G.gameState === GameState.PLAYING || G.gameState === GameState.TUTORIAL)) {
+        const dx = G.player.pos.x - CANVAS_WIDTH / 2;
+        const dy = G.player.pos.y - CANVAS_HEIGHT / 2;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > CAMERA_DEAD_ZONE) {
+            const factor = Math.min((dist - CAMERA_DEAD_ZONE) / (CANVAS_WIDTH / 2), 1) * 0.35;
+            camTargetX = (dx / dist) * factor * CAMERA_MAX_OFFSET;
+            camTargetY = (dy / dist) * factor * CAMERA_MAX_OFFSET;
+        }
+    }
+    // Clamp camera so map edges stay visible
+    camTargetX = Math.max(-(CANVAS_WIDTH * 0.15), Math.min(CANVAS_WIDTH * 0.15, camTargetX));
+    camTargetY = Math.max(-(CANVAS_HEIGHT * 0.15), Math.min(CANVAS_HEIGHT * 0.15, camTargetY));
+    // Frame-rate independent lerp
+    const lerpFactor = 1 - Math.exp(-CAMERA_LERP * dt * 60);
+    G.camera.x += (camTargetX - G.camera.x) * lerpFactor;
+    G.camera.y += (camTargetY - G.camera.y) * lerpFactor;
+    const camOffsetX = Math.round(G.camera.x);
+    const camOffsetY = Math.round(G.camera.y);
+
     const s = G.shake;
     if (s.intensity > 0 && s.elapsed < s.duration) {
         const progress = s.elapsed / s.duration;
         const decay = 1 - progress;
         const magnitude = s.intensity * decay * 20;
-        // Use sin-based offset for smoother shake than pure random
         const t = s.elapsed * 60;
         const shakeX = (Math.sin(t * 3.7) * 0.5 + Math.sin(t * 7.1) * 0.3 + Math.sin(t * 13.3) * 0.2) * magnitude;
         const shakeY = (Math.sin(t * 4.3) * 0.5 + Math.sin(t * 9.7) * 0.3 + Math.sin(t * 15.1) * 0.2) * magnitude;
         s.elapsed += dt;
         ctx.save();
-        ctx.translate(shakeX, shakeY);
+        ctx.translate(camOffsetX + shakeX, camOffsetY + shakeY);
+    } else if (camOffsetX !== 0 || camOffsetY !== 0) {
+        ctx.save();
+        ctx.translate(camOffsetX, camOffsetY);
     }
 
     if (G.gameState === GameState.PLAYING) {
@@ -473,7 +499,8 @@ function gameLoop(ct) {
     }
 
     const isShaking = G.shake.intensity > 0 && G.shake.elapsed < G.shake.duration;
-    if (isShaking) ctx.restore();
+    const hasCameraOffset = camOffsetX !== 0 || camOffsetY !== 0;
+    if (isShaking || hasCameraOffset) ctx.restore();
 
     if (isShaking) {
         const progress = G.shake.elapsed / G.shake.duration;

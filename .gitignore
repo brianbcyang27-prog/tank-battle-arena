@@ -4,3 +4,8 @@ package-lock.json
 *.log
 .sisyphus/
 dist/
+graphify-out/
+gameIcon/
+public/
+.playwright-mcp/
+.firebase/
