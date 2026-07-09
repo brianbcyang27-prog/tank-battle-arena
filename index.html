@@ -175,6 +175,15 @@
         .home-card:active { transform: translateY(-3px); }
         .home-card .card-icon { font-size: 52px; margin-bottom: 10px; opacity: 0.7; transition: opacity 0.3s; }
         .home-card:hover .card-icon { opacity: 1; }
+        /* === SVG ICON UTILITIES === */
+        .icon-img { display:inline-block; vertical-align:middle; }
+        .icon-img.icon-sm { width:16px; height:16px; }
+        .icon-img.icon-md { width:22px; height:22px; }
+        .icon-img.icon-lg { width:36px; height:36px; }
+        .icon-img.icon-xl { width:52px; height:52px; }
+        .icon-star { width:36px; height:36px; fill:#333; transition:fill 0.3s, filter 0.3s; }
+        .icon-star.filled { fill:var(--gold); filter:drop-shadow(0 0 8px var(--gold)) drop-shadow(0 0 16px rgba(241,196,15,0.4)); }
+        .nav-btn .icon-img { margin-right:4px; }
         .home-card .card-title { font-size: 26px; font-weight: 700; color: #eaeaea; margin-bottom: 6px; letter-spacing: 3px; }
         .home-card .card-desc { font-size: 11px; color: #999; letter-spacing: 1px; margin-bottom: 18px; }
         .home-card .card-play {
@@ -203,7 +212,7 @@
         }
         .campaign-header { text-align: center; margin-bottom: 0; }
         .campaign-header h1 { font-size: 28px; letter-spacing: 8px; margin: 0; display: inline; }
-        .campaign-title-icon { font-size: 24px; margin-right: 8px; }
+        .campaign-title-icon { width:24px; height:24px; margin-right:8px; vertical-align:middle; }
         .campaign-map-sub { color: #888; font-size: 10px; letter-spacing: 2px; margin: 2px 0 0; }
 
         /* Campaign Body — split layout */
@@ -754,7 +763,7 @@
             padding: 6px 10px;
             margin-bottom: 10px;
         }
-        .vs-weapon-icon { font-size: 22px; }
+        .vs-weapon-icon { width:22px; height:22px; }
         .vs-weapon-name { font-size: 11px; color: #ccc; letter-spacing: 1px; }
         .vs-upgrade-row {
             display: flex;
@@ -762,7 +771,7 @@
             gap: 8px;
             margin: 5px 0;
         }
-        .vs-upgrade-icon { font-size: 14px; width: 18px; text-align: center; }
+        .vs-upgrade-icon { width:16px; height:16px; }
         .vs-upgrade-label { font-size: 9px; color: #888; width: 60px; letter-spacing: 1px; flex-shrink:0; }
         .vs-upgrade-bar-bg {
             flex: 1;
@@ -837,8 +846,8 @@
 
         .go-title { font-size:48px; color:var(--accent); margin:0; animation:go-titleGlow 2s ease-in-out infinite; letter-spacing:6px; }
         .go-stars { display:flex; gap:10px; margin:6px 0; }
-        .go-star { font-size:36px; color:#333; transition:color 0.3s, text-shadow 0.3s; }
-        .go-star.go-star-filled { color:var(--gold); text-shadow:0 0 15px var(--gold),0 0 30px rgba(241,196,15,0.5); }
+        .go-star { width:36px; height:36px; fill:#333; transition:fill 0.3s, filter 0.3s; }
+        .go-star.go-star-filled { fill:var(--gold); filter:drop-shadow(0 0 8px var(--gold)) drop-shadow(0 0 16px rgba(241,196,15,0.4)); }
         .go-score-box { background:rgba(0,0,0,0.35); border:1px solid #444; border-radius:10px; padding:10px 30px; margin:4px 0; text-align:center; }
         .go-score-label { color:#888; font-size:10px; letter-spacing:2px; margin-bottom:4px; }
         .go-score-value { font-size:42px; font-weight:700; color:var(--gold); text-shadow:0 0 20px rgba(241,196,15,0.5); margin:0; line-height:1.2; }
@@ -1537,7 +1546,7 @@ canvas { filter: none !important; }
         <div id="welcomeOverlay" style="position:fixed;top:0;left:0;width:100vw;height:100vh;display:none;flex-direction:column;justify-content:center;align-items:center;z-index:100;background:radial-gradient(ellipse at 50% 40%,#1a0f0a 0%,#0d0d1a 70%);overflow:hidden;pointer-events:none;transition:opacity 0.4s ease;">
             <canvas id="welcomeCanvas" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;"></canvas>
             <div style="position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:6px;max-width:90%;">
-                <div id="welcomeEmblem" style="font-size:56px;opacity:0;transform:scale(0) rotate(-20deg);animation:welcome-emblem 0.8s ease-out 0.3s forwards;">🎖️</div>
+                <img id="welcomeEmblem" src="/gameIcon/season-complete.svg" style="width:56px;height:56px;opacity:0;transform:scale(0) rotate(-20deg);animation:welcome-emblem 0.8s ease-out 0.3s forwards;" alt="">
                 <h1 id="welcomeTitle1" style="font-size:32px;color:var(--accent);text-shadow:0 0 25px rgba(233,69,96,0.5);letter-spacing:8px;opacity:0;transform:translateY(-20px);animation:welcome-slideDown 0.6s ease-out 0.5s forwards;">TANK BATTLE</h1>
                 <h2 id="welcomeTitle2" style="font-size:46px;color:var(--gold);text-shadow:0 0 35px rgba(241,196,15,0.4);letter-spacing:12px;opacity:0;transform:scale(0.6);animation:welcome-explode 0.7s ease-out 0.9s forwards;">ARENA</h2>
                 <div id="welcomeTagline" style="color:#888;font-size:11px;letter-spacing:4px;opacity:0;animation:welcome-fade 0.8s ease-out 1.4s forwards;">WHERE LEGENDS ARE FORGED</div>
@@ -1600,31 +1609,31 @@ canvas { filter: none !important; }
                 <div class="home-center">
                     <div class="home-cards">
                         <div class="home-card solo" onclick="startSolo()">
-                            <div class="card-icon">🎯</div>
+                            <div class="card-icon"><img src="/gameIcon/hit-marker.svg" class="icon-img icon-xl" alt=""></div>
                             <div class="card-title">SOLO</div>
                             <div class="card-desc">Campaign Mode</div>
                             <div class="card-play">PLAY</div>
                         </div>
                         <div class="home-card versus" onclick="toggleVersus()">
-                            <div class="card-icon">⚔️</div>
+                            <div class="card-icon"><img src="/gameIcon/shield-block.svg" class="icon-img icon-xl" alt=""></div>
                             <div class="card-title">VERSUS</div>
                             <div class="card-desc">Multiplayer Battle</div>
                             <div class="card-play">PLAY</div>
                         </div>
                         <div class="home-card arcade" onclick="startArcade()">
-                            <div class="card-icon">🧠</div>
+                            <div class="card-icon"><img src="/gameIcon/controller.svg" class="icon-img icon-xl" alt=""></div>
                             <div class="card-title">ARCADE</div>
                             <div class="card-desc">Wave Survival — ML Enemies</div>
                             <div class="card-play">FIGHT</div>
                         </div>
                         <div class="home-card vsai" onclick="startVersusAI()">
-                            <div class="card-icon">🤖</div>
+                            <div class="card-icon"><img src="/gameIcon/mobile-controls.svg" class="icon-img icon-xl" alt=""></div>
                             <div class="card-title">VS AI</div>
                             <div class="card-desc">Best-of-9 Adaptive Bot</div>
                             <div class="card-play">FIGHT</div>
                         </div>
                         <div class="home-card campaign" onclick="startCampaign()">
-                            <div class="card-icon">🏆</div>
+                            <div class="card-icon"><img src="/gameIcon/season-complete.svg" class="icon-img icon-xl" alt=""></div>
                             <div class="card-title">CAMPAIGN</div>
                             <div class="card-desc" id="campaignDesc">Persistent — Continue Progress</div>
                             <div class="card-play">CONTINUE</div>
@@ -1648,11 +1657,11 @@ canvas { filter: none !important; }
 
                 <!-- BOTTOM NAV: streamlined -->
                 <div class="home-bottom-bar">
-                    <button class="nav-btn" onclick="showMissions()">🎯 MISSIONS</button>
+                    <button class="nav-btn" onclick="showMissions()"><img src="/gameIcon/hit-marker.svg" class="icon-img icon-md" alt=""> MISSIONS</button>
                     <button class="nav-btn" onclick="showShop()">🛒 SHOP</button>
                     <button class="nav-btn" onclick="showUpgrades()">🔧 UPGRADE</button>
                     <button class="nav-btn" onclick="showLoadout()">🎒 LOADOUT</button>
-                    <button class="nav-btn" onclick="showFriends()">👥 FRIENDS</button>
+                    <button class="nav-btn" onclick="showFriends()"><img src="/gameIcon/player-joined.svg" class="icon-img icon-md" alt=""> FRIENDS</button>
                     <button class="nav-btn" onclick="showSeasonPass()" id="seasonPassBtn" style="border-color:#ff6a00;color:#ff6a00;position:relative;">🔥 SEASON<span id="spBadge" class="nav-badge" style="display:none;"></span></button>
                 </div>
             </div>
@@ -1667,11 +1676,11 @@ canvas { filter: none !important; }
             </div>
             <div class="sidebar-nav">
                 <button class="nav-btn" onclick="closeSidebar();showLoadout()">🎒 LOADOUT</button>
-                <button class="nav-btn" onclick="closeSidebar();showSettings()">⚙ SETTINGS</button>
-                <button class="nav-btn" onclick="closeSidebar();showTutorial()">🎮 TUTORIAL</button>
+                <button class="nav-btn" onclick="closeSidebar();showSettings()"><img src="/gameIcon/audio-mixer.svg" class="icon-img icon-md" alt=""> SETTINGS</button>
+                <button class="nav-btn" onclick="closeSidebar();showTutorial()"><img src="/gameIcon/controller.svg" class="icon-img icon-md" alt=""> TUTORIAL</button>
                 <button class="nav-btn" onclick="closeSidebar();showStats()">📊 STATS</button>
                 <button class="nav-btn" onclick="closeSidebar();showProgression()">📈 PROGRESSION</button>
-                <button class="nav-btn" onclick="closeSidebar();showLeaderboard()">🏆 LEADERBOARD</button>
+                <button class="nav-btn" onclick="closeSidebar();showLeaderboard()"><img src="/gameIcon/season-complete.svg" class="icon-img icon-md" alt=""> LEADERBOARD</button>
                 <button class="nav-btn" onclick="closeSidebar();showAbout()">ℹ ABOUT</button>
                 <button class="nav-btn" onclick="closeSidebar();showGameGuide()">📖 GUIDE</button>
                 <button class="nav-btn" onclick="closeSidebar();openFeedback()">💬 FEEDBACK</button>
@@ -1783,9 +1792,9 @@ canvas { filter: none !important; }
                 <h1 id="goTitle" class="go-title">GAME OVER</h1>
 
                 <div class="go-stars" id="goStars">
-                    <span class="go-star">★</span>
-                    <span class="go-star">★</span>
-                    <span class="go-star">★</span>
+                    <svg class="go-star" viewBox="0 0 24 24"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
+                    <svg class="go-star" viewBox="0 0 24 24"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
+                    <svg class="go-star" viewBox="0 0 24 24"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
                 </div>
 
                 <div class="go-score-box">
@@ -1827,7 +1836,7 @@ canvas { filter: none !important; }
         <!-- CAMPAIGN MAP OVERLAY -->
         <div id="campaignMapOverlay" class="overlay campaign-map-overlay">
             <div class="campaign-header">
-                <span class="campaign-title-icon">🎯</span>
+                <img src="/gameIcon/hit-marker.svg" class="icon-img icon-md campaign-title-icon" alt="">
                 <h1>CAMPAIGN</h1>
                 <p class="campaign-map-sub" id="campaignMapSub">LOADING YOUR PROGRESS...</p>
             </div>
@@ -1927,24 +1936,24 @@ canvas { filter: none !important; }
 
         <!-- TUTORIAL OVERLAY -->
         <div id="tutorialOverlay" class="overlay">
-            <h1 style="font-size:36px;margin-bottom:10px;">🎮 TUTORIAL COMPLETE</h1>
+            <h1 style="font-size:36px;margin-bottom:10px;"><img src="/gameIcon/controller.svg" class="icon-img icon-lg" alt=""> TUTORIAL COMPLETE</h1>
             <p style="color:#888;font-size:13px;margin-bottom:24px;">You've mastered the controls. Now choose your battle mode!</p>
 
             <div class="tutorial-mode-cards">
                 <div class="tutorial-mode-card solo-mode" onclick="closeTutorial();startSolo()">
-                    <div class="tutorial-mode-icon">🎯</div>
+                    <div class="tutorial-mode-icon"><img src="/gameIcon/hit-marker.svg" class="icon-img icon-lg" alt=""></div>
                     <div class="tutorial-mode-name">SOLO</div>
                     <div class="tutorial-mode-desc">Campaign mode — progress through procedurally generated levels with increasing enemy difficulty. Beat your personal best!</div>
                     <div class="tutorial-mode-btn" style="color:#2ecc71;">PLAY SOLO</div>
                 </div>
                 <div class="tutorial-mode-card vsai-mode" onclick="closeTutorial();startVersusAI()">
-                    <div class="tutorial-mode-icon">🤖</div>
+                    <div class="tutorial-mode-icon"><img src="/gameIcon/mobile-controls.svg" class="icon-img icon-lg" alt=""></div>
                     <div class="tutorial-mode-name">ARCADE</div>
                     <div class="tutorial-mode-desc">Best-of-9 match (first to 5 wins) against a self-learning adaptive AI that studies your playstyle across rounds.</div>
                     <div class="tutorial-mode-btn" style="color:#9b59b6;">VS AI</div>
                 </div>
                 <div class="tutorial-mode-card versus-mode" onclick="closeTutorial();toggleVersus()">
-                    <div class="tutorial-mode-icon">🌐</div>
+                    <div class="tutorial-mode-icon"><img src="/gameIcon/network-good.svg" class="icon-img icon-lg" alt=""></div>
                     <div class="tutorial-mode-name">VERSUS</div>
                     <div class="tutorial-mode-desc">Online multiplayer via Firebase. Create or join lobbies with room codes. Real-time tank battles with friends.</div>
                     <div class="tutorial-mode-btn" style="color:var(--danger);">PLAY VS</div>
@@ -1964,7 +1973,7 @@ canvas { filter: none !important; }
                 <div id="vsP1Card" class="vs-player-card p1" style="opacity:0;">
                     <div class="vs-player-name" id="vsP1Name" style="color:var(--accent);">YOU</div>
                     <div class="vs-weapon-row">
-                        <span class="vs-weapon-icon" id="vsP1WeaponIcon">🔫</span>
+                        <img src="/gameIcon/shield-block.svg" class="icon-img icon-md" id="vsP1WeaponIcon" alt="">
                         <span class="vs-weapon-name" id="vsP1WeaponName">Standard Cannon</span>
                     </div>
                     <div id="vsP1Upgrades">
@@ -1981,7 +1990,7 @@ canvas { filter: none !important; }
                             <span class="vs-upgrade-level" id="vsP1FuelLv">0/10</span>
                         </div>
                         <div class="vs-upgrade-row">
-                            <span class="vs-upgrade-icon">💥</span>
+                            <img src="/gameIcon/damage-right.svg" class="icon-img icon-sm vs-upgrade-icon" alt="">
                             <span class="vs-upgrade-label">MINE</span>
                             <div class="vs-upgrade-bar-bg"><div class="vs-upgrade-bar-fill mine" id="vsP1Mine" style="width:0%;"></div></div>
                             <span class="vs-upgrade-level" id="vsP1MineLv">0/10</span>
@@ -2000,7 +2009,7 @@ canvas { filter: none !important; }
                 <div id="vsP2Card" class="vs-player-card p2" style="opacity:0;">
                     <div class="vs-player-name" id="vsP2Name" style="color:var(--info);">OPPONENT</div>
                     <div class="vs-weapon-row">
-                        <span class="vs-weapon-icon" id="vsP2WeaponIcon">🔫</span>
+                        <img src="/gameIcon/shield-block.svg" class="icon-img icon-md" id="vsP2WeaponIcon" alt="">
                         <span class="vs-weapon-name" id="vsP2WeaponName">Standard Cannon</span>
                     </div>
                     <div id="vsP2Upgrades">
@@ -2017,7 +2026,7 @@ canvas { filter: none !important; }
                             <span class="vs-upgrade-level" id="vsP2FuelLv">0/10</span>
                         </div>
                         <div class="vs-upgrade-row">
-                            <span class="vs-upgrade-icon">💥</span>
+                            <img src="/gameIcon/damage-right.svg" class="icon-img icon-sm vs-upgrade-icon" alt="">
                             <span class="vs-upgrade-label">MINE</span>
                             <div class="vs-upgrade-bar-bg"><div class="vs-upgrade-bar-fill mine" id="vsP2Mine" style="width:0%;"></div></div>
                             <span class="vs-upgrade-level" id="vsP2MineLv">0/10</span>
@@ -2031,7 +2040,7 @@ canvas { filter: none !important; }
         </div>
 
         <div id="settingsOverlay" class="overlay">
-            <div style="text-align:center;padding:8px 0 4px;font-size:16px;font-weight:700;color:#eaeaea;letter-spacing:2px;">⚙ SETTINGS</div>
+            <div style="text-align:center;padding:8px 0 4px;font-size:16px;font-weight:700;color:#eaeaea;letter-spacing:2px;"><img src="/gameIcon/audio-mixer.svg" class="icon-img icon-md" alt=""> SETTINGS</div>
             <div id="settingsPanel" class="settings-content-panel" style="overflow-y:auto;max-height:70vh;">
                 <div class="settings-container">
                     <div class="settings-section">
@@ -2182,7 +2191,7 @@ canvas { filter: none !important; }
 
         <!-- GAME GUIDE OVERLAY -->
         <div id="gameGuideOverlay" class="overlay">
-            <h2 style="margin-bottom:8px;">📖 GAME GUIDE</h2>
+            <h2 style="margin-bottom:8px;"><img src="/gameIcon/controller.svg" class="icon-img icon-md" alt=""> GAME GUIDE</h2>
             <p style="color:#888;font-size:11px;margin-bottom:16px;">Everything you need to know about Tank Battle Arena</p>
             <div style="display:flex;flex-direction:column;gap:10px;width:90%;max-width:500px;max-height:60vh;overflow-y:auto;text-align:left;padding:4px;">
                 <div class="settings-section">
@@ -2195,7 +2204,7 @@ canvas { filter: none !important; }
                     </div>
                 </div>
                 <div class="settings-section">
-                    <h3 class="settings-section-title">🎯 GAME MODES</h3>
+                    <h3 class="settings-section-title"><img src="/gameIcon/hit-marker.svg" class="icon-img icon-sm" alt=""> GAME MODES</h3>
                     <div style="color:#ccc;font-size:11px;line-height:1.6;">
                         <b>SOLO Campaign</b>: Progress through procedurally generated levels. 4 tiers of enemy AI. Earn scores and stars.<br>
                         <b>VS AI (Arcade)</b>: Best-of-9 adaptive AI that learns your playstyle. 3 difficulty levels.<br>
@@ -2227,7 +2236,7 @@ canvas { filter: none !important; }
                     </div>
                 </div>
                 <div class="settings-section">
-                    <h3 class="settings-section-title">🎮 CONTROLS</h3>
+                    <h3 class="settings-section-title"><img src="/gameIcon/controller.svg" class="icon-img icon-sm" alt=""> CONTROLS</h3>
                     <div style="color:#ccc;font-size:11px;line-height:1.6;">
                         <b>WASD</b> — Move tank<br>
                         <b>Mouse</b> — Aim turret<br>

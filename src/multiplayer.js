@@ -262,7 +262,7 @@ export function listenToLobby(lobbyRef) {
     // Listen for status changes (playing = game started)
     _cleanups.push(onValue(child(lobbyRef, 'status'), snapshot => {
         const status = snapshot.val();
-        if (status === 'playing' && !G._multiplayerStarting && G.gameState !== GameState.LOADING && G.gameState !== GameState.PLAYING) {
+        if (status === 'playing' && !G._multiplayerStarting && G.gameState !== GameState.LOADING && G.gameState !== GameState.READY && G.gameState !== GameState.PLAYING) {
             log('info', 'MP', 'Received status=playing, starting game...');
             window.startMultiplayerGame();
         }
@@ -498,9 +498,11 @@ window.leaveLobby = function() {
 window.startMultiplayerGame = function() {
     if (G._multiplayerStarting) { log('warn', 'MP', 'startMultiplayerGame already in progress, ignoring'); return; }
     G._multiplayerStarting = true;
+    G._mapLoaded = false;
     log('info', 'MP', 'Starting multiplayer game!');
     G.isMultiplayerGame = true;
     G.gameState = GameState.LOADING;
+    G.safePeriod = 0;  // No spawn protection in multiplayer — the versus countdown is already the ready period
     if (G._traceCtx) G._traceCtx.clearRect(0, 0, G._traceCanvas.width, G._traceCanvas.height);
 
     // Set up Firebase bullet listener
@@ -624,6 +626,7 @@ function listenToMapAndStart() {
   get(mapRef).then(snapshot => {
     const data = snapshot.val();
     if (data && data.map && data.mapGenerated && data.hostStart && data.joinerStart) {
+      G._mapLoaded = true;
       log('info', 'MP', 'Received map from host, loading...');
       loadMapFromData(data.map, data.hostStart, data.joinerStart);
       G.player.color = COLORS.player2;
@@ -634,8 +637,12 @@ function listenToMapAndStart() {
     } else {
       const waitMapRef = ref(db, 'lobbies/' + G.lobbyId);
       const waitFn = onValue(waitMapRef, snap2 => {
+        // Guard: prevent re-entry if loadMapFromData + update() triggers a value event
+        if (G._mapLoaded) return;
         const d2 = snap2.val();
         if (d2 && d2.map && d2.mapGenerated && d2.hostStart && d2.joinerStart) {
+          G._mapLoaded = true;
+          off(waitMapRef, 'value', waitFn);  // Remove listener BEFORE update() to avoid re-trigger
           log('info', 'MP', 'Received map from host (deferred), loading...');
           loadMapFromData(d2.map, d2.hostStart, d2.joinerStart);
           G.player.color = COLORS.player2;
@@ -643,7 +650,6 @@ function listenToMapAndStart() {
             color: COLORS.player2,
             name: G.currentUser.email ? G.currentUser.email.split('@')[0] : 'Player'
           }).catch(e => log('warn', 'MP', 'Failed to update joiner color (deferred): ' + e.message));
-          off(waitMapRef, 'value', waitFn);
         }
       });
     }

@@ -72,6 +72,7 @@ import('./friends.js').then(m => {
 let lastTime = performance.now();
 
 function gameLoop(ct) {
+    try {
     const dt = Math.min((ct - lastTime) / 1000, 0.05);
     lastTime = ct;
     const frameStart = performance.now();
@@ -417,36 +418,39 @@ function gameLoop(ct) {
 
         updateTutorial(dt);
     } else if (G.gameState === GameState.READY) {
-        // For versus multiplayer — show DOM countdown overlay with player info
+        // For versus multiplayer — show DOM countdown overlay with player info.
+        // The DOM overlay handles the full countdown; game starts when it completes.
         if (G.isMultiplayerGame && !G._versusCountdownShown) {
             G._versusCountdownShown = true;
             showVersusCountdown(() => {
                 G.gameState = GameState.PLAYING;
                 G.levelStartTime = performance.now();
             });
-            return;
+            // Fall through — don't return, game loop must keep scheduling frames
         }
-        const elapsed = (ct - G._readyAt) / 1000;
-        const count = Math.ceil(3 - elapsed);
-        // Dim overlay
-        ctx.fillStyle = 'rgba(0,0,0,0.2)';
-        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        if (count > 0) {
-            ctx.fillStyle = '#f39c12';
-            ctx.font = 'bold 96px Orbitron, monospace';
-            ctx.fillText(String(count), CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 16);
-            ctx.fillStyle = '#888';
-            ctx.font = '14px Orbitron, monospace';
-            ctx.fillText('GET READY', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 48);
-        } else if (elapsed < 3.8) {
-            ctx.fillStyle = '#27ae60';
-            ctx.font = 'bold 64px Orbitron, monospace';
-            ctx.fillText('GO!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
-        } else {
-            G.gameState = GameState.PLAYING;
-            G.levelStartTime = performance.now();
+        if (!G.isMultiplayerGame) {
+            // Solo / AI: draw 3-second canvas countdown (no DOM overlay)
+            const elapsed = (ct - G._readyAt) / 1000;
+            const count = Math.ceil(3 - elapsed);
+            ctx.fillStyle = 'rgba(0,0,0,0.2)';
+            ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            if (count > 0) {
+                ctx.fillStyle = '#f39c12';
+                ctx.font = 'bold 96px Orbitron, monospace';
+                ctx.fillText(String(count), CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 16);
+                ctx.fillStyle = '#888';
+                ctx.font = '14px Orbitron, monospace';
+                ctx.fillText('GET READY', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 48);
+            } else if (elapsed < 3.8) {
+                ctx.fillStyle = '#27ae60';
+                ctx.font = 'bold 64px Orbitron, monospace';
+                ctx.fillText('GO!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+            } else {
+                G.gameState = GameState.PLAYING;
+                G.levelStartTime = performance.now();
+            }
         }
     }
 
@@ -765,6 +769,11 @@ function gameLoop(ct) {
     drawGraph(ctx);
 
     requestAnimationFrame(gameLoop);
+    } catch (e) {
+        captureError(e, { phase: 'gameLoop' });
+        // Keep the loop running despite errors
+        requestAnimationFrame(gameLoop);
+    }
 }
 
 let spaceConsumed = false;
